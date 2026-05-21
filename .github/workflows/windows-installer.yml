@@ -1,0 +1,87 @@
+# Windows-MSI (WiX / WixToolset.Sdk) — nur manuell; Release-Artefakte kommen vom Tag-Workflow `release.yml`.
+name: windows-installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semver ohne v (z. B. 1.2.3); leer = WiX-Defaults aus dem Repository"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  wix-msi:
+    runs-on: windows-latest
+    # Modul- und Build-Cache im Workspace: stabile Pfade für actions/cache auf Windows.
+    env:
+      GOMODCACHE: ${{ github.workspace }}/.gomodcache
+      GOCACHE: ${{ github.workspace }}/.gocache
+    steps:
+      # Frontend-Build: Node.js 24 LTS via setup-node (Major-Zeile mit GitHub Actions Runner abgestimmt).
+      - uses: actions/checkout@v6
+
+      # Expliziter Cache + restore-keys: bei kleinen go.sum-Änderungen bleiben viele Module nutzbar.
+      # setup-go cache: false vermeidet doppeltes Speichern/Widersprüche zu diesen Pfaden.
+      - uses: actions/cache@v5
+        id: go-mod-build-cache
+        with:
+          path: |
+            ${{ github.workspace }}/.gomodcache
+            ${{ github.workspace }}/.gocache
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum', 'go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "9.0.x"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Patch WiX version (optional)
+        if: ${{ github.event.inputs.version != '' }}
+        shell: bash
+        run: bash scripts/ci/patch-wix-version.sh "${{ github.event.inputs.version }}"
+
+      - name: Build web, embed, Windows binary, MSI
+        shell: bash
+        run: |
+          set -eux
+          cd web && npm ci && npm run build
+          cd ..
+          rm -rf internal/web/dist
+          mkdir -p internal/web/dist
+          cp -R web/dist/. internal/web/dist/
+          mkdir -p bin
+          WINVER_INPUT="${{ github.event.inputs.version }}"
+          if [ -n "$WINVER_INPUT" ]; then
+            V="${WINVER_INPUT#v}"
+            IFS=. read -r MA MI PA <<< "$V"
+            WIN_FOUR="${MA:-0}.${MI:-0}.${PA:-0}.0"
+            ( cd cmd/server && go run github.com/tc-hib/go-winres@v0.3.3 make --arch amd64 \
+                --file-version "$WIN_FOUR" --product-version "$WIN_FOUR" )
+          else
+            ( cd cmd/server && go run github.com/tc-hib/go-winres@v0.3.3 make --arch amd64 )
+          fi
+          GOOS=windows GOARCH=amd64 go build -o bin/nfc-time-tracker-server.exe ./cmd/server
+          bash scripts/ci/fetch-restic-redist.sh
+          dotnet build "${GITHUB_WORKSPACE}/installer/windows/wix/NfcTimeTracking.wixproj" -c Release
+          mkdir -p "${GITHUB_WORKSPACE}/installer/windows/dist"
+          MSI=$(find "${GITHUB_WORKSPACE}/installer/windows/wix" -name "*.msi" -type f | head -1)
+          test -n "$MSI"
+          cp -f "$MSI" "${GITHUB_WORKSPACE}/installer/windows/dist/"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: nfc-time-tracking-windows-msi
+          path: installer/windows/dist/*.msi

@@ -1,0 +1,275 @@
+# Tag v* → Linux-, macOS- und Windows-Artefakte + GitHub Release (MSI-Version aus Tag).
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Expect vMAJOR.MINOR.PATCH (numeric)
+        run: |
+          set -eux
+          TAG="${{ github.ref_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: $TAG (expected vX.Y.Z with numeric segments only)" >&2
+            exit 1
+          fi
+
+  build-linux:
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-release-go-${{ hashFiles('go.sum', 'go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-release-go-
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web, embed, Linux binary
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eux
+          cd web && npm ci && npm run build
+          cd ..
+          rm -rf internal/web/dist
+          mkdir -p internal/web/dist
+          cp -R web/dist/. internal/web/dist/
+          mkdir -p bin
+          GOOS=linux GOARCH=amd64 go build -o bin/nfc-time-tracker-server-linux ./cmd/server
+          mkdir -p distrel
+          cp bin/nfc-time-tracker-server-linux distrel/
+          cp config.example.yaml distrel/
+          tar -C distrel -czf "distrel/nfc-time-tracker-server_${TAG}_linux_amd64.tar.gz" \
+            nfc-time-tracker-server-linux config.example.yaml
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-linux
+          path: distrel/nfc-time-tracker-server_${{ github.ref_name }}_linux_amd64.tar.gz
+
+  build-macos:
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-release-go-${{ hashFiles('go.sum', 'go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-release-go-
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web, embed, macOS binary
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eux
+          cd web && npm ci && npm run build
+          cd ..
+          rm -rf internal/web/dist
+          mkdir -p internal/web/dist
+          cp -R web/dist/. internal/web/dist/
+          mkdir -p bin
+          GOOS=darwin GOARCH=arm64 go build -o bin/nfc-time-tracker-server-darwin ./cmd/server
+          mkdir -p distrel
+          cp bin/nfc-time-tracker-server-darwin distrel/
+          cp config.example.yaml distrel/
+          tar -C distrel -czf "distrel/nfc-time-tracker-server_${TAG}_darwin_arm64.tar.gz" \
+            nfc-time-tracker-server-darwin config.example.yaml
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-macos
+          path: distrel/nfc-time-tracker-server_${{ github.ref_name }}_darwin_arm64.tar.gz
+
+  build-windows:
+    needs: validate-tag
+    runs-on: windows-latest
+    env:
+      GOMODCACHE: ${{ github.workspace }}/.gomodcache
+      GOCACHE: ${{ github.workspace }}/.gocache
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/cache@v5
+        id: go-mod-build-cache
+        with:
+          path: |
+            ${{ github.workspace }}/.gomodcache
+            ${{ github.workspace }}/.gocache
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum', 'go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "9.0.x"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Patch WiX version from tag
+        shell: bash
+        run: bash scripts/ci/patch-wix-version.sh "${{ github.ref_name }}"
+
+      - name: Build web, embed, Windows binary, MSI
+        shell: bash
+        run: |
+          set -eux
+          cd web && npm ci && npm run build
+          cd ..
+          rm -rf internal/web/dist
+          mkdir -p internal/web/dist
+          cp -R web/dist/. internal/web/dist/
+          mkdir -p bin
+          VER="${TAG#v}"
+          IFS=. read -r MA MI PA <<< "$VER"
+          WIN_FOUR="${MA:-0}.${MI:-0}.${PA:-0}.0"
+          ( cd cmd/server && go run github.com/tc-hib/go-winres@v0.3.3 make --arch amd64 \
+              --file-version "$WIN_FOUR" --product-version "$WIN_FOUR" )
+          GOOS=windows GOARCH=amd64 go build -o bin/nfc-time-tracker-server.exe ./cmd/server
+          bash scripts/ci/fetch-restic-redist.sh
+          dotnet build "${GITHUB_WORKSPACE}/installer/windows/wix/NfcTimeTracking.wixproj" -c Release
+          mkdir -p "${GITHUB_WORKSPACE}/installer/windows/dist"
+          MSI=$(find "${GITHUB_WORKSPACE}/installer/windows/wix" -name "*.msi" -type f | head -1)
+          test -n "$MSI"
+          cp -f "$MSI" "${GITHUB_WORKSPACE}/installer/windows/dist/"
+          mkdir -p distrel
+          cp bin/nfc-time-tracker-server.exe "distrel/nfc-time-tracker-server_${TAG}_windows_amd64.exe"
+          MSI_DIST=$(find "${GITHUB_WORKSPACE}/installer/windows/dist" -name "*.msi" -type f | head -1)
+          test -n "$MSI_DIST"
+          cp -f "$MSI_DIST" "distrel/nfc-time-tracker-server_${TAG}_windows_amd64.msi"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-windows
+          path: distrel/*
+
+  build-docker:
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  release:
+    needs: [build-linux, build-macos, build-windows, build-docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: release-linux
+          path: assets
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: release-macos
+          path: assets
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: release-windows
+          path: assets
+
+      - name: SHA256 checksums
+        run: |
+          set -eux
+          cd assets
+          for f in *; do
+            [ -f "$f" ] || continue
+            case "$f" in *.sha256) continue ;; esac
+            sha256sum "$f" > "$f.sha256"
+          done
+          ls -la
+
+      - name: List assets for release
+        id: filelist
+        run: |
+          {
+            echo 'LIST<<__ASSETS__'
+            find assets -type f | sort
+            echo '__ASSETS__'
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: ${{ steps.filelist.outputs.LIST }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

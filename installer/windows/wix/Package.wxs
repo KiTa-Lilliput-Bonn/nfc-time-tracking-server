@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <!-- Pfade relativ zu dieser Datei: installer/windows/wix/ -> Repo-Root = ../../../ -->
+  <Package Name="NFC Time Tracking Server"
+           Manufacturer="NFC Time Tracking"
+           Version="1.0.0.0"
+           UpgradeCode="{E4B3C2A1-9F8E-7D6C-5B4A-3210FEDCBA98}"
+           Scope="perUser"
+           InstallerVersion="500"
+           Language="1031">
+    <MajorUpgrade DowngradeErrorMessage="Eine neuere Version ist bereits installiert." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <util:CloseApplication Id="CloseNfcExe"
+                         Target="nfc-time-tracker-server.exe"
+                         TerminateProcess="1"
+                         Timeout="5"
+                         RebootPrompt="no" />
+
+    <Feature Id="Main" Title="Hauptprogramm" Level="1" Description="Server, Konfigurationsvorlage und Startmenü-Verknüpfungen.">
+      <ComponentGroupRef Id="MainComponents" />
+      <ComponentGroupRef Id="ResticComponents" />
+      <ComponentGroupRef Id="ProgramMenuCleanupComponents" />
+    </Feature>
+
+    <Feature Id="Autostart" Title="Autostart beim Anmelden" Level="1" Description="Verknüpfung im Benutzer-Startup-Ordner (silent z. B. mit ADDLOCAL=Main ohne Autostart auslassen).">
+      <ComponentGroupRef Id="AutostartComponents" />
+    </Feature>
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="NfcTimeTracking">
+        <Directory Id="TOOLS_FOLDER" Name="tools" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="NFC Time Tracking" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="StartupFolder" />
+  </Package>
+
+  <Fragment>
+    <!-- Explizites Icon: Shortcuts zeigen auf .vbs/.bat — ohne Icon würde Windows das Skript-Symbol nutzen. -->
+    <Icon Id="NfcTray" SourceFile="..\..\..\cmd\server\tray.ico" />
+    <!-- ICE38/ICE43: unter Scope=perUser darf der KeyPath nicht die Datei sein, wenn Shortcuts/Profil betroffen sind. -->
+    <ComponentGroup Id="MainComponents" Directory="INSTALLFOLDER">
+      <!-- Feste GUID: WiX erlaubt Guid="*" nicht bei Registry-KeyPath + Dateien (WIX0230). -->
+      <Component Id="cmpMainApp" Guid="{8F4E1A2C-6B3D-4E91-9F0A-2C4E6D8A0B1C}">
+        <RegistryValue Id="RegMainKeyPath"
+                       Root="HKCU"
+                       Key="Software\NfcTimeTracking\Install"
+                       Name="Main"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+        <File Id="MainExe" Source="..\..\..\bin\nfc-time-tracker-server.exe" />
+        <File Id="FileStartVbs" Source="..\..\..\scripts\windows\start-nfc-time-tracking.vbs" />
+        <File Id="FileConsoleBat" Source="..\..\..\scripts\windows\start-nfc-time-tracking-console.bat" />
+        <File Id="FileInstallPs1" Source="..\..\..\scripts\windows\install-startup-shortcut.ps1" />
+        <File Id="FileConfigExample" Source="..\..\..\config.example.yaml" Name="config.example.yaml" />
+        <Shortcut Id="ScStartMenuMain"
+                  Directory="ApplicationProgramsFolder"
+                  Name="NFC Time Tracking Server"
+                  Target="[#FileStartVbs]"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="NfcTray"
+                  Advertise="no" />
+        <Shortcut Id="ScStartMenuConsole"
+                  Directory="ApplicationProgramsFolder"
+                  Name="NFC Time Tracking Server (Konsole)"
+                  Target="[#FileConsoleBat]"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="NfcTray"
+                  Advertise="no" />
+      </Component>
+
+      <!-- NeverOverwrite: bei erneutem Install KeyPath-Registry existiert — config.yaml wird nicht überschrieben. -->
+      <Component Id="cmpConfigYaml" Guid="{9A5F2B3D-7C4E-4F82-A01B-3D5E7F9A1C2D}" NeverOverwrite="yes">
+        <RegistryValue Id="RegConfigYamlKeyPath"
+                       Root="HKCU"
+                       Key="Software\NfcTimeTracking\Install"
+                       Name="ConfigYaml"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+        <File Id="FileConfigYaml"
+              Source="..\..\..\config.example.yaml"
+              Name="config.yaml" />
+      </Component>
+
+      <!-- ICE64: leeren Installationsordner bei Deinstallation entfernen. -->
+      <Component Id="cmpRemoveInstallFolder" Guid="*">
+        <RegistryValue Id="RegRemoveInstallKeyPath"
+                       Root="HKCU"
+                       Key="Software\NfcTimeTracking\Folders"
+                       Name="InstallMark"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+        <RemoveFolder Id="RemoveINSTALLFOLDER" On="uninstall" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="ResticComponents" Directory="TOOLS_FOLDER">
+      <Component Id="cmpResticRedist" Guid="{B91F62AC-7E04-4F9D-A83C-1D4E8F6B2A09}">
+        <RegistryValue Id="RegResticRedistKeyPath"
+                       Root="HKCU"
+                       Key="Software\NfcTimeTracking\Install"
+                       Name="ResticRedist"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+        <File Id="FileResticExe"
+              Source="..\..\..\installer\windows\redist\restic.exe" />
+        <File Id="FileResticLicense"
+              Source="..\..\..\installer\windows\redist\restic-LICENSE"
+              Name="restic-LICENSE.txt" />
+      </Component>
+      <Component Id="cmpRemoveToolsFolder" Guid="*">
+        <RegistryValue Id="RegRemoveToolsFolderKeyPath"
+                       Root="HKCU"
+                       Key="Software\NfcTimeTracking\Folders"
+                       Name="ToolsMark"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+        <RemoveFolder Id="RemoveTOOLS_FOLDER" On="uninstall" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="ProgramMenuCleanupComponents" Directory="ApplicationProgramsFolder">
+      <Component Id="cmpRemoveProgramMenuGroup" Guid="*">
+        <RegistryValue Id="RegRemoveMenuKeyPath"
+                       Root="HKCU"
+                       Key="Software\NfcTimeTracking\Folders"
+                       Name="MenuMark"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="AutostartComponents" Directory="StartupFolder">
+      <Component Id="cmpStartupShortcut" Guid="*">
+        <RegistryValue Id="RegAutostartKeyPath"
+                       Root="HKCU"
+                       Key="Software\NfcTimeTracking"
+                       Name="AutostartShortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+        <Shortcut Id="ScStartup"
+                  Name="NFC Time Tracking Server"
+                  Target="[#FileStartVbs]"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="NfcTray"
+                  Advertise="no" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

@@ -1,0 +1,26 @@
+# Beispiel-Bootstrap (ins Deployment als config.yaml kopieren oder NFC_CONFIG_PATH setzen).
+
+server:
+  port: 8080
+  host: "0.0.0.0"
+  # Optional: feste LAN-IP/Hostname für QR-Pairing (Feld u), wenn Auto-Erkennung fehlschlägt.
+  # pairing_advertise_host: "192.168.1.10"
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+
+database:
+  path: "./data/timetracking.db"
+
+auth:
+  # jwt_secret weglassen: wird automatisch erzeugt und in ./data/jwt.secret gespeichert (neben der DB).
+  # Optional: Festlegen über diese Datei oder NFC_AUTH_JWT_SECRET (z. B. mehrere Instanzen / Kubernetes).
+  token_expiry_hours: 8
+
+logging:
+  level: "info"               # aktuell reserviert (stdlib log hat keine Levels)
+  file: "./data/server.log"   # Logdatei; Rotation siehe README (Kalendertag)
+  max_age_days: 14            # Aufbewahrung in Tagen, 0 = unbegrenzt
+  max_backups: 0              # Anzahl rotierter Dateien, 0 = unbegrenzt
+  max_size_mb: 20             # Sicherheitsnetz pro Datei (zusaetzliche Rotation bei Ueberschreitung)

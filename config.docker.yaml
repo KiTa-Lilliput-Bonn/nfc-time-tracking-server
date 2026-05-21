@@ -1,0 +1,23 @@
+# Docker-Standardconfig (im Image als /app/config.yaml).
+# Persistenz: Volumes /data (DB, JWT, Logs) und /backup (Backups).
+
+server:
+  port: 8080
+  host: "0.0.0.0"
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+
+database:
+  path: /data/timetracking.db
+
+auth:
+  token_expiry_hours: 8
+
+logging:
+  level: "info"
+  file: /data/server.log
+  max_age_days: 14
+  max_backups: 0
+  max_size_mb: 20

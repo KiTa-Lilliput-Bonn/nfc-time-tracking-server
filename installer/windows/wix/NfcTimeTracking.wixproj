@@ -1,0 +1,11 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <PropertyGroup>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputName>NFC-Time-Tracking-1.0.0</OutputName>
+    <!-- ICE69: Shortcut/Datei über Verzeichnisse; ICE91: Hinweis zu ALLUSERS — Paket ist bewusst nur perUser. -->
+    <SuppressIces>ICE69;ICE91</SuppressIces>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+</Project>

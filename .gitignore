@@ -1,0 +1,33 @@
+bin/
+/server
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+web/blob-report/
+web/.playwright/
+# Vite-Output für Go-Embed: vor Release lokal/CI per make sync-web-dist erzeugen, nicht committen
+internal/web/dist/
+web/.env
+web/.env.*
+!web/.env.example
+data/
+*.db
+config.yaml
+.worktrees/
+*.xlsx
+
+# Go-Modul-/Build-Cache (nur falls GOMODCACHE/GOCACHE wie in windows-installer.yml gesetzt)
+.gomodcache/
+.gocache/
+
+# go-winres: vor jedem Windows-Build neu erzeugt
+cmd/server/rsrc_windows_amd64.syso
+
+# WiX / MSI Build-Artefakte (lokal)
+installer/windows/dist/
+installer/windows/wix/bin/
+installer/windows/wix/obj/
+
+.DS_Store
+Thumbs.db
