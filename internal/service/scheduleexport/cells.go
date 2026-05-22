@@ -96,7 +96,8 @@ func (d *weekCellData) cellValue(u *model.User, dayIdx int, date time.Time) stri
 	if isFixedNonWorkDay(u, date) {
 		return "xxx"
 	}
-	return ""
+	// Weder Schicht noch Abwesenheit — freier Planungstag (Import: CellFreeDay).
+	return "xxx"
 }
 
 func otherAbsenceLabel(_ *model.Absence) string {

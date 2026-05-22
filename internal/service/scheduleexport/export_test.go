@@ -86,6 +86,9 @@ func TestBuildXLSX_roundTrip(t *testing.T) {
 	if row.Cells[0] != "8.30-16.30" {
 		t.Fatalf("Mo: %q", row.Cells[0])
 	}
+	if row.Cells[1] != "xxx" {
+		t.Fatalf("Di ohne Planung: %q", row.Cells[1])
+	}
 	if row.Cells[2] != "U" {
 		t.Fatalf("Mi Urlaub: %q", row.Cells[2])
 	}
