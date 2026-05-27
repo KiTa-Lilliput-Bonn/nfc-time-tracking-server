@@ -244,7 +244,13 @@ export async function fetchSchedulesForWeek(year: number, week: number) {
 
 export async function putTeamMeeting(
   id: number,
-  body: { time_start: string; time_end: string; user_ids: number[] },
+  body: {
+    time_start: string
+    time_end: string
+    user_ids: number[]
+    meeting_date?: string
+    label?: string
+  },
 ) {
   const { data } = await api.put<TeamMeeting>(`/team-meetings/${id}`, body)
   return data
@@ -257,7 +263,9 @@ export async function deleteTeamMeeting(id: number) {
 export async function postTeamMeeting(body: {
   year: number
   week: number
-  kind: 'kt' | 'gt'
+  kind: 'kt' | 'gt' | 'other'
+  meeting_date?: string
+  label?: string
   time_start: string
   time_end: string
   user_ids: number[]

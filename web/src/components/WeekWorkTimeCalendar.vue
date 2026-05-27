@@ -12,6 +12,7 @@ import {
   hasPlannedShift,
   type CalendarSegment,
 } from '@/utils/timeTableModel'
+import { teamMeetingBarTag } from '@/utils/teamMeetingLabel'
 
 const GRID_START_H = 6
 const GRID_END_H = 20
@@ -248,7 +249,7 @@ function meetingRowsForDay(iso: string): { meeting: TeamMeeting; style: Record<s
 }
 
 function meetingBarLabel(m: TeamMeeting): string {
-  const tag = m.kind === 'kt' ? 'KT' : 'GT'
+  const tag = teamMeetingBarTag(m)
   return `${tag} ${normalizeShiftClock(m.time_start)}–${normalizeShiftClock(m.time_end)}`
 }
 

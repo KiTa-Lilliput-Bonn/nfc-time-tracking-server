@@ -352,6 +352,7 @@ func loadWeekData(
 	if err != nil {
 		return nil, nil, "", err
 	}
+	notes = mergeOtherMeetingsIntoNotesHTML(notes, meetings)
 
 	return data, meetings, notes, nil
 }

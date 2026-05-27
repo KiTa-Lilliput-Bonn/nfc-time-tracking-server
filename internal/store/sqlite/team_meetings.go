@@ -46,9 +46,9 @@ func (s *TeamMeetingStore) CreateWithUsers(ctx context.Context, m *model.TeamMee
 	defer func() { _ = tx.Rollback() }()
 
 	res, err := tx.ExecContext(ctx,
-		`INSERT INTO team_meetings (iso_week_year, iso_week, meeting_date, kind, time_start, time_end, source, section_index)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		m.ISOWeekYear, m.ISOWeek, m.MeetingDate, string(m.Kind), m.TimeStart, m.TimeEnd, m.Source, m.SectionIndex)
+		`INSERT INTO team_meetings (iso_week_year, iso_week, meeting_date, kind, label, time_start, time_end, source, section_index)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m.ISOWeekYear, m.ISOWeek, m.MeetingDate, string(m.Kind), m.Label, m.TimeStart, m.TimeEnd, m.Source, m.SectionIndex)
 	if err != nil {
 		return fmt.Errorf("insert team_meeting: %w", err)
 	}
@@ -84,7 +84,7 @@ func insertMeetingUsersTx(ctx context.Context, tx *sql.Tx, meetingID int, userID
 
 func (s *TeamMeetingStore) ListByWeek(ctx context.Context, isoYear, isoWeek int) ([]model.TeamMeeting, error) {
 	rows, err := s.db.DB.QueryContext(ctx,
-		`SELECT id, iso_week_year, iso_week, meeting_date, kind, time_start, time_end, source, section_index
+		`SELECT id, iso_week_year, iso_week, meeting_date, kind, label, time_start, time_end, source, section_index
 		 FROM team_meetings WHERE iso_week_year = ? AND iso_week = ? ORDER BY section_index, kind`,
 		isoYear, isoWeek)
 	if err != nil {
@@ -95,7 +95,7 @@ func (s *TeamMeetingStore) ListByWeek(ctx context.Context, isoYear, isoWeek int)
 	for rows.Next() {
 		var m model.TeamMeeting
 		var kind string
-		if err := rows.Scan(&m.ID, &m.ISOWeekYear, &m.ISOWeek, &m.MeetingDate, &kind, &m.TimeStart, &m.TimeEnd, &m.Source, &m.SectionIndex); err != nil {
+		if err := rows.Scan(&m.ID, &m.ISOWeekYear, &m.ISOWeek, &m.MeetingDate, &kind, &m.Label, &m.TimeStart, &m.TimeEnd, &m.Source, &m.SectionIndex); err != nil {
 			return nil, err
 		}
 		m.Kind = model.TeamMeetingKind(kind)
@@ -142,7 +142,7 @@ func (s *TeamMeetingStore) ListForUserInDateRange(ctx context.Context, userID in
 	from = from[:10]
 	to = to[:10]
 	rows, err := s.db.DB.QueryContext(ctx,
-		`SELECT tm.id, tm.iso_week_year, tm.iso_week, tm.meeting_date, tm.kind, tm.time_start, tm.time_end, tm.source, tm.section_index
+		`SELECT tm.id, tm.iso_week_year, tm.iso_week, tm.meeting_date, tm.kind, tm.label, tm.time_start, tm.time_end, tm.source, tm.section_index
 		 FROM team_meetings tm
 		 INNER JOIN team_meeting_users tmu ON tmu.team_meeting_id = tm.id AND tmu.user_id = ?
 		 WHERE date(tm.meeting_date) >= date(?) AND date(tm.meeting_date) <= date(?)
@@ -156,7 +156,7 @@ func (s *TeamMeetingStore) ListForUserInDateRange(ctx context.Context, userID in
 	for rows.Next() {
 		var m model.TeamMeeting
 		var kind string
-		if err := rows.Scan(&m.ID, &m.ISOWeekYear, &m.ISOWeek, &m.MeetingDate, &kind, &m.TimeStart, &m.TimeEnd, &m.Source, &m.SectionIndex); err != nil {
+		if err := rows.Scan(&m.ID, &m.ISOWeekYear, &m.ISOWeek, &m.MeetingDate, &kind, &m.Label, &m.TimeStart, &m.TimeEnd, &m.Source, &m.SectionIndex); err != nil {
 			return nil, err
 		}
 		m.Kind = model.TeamMeetingKind(kind)
@@ -179,9 +179,9 @@ func (s *TeamMeetingStore) GetByID(ctx context.Context, id int) (*model.TeamMeet
 	var m model.TeamMeeting
 	var kind string
 	err := s.db.DB.QueryRowContext(ctx,
-		`SELECT id, iso_week_year, iso_week, meeting_date, kind, time_start, time_end, source, section_index
+		`SELECT id, iso_week_year, iso_week, meeting_date, kind, label, time_start, time_end, source, section_index
 		 FROM team_meetings WHERE id = ?`, id).
-		Scan(&m.ID, &m.ISOWeekYear, &m.ISOWeek, &m.MeetingDate, &kind, &m.TimeStart, &m.TimeEnd, &m.Source, &m.SectionIndex)
+		Scan(&m.ID, &m.ISOWeekYear, &m.ISOWeek, &m.MeetingDate, &kind, &m.Label, &m.TimeStart, &m.TimeEnd, &m.Source, &m.SectionIndex)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -205,9 +205,9 @@ func (s *TeamMeetingStore) ReplaceMeetingAndUsers(ctx context.Context, m *model.
 	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE team_meetings SET meeting_date = ?, kind = ?, time_start = ?, time_end = ?, source = ?, section_index = ?,
+		`UPDATE team_meetings SET meeting_date = ?, kind = ?, label = ?, time_start = ?, time_end = ?, source = ?, section_index = ?,
 		 iso_week_year = ?, iso_week = ? WHERE id = ?`,
-		m.MeetingDate, string(m.Kind), m.TimeStart, m.TimeEnd, m.Source, m.SectionIndex,
+		m.MeetingDate, string(m.Kind), m.Label, m.TimeStart, m.TimeEnd, m.Source, m.SectionIndex,
 		m.ISOWeekYear, m.ISOWeek, m.ID); err != nil {
 		return fmt.Errorf("update team_meeting: %w", err)
 	}

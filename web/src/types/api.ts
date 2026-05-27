@@ -40,7 +40,7 @@ export interface Schedule {
   shift_end: string
 }
 
-export type TeamMeetingKind = 'kt' | 'gt'
+export type TeamMeetingKind = 'kt' | 'gt' | 'other'
 
 export interface TeamMeeting {
   id: number
@@ -48,6 +48,7 @@ export interface TeamMeeting {
   iso_week: number
   meeting_date: string
   kind: TeamMeetingKind
+  label?: string
   time_start: string
   time_end: string
   source: string

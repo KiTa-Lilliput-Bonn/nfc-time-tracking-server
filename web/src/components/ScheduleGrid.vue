@@ -19,6 +19,7 @@ import {
   shiftTimeRangeLabel,
   timelineHourLabels,
 } from '@/utils/scheduleShiftLayout'
+import { teamMeetingBarLabel } from '@/utils/teamMeetingLabel'
 import {
   clampMoveShift,
   clampResizeEnd,
@@ -246,8 +247,7 @@ function dayMeetingBarStyle(_uid: number, date: string, m: TeamMeeting): Record<
 }
 
 function dayMeetingBarLabel(m: TeamMeeting): string {
-  const tag = m.kind === 'kt' ? 'KT' : 'GT'
-  return `${tag} ${shiftTimeRangeLabel(m.time_start, m.time_end)}`
+  return teamMeetingBarLabel(m)
 }
 
 const weekdays = ['Mo', 'Di', 'Mi', 'Do', 'Fr']
@@ -919,6 +919,8 @@ defineExpose({
   reloadFromServer: () => load({ silent: true }),
   /** Aktuelle Teamsitzungen der geladenen KW (für Editor-Dialog). */
   listTeamMeetings: () => teamMeetings.value.slice(),
+  /** 0–4 = fokussierter Werktag in der Tagesansicht; null = Wochenraster. */
+  expandedDayIndex: () => expandedDayIndex.value,
   loading: scheduleBlocking,
   copyBusy,
 })

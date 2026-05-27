@@ -26,7 +26,9 @@ import { triggerDownload } from '@/api/exportReport'
 import ScheduleGrid from '@/components/ScheduleGrid.vue'
 import type { Employee, ScheduleExcelImportReport, TeamMeeting, UserGroup } from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
-import { formatGermanDate, compareISOWeek, isoWeekAndYear, mondayOfISOWeek, toISODateLocal } from '@/utils/dates'
+import { addDays, formatGermanDate, compareISOWeek, isoWeekAndYear, mondayOfISOWeek, toISODateLocal } from '@/utils/dates'
+import { teamMeetingListLabel } from '@/utils/teamMeetingLabel'
+import type { TeamMeetingKind } from '@/types/api'
 
 const toast = useToast()
 
@@ -207,17 +209,53 @@ const selectedTeamMeetingId = ref<number | null>(null)
 const meetingEditStart = ref('')
 const meetingEditEnd = ref('')
 const meetingParticipantIds = ref<number[]>([])
-const meetingKindForCreate = ref<'kt' | 'gt'>('kt')
+const meetingKindForCreate = ref<TeamMeetingKind>('kt')
+const meetingDateForCreate = ref('')
+const meetingLabelForCreate = ref('')
+const meetingEditLabel = ref('')
+const meetingEditDate = ref('')
 
 const teamKindOptions = [
   { label: 'KT (Gruppenteam)', value: 'kt' as const },
   { label: 'GT (Gesamtteam)', value: 'gt' as const },
+  { label: 'Sonstiges', value: 'other' as const },
 ]
 
-const meetingMondayLabel = computed(() => {
+const scheduleWeekdayShort = ['Mo', 'Di', 'Mi', 'Do', 'Fr'] as const
+
+const meetingWeekdayOptions = computed(() => {
   const mon = mondayOfISOWeek(weekYear.value, week.value)
-  return formatGermanDate(toISODateLocal(mon))
+  return scheduleWeekdayShort.map((short, i) => {
+    const iso = toISODateLocal(addDays(mon, i))
+    return { label: `${short} · ${formatGermanDate(iso)}`, value: iso }
+  })
 })
+
+const meetingMondayISO = computed(() => {
+  const mon = mondayOfISOWeek(weekYear.value, week.value)
+  return toISODateLocal(mon)
+})
+
+const meetingMondayLabel = computed(() => formatGermanDate(meetingMondayISO.value))
+
+const teamMeetingWeekHint = computed(() => {
+  const kw = `Kalenderwoche ${week.value} (${weekYear.value})`
+  if (teamMeetingDialogMode.value === 'create' && meetingKindForCreate.value === 'other') {
+    return `${kw} · Wochentag wählbar`
+  }
+  if (teamMeetingDialogMode.value === 'create') {
+    return `${kw} · Montag ${meetingMondayLabel.value}`
+  }
+  return kw
+})
+
+const selectedTeamMeeting = computed(() =>
+  weekTeamMeetings.value.find((x) => x.id === selectedTeamMeetingId.value),
+)
+
+const editingOtherMeeting = computed(
+  () => selectedTeamMeeting.value?.kind === 'other' && selectedTeamMeeting.value?.source !== 'excel',
+)
 
 const teamMeetingDialogHeader = computed(() =>
   teamMeetingDialogMode.value === 'create' ? 'Teamsitzung hinzufügen' : 'Teamsitzung bearbeiten',
@@ -239,7 +277,7 @@ const weekTeamMeetings = computed((): TeamMeeting[] => {
 
 const teamMeetingSelectOptions = computed(() =>
   weekTeamMeetings.value.map((m) => ({
-    label: `${m.kind === 'kt' ? 'KT' : 'GT'} ${formatGermanDate(m.meeting_date)} ${m.time_start}–${m.time_end} (#${m.id})`,
+    label: `${teamMeetingListLabel(m, formatGermanDate)} (#${m.id})`,
     value: m.id,
   })),
 )
@@ -250,11 +288,15 @@ function syncMeetingFormFromSelection() {
   if (!m) {
     meetingEditStart.value = ''
     meetingEditEnd.value = ''
+    meetingEditLabel.value = ''
+    meetingEditDate.value = ''
     meetingParticipantIds.value = []
     return
   }
   meetingEditStart.value = m.time_start
   meetingEditEnd.value = m.time_end
+  meetingEditLabel.value = m.label ?? ''
+  meetingEditDate.value = m.meeting_date
   meetingParticipantIds.value = [...(m.user_ids ?? [])]
 }
 
@@ -269,6 +311,8 @@ watch(teamMeetingDialogVisible, (v) => {
     meetingEditEnd.value = '10:00'
     meetingParticipantIds.value = []
     meetingKindForCreate.value = 'kt'
+    meetingLabelForCreate.value = ''
+    meetingDateForCreate.value = defaultMeetingDateForCreate()
     return
   }
   if (!weekTeamMeetings.value.length) {
@@ -326,6 +370,15 @@ function timeFieldOk(s: string): boolean {
   return /^\d{1,2}:\d{2}$/.test(s.trim())
 }
 
+function defaultMeetingDateForCreate(): string {
+  const g = scheduleGridRef.value as null | { expandedDayIndex?: () => number | null }
+  const dayIdx = g?.expandedDayIndex?.()
+  if (typeof dayIdx === 'number' && dayIdx >= 0 && dayIdx < meetingWeekdayOptions.value.length) {
+    return meetingWeekdayOptions.value[dayIdx]?.value ?? meetingMondayISO.value
+  }
+  return meetingMondayISO.value
+}
+
 async function saveTeamMeetingEdits() {
   if (!timeFieldOk(meetingEditStart.value) || !timeFieldOk(meetingEditEnd.value)) {
     toast.add({
@@ -345,17 +398,66 @@ async function saveTeamMeetingEdits() {
     })
     return
   }
+  if (teamMeetingDialogMode.value === 'create' && meetingKindForCreate.value === 'other') {
+    if (!meetingLabelForCreate.value.trim()) {
+      toast.add({
+        severity: 'warn',
+        summary: 'Teamsitzung',
+        detail: 'Bezeichnung für Sonstiges angeben.',
+        life: 6000,
+      })
+      return
+    }
+    if (!meetingDateForCreate.value) {
+      toast.add({
+        severity: 'warn',
+        summary: 'Teamsitzung',
+        detail: 'Wochentag auswählen.',
+        life: 6000,
+      })
+      return
+    }
+  }
+  if (teamMeetingDialogMode.value === 'edit' && editingOtherMeeting.value) {
+    if (!meetingEditLabel.value.trim()) {
+      toast.add({
+        severity: 'warn',
+        summary: 'Teamsitzung',
+        detail: 'Bezeichnung für Sonstiges angeben.',
+        life: 6000,
+      })
+      return
+    }
+    if (!meetingEditDate.value) {
+      toast.add({
+        severity: 'warn',
+        summary: 'Teamsitzung',
+        detail: 'Wochentag auswählen.',
+        life: 6000,
+      })
+      return
+    }
+  }
   teamMeetingSaving.value = true
   try {
     if (teamMeetingDialogMode.value === 'create') {
-      await postTeamMeeting({
+      const base = {
         year: weekYear.value,
         week: week.value,
         kind: meetingKindForCreate.value,
         time_start: meetingEditStart.value.trim(),
         time_end: meetingEditEnd.value.trim(),
         user_ids: meetingParticipantIds.value,
-      })
+      }
+      await postTeamMeeting(
+        meetingKindForCreate.value === 'other'
+          ? {
+              ...base,
+              meeting_date: meetingDateForCreate.value,
+              label: meetingLabelForCreate.value.trim(),
+            }
+          : base,
+      )
       await scheduleGridRef.value?.reloadFromServer()
       toast.add({ severity: 'success', summary: 'Teamsitzung', detail: 'Angelegt.', life: 5000 })
       teamMeetingDialogVisible.value = false
@@ -363,11 +465,20 @@ async function saveTeamMeetingEdits() {
     }
     const id = selectedTeamMeetingId.value
     if (id == null) return
-    await putTeamMeeting(id, {
+    const putBody = {
       time_start: meetingEditStart.value.trim(),
       time_end: meetingEditEnd.value.trim(),
       user_ids: meetingParticipantIds.value,
-    })
+    }
+    if (editingOtherMeeting.value) {
+      await putTeamMeeting(id, {
+        ...putBody,
+        meeting_date: meetingEditDate.value,
+        label: meetingEditLabel.value.trim(),
+      })
+    } else {
+      await putTeamMeeting(id, putBody)
+    }
     await scheduleGridRef.value?.reloadFromServer()
     toast.add({ severity: 'success', summary: 'Teamsitzung', detail: 'Gespeichert.', life: 5000 })
     teamMeetingDialogVisible.value = false
@@ -384,7 +495,7 @@ async function saveTeamMeetingEdits() {
 }
 
 function teamMeetingLabel(m: TeamMeeting): string {
-  return `${m.kind === 'kt' ? 'KT' : 'GT'} ${formatGermanDate(m.meeting_date)} ${m.time_start}–${m.time_end}`
+  return teamMeetingListLabel(m, formatGermanDate)
 }
 
 async function deleteSelectedTeamMeeting() {
@@ -1123,7 +1234,7 @@ function thisWeek() {
       :modal="true"
       :style="{ width: 'min(520px, 96vw)' }"
     >
-      <p class="tm-week-hint muted">Kalenderwoche {{ week }} ({{ weekYear }}) · Montag {{ meetingMondayLabel }}</p>
+      <p class="tm-week-hint muted">{{ teamMeetingWeekHint }}</p>
       <template v-if="teamMeetingDialogMode === 'create'">
         <div class="tm-dialog">
           <label class="tm-field">
@@ -1131,6 +1242,20 @@ function thisWeek() {
             <Select
               v-model="meetingKindForCreate"
               :options="teamKindOptions"
+              option-label="label"
+              option-value="value"
+              class="tm-select"
+            />
+          </label>
+          <label v-if="meetingKindForCreate === 'other'" class="tm-field">
+            <span class="tm-lbl">Bezeichnung</span>
+            <InputText v-model="meetingLabelForCreate" placeholder="z. B. Fortbildung" class="tm-input" />
+          </label>
+          <label v-if="meetingKindForCreate === 'other'" class="tm-field">
+            <span class="tm-lbl">Wochentag</span>
+            <Select
+              v-model="meetingDateForCreate"
+              :options="meetingWeekdayOptions"
               option-label="label"
               option-value="value"
               class="tm-select"
@@ -1198,6 +1323,20 @@ function thisWeek() {
               option-label="label"
               option-value="value"
               placeholder="Auswählen"
+              class="tm-select"
+            />
+          </label>
+          <label v-if="editingOtherMeeting" class="tm-field">
+            <span class="tm-lbl">Bezeichnung</span>
+            <InputText v-model="meetingEditLabel" placeholder="z. B. Fortbildung" class="tm-input" />
+          </label>
+          <label v-if="editingOtherMeeting" class="tm-field">
+            <span class="tm-lbl">Wochentag</span>
+            <Select
+              v-model="meetingEditDate"
+              :options="meetingWeekdayOptions"
+              option-label="label"
+              option-value="value"
               class="tm-select"
             />
           </label>

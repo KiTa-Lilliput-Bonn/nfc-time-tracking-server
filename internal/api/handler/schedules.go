@@ -247,19 +247,54 @@ func (h *ScheduleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+const maxTeamMeetingLabelRunes = 80
+
 type putTeamMeetingBody struct {
-	TimeStart string `json:"time_start"`
-	TimeEnd   string `json:"time_end"`
-	UserIDs   []int  `json:"user_ids"`
+	TimeStart   string `json:"time_start"`
+	TimeEnd     string `json:"time_end"`
+	UserIDs     []int  `json:"user_ids"`
+	MeetingDate string `json:"meeting_date,omitempty"`
+	Label       string `json:"label,omitempty"`
 }
 
 type postTeamMeetingBody struct {
-	Year      int    `json:"year"`
-	Week      int    `json:"week"`
-	Kind      string `json:"kind"`
-	TimeStart string `json:"time_start"`
-	TimeEnd   string `json:"time_end"`
-	UserIDs   []int  `json:"user_ids"`
+	Year        int    `json:"year"`
+	Week        int    `json:"week"`
+	Kind        string `json:"kind"`
+	MeetingDate string `json:"meeting_date,omitempty"`
+	Label       string `json:"label,omitempty"`
+	TimeStart   string `json:"time_start"`
+	TimeEnd     string `json:"time_end"`
+	UserIDs     []int  `json:"user_ids"`
+}
+
+func parseTeamMeetingKind(s string) (model.TeamMeetingKind, bool) {
+	k := model.TeamMeetingKind(strings.ToLower(strings.TrimSpace(s)))
+	switch k {
+	case model.TeamMeetingKindKT, model.TeamMeetingKindGT, model.TeamMeetingKindOther:
+		return k, true
+	default:
+		return "", false
+	}
+}
+
+func normalizeTeamMeetingLabel(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", fmt.Errorf("label required")
+	}
+	if len([]rune(s)) > maxTeamMeetingLabelRunes {
+		return "", fmt.Errorf("label too long (max %d characters)", maxTeamMeetingLabelRunes)
+	}
+	return s, nil
+}
+
+func normalizeMeetingDateYMD(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) >= 10 {
+		return s[:10]
+	}
+	return s
 }
 
 // PostTeamMeeting legt eine manuelle Teamsitzung für die angegebene ISO-Kalenderwoche an (Montag laut KW).
@@ -281,9 +316,9 @@ func (h *ScheduleHandler) PostTeamMeeting(w http.ResponseWriter, r *http.Request
 		response.Error(w, http.StatusBadRequest, "time_start and time_end required")
 		return
 	}
-	kind := model.TeamMeetingKind(strings.ToLower(strings.TrimSpace(body.Kind)))
-	if kind != model.TeamMeetingKindKT && kind != model.TeamMeetingKindGT {
-		response.Error(w, http.StatusBadRequest, "kind must be kt or gt")
+	kind, ok := parseTeamMeetingKind(body.Kind)
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "kind must be kt, gt, or other")
 		return
 	}
 	if len(body.UserIDs) == 0 {
@@ -295,6 +330,25 @@ func (h *ScheduleHandler) PostTeamMeeting(w http.ResponseWriter, r *http.Request
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	meetingDate := monday
+	label := ""
+	if kind == model.TeamMeetingKindOther {
+		meetingDate = normalizeMeetingDateYMD(body.MeetingDate)
+		if meetingDate == "" {
+			response.Error(w, http.StatusBadRequest, "meeting_date required for other")
+			return
+		}
+		if err := sqlitesched.ValidateScheduleWeekday(body.Year, body.Week, meetingDate); err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		var labelErr error
+		label, labelErr = normalizeTeamMeetingLabel(body.Label)
+		if labelErr != nil {
+			response.Error(w, http.StatusBadRequest, labelErr.Error())
+			return
+		}
+	}
 	secIdx, err := h.TeamMeetings.NextManualSectionIndex(r.Context(), body.Year, body.Week, kind)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, err.Error())
@@ -303,8 +357,9 @@ func (h *ScheduleHandler) PostTeamMeeting(w http.ResponseWriter, r *http.Request
 	m := &model.TeamMeeting{
 		ISOWeekYear:  body.Year,
 		ISOWeek:      body.Week,
-		MeetingDate:  monday,
+		MeetingDate:  meetingDate,
 		Kind:         kind,
+		Label:        label,
 		TimeStart:    body.TimeStart,
 		TimeEnd:      body.TimeEnd,
 		Source:       "manual",
@@ -361,6 +416,26 @@ func (h *ScheduleHandler) PutTeamMeeting(w http.ResponseWriter, r *http.Request)
 	m.UserIDs = body.UserIDs
 	if m.Source == "" {
 		m.Source = "manual"
+	}
+	if m.Kind == model.TeamMeetingKindOther && m.Source != "excel" {
+		labelInput := body.Label
+		if strings.TrimSpace(labelInput) == "" {
+			labelInput = m.Label
+		}
+		label, err := normalizeTeamMeetingLabel(labelInput)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		m.Label = label
+		if body.MeetingDate != "" {
+			meetingDate := normalizeMeetingDateYMD(body.MeetingDate)
+			if err := sqlitesched.ValidateScheduleWeekday(m.ISOWeekYear, m.ISOWeek, meetingDate); err != nil {
+				response.Error(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			m.MeetingDate = meetingDate
+		}
 	}
 	if err := h.TeamMeetings.ReplaceMeetingAndUsers(r.Context(), m); err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())

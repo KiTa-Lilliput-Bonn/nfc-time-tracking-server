@@ -103,6 +103,63 @@ func TestBuildXLSX_roundTrip(t *testing.T) {
 	}
 }
 
+func TestBuildXLSX_otherMeetingInNotes(t *testing.T) {
+	db, err := sqlite.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+
+	us := sqlite.NewUserStore(db)
+	u := &model.User{
+		Username: "exp2", PasswordHash: "x", DisplayName: "Bob",
+		Role: model.RoleUser, Active: true,
+	}
+	if err := us.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+
+	mon := time.Date(2026, 3, 16, 12, 0, 0, 0, time.Local)
+	isoY, isoW := mon.ISOWeek()
+	wed := mon.AddDate(0, 0, 2).Format("2006-01-02")
+
+	ss := sqlite.NewScheduleStore(db)
+	tms := sqlite.NewTeamMeetingStore(db)
+	if err := tms.CreateWithUsers(ctx, &model.TeamMeeting{
+		ISOWeekYear: isoY, ISOWeek: isoW, MeetingDate: wed,
+		Kind: model.TeamMeetingKindOther, Label: "Fortbildung",
+		TimeStart: "09:00", TimeEnd: "10:00", Source: "manual", SectionIndex: 0,
+		UserIDs: []int{u.ID},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	buf, err := scheduleexport.BuildXLSX(ctx, scheduleexport.Deps{
+		Users: us, Groups: sqlite.NewGroupStore(db),
+		Schedules: ss, Absences: sqlite.NewAbsenceStore(db),
+		Holidays: sqlite.NewHolidayStore(db), TeamMeetings: tms,
+	}, isoY, isoW, isoY, isoW)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parsed, err := scheduleimport.ParseXLSX(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Weeks) != 1 {
+		t.Fatalf("weeks: %d", len(parsed.Weeks))
+	}
+	notes := parsed.Weeks[0].Notes
+	if !strings.Contains(notes, "Fortbildung") {
+		t.Fatalf("notes missing label: %q", notes)
+	}
+	if !strings.Contains(notes, "Mi:") {
+		t.Fatalf("notes missing weekday: %q", notes)
+	}
+}
+
 func TestExportDefaults(t *testing.T) {
 	db, err := sqlite.Open(":memory:")
 	if err != nil {

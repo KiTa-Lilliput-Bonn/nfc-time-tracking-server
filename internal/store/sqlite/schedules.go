@@ -211,6 +211,23 @@ func isoWeekRange(year, week int) (from, to string, err error) {
 	return targetMon.Format("2006-01-02"), targetMon.AddDate(0, 0, 6).Format("2006-01-02"), nil
 }
 
+// ValidateScheduleWeekday validates meetingDate (YYYY-MM-DD) is Mo–Fr within the ISO schedule week.
+func ValidateScheduleWeekday(year, week int, meetingDate string) error {
+	meetingDate = strings.TrimSpace(meetingDate)
+	if len(meetingDate) < 10 {
+		return fmt.Errorf("meeting_date required")
+	}
+	meetingDate = meetingDate[:10]
+	mon, fri, err := ISOWeekMondayFriday(year, week)
+	if err != nil {
+		return err
+	}
+	if meetingDate < mon || meetingDate > fri {
+		return fmt.Errorf("meeting_date must be a weekday (Mon–Fri) in ISO week %d/%d", week, year)
+	}
+	return nil
+}
+
 // ISOWeekMondayFriday returns Monday and Friday (YYYY-MM-DD, local) for the ISO week shown in the
 // schedule grid (Mo–Fr columns). Uses the same rules as isoWeekRange.
 func ISOWeekMondayFriday(year, week int) (monday, friday string, err error) {
