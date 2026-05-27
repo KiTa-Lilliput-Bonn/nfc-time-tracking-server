@@ -23,6 +23,20 @@ func allUserIDsFromIndex(index map[string]int) []int {
 	return out
 }
 
+func filterDefaultTeamMeetingParticipants(uids []int, optOut map[int]struct{}) []int {
+	if len(optOut) == 0 || len(uids) == 0 {
+		return uids
+	}
+	out := make([]int, 0, len(uids))
+	for _, id := range uids {
+		if _, skip := optOut[id]; skip {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
 func resolveSectionUserIDs(rawNames []string, index map[string]int) []int {
 	seen := map[int]struct{}{}
 	var out []int
@@ -71,6 +85,7 @@ func applyTeamMeetingsForWeek(
 	deps Deps,
 	w ParsedWeek,
 	index map[string]int,
+	teamMeetingOptOut map[int]struct{},
 	skip [5]bool,
 	todayLocal string,
 	rep *Report,
@@ -110,7 +125,8 @@ func applyTeamMeetingsForWeek(
 			continue
 		}
 		if line.KTStart != "" && line.KTEnd != "" {
-			uids := resolveSectionUserIDs(sec.EmployeeRawNames, index)
+			uids := filterDefaultTeamMeetingParticipants(
+				resolveSectionUserIDs(sec.EmployeeRawNames, index), teamMeetingOptOut)
 			if len(uids) == 0 {
 				rep.Warnings = append(rep.Warnings, fmt.Sprintf(
 					"KW %d/%d: KT %s–%s ohne zuordenbare Mitarbeiter (Sektion %d).",
@@ -129,7 +145,7 @@ func applyTeamMeetingsForWeek(
 			rep.TeamMeetingsCreated++
 		}
 		if line.GTStart != "" && line.GTEnd != "" {
-			uids := allUserIDsFromIndex(index)
+			uids := filterDefaultTeamMeetingParticipants(allUserIDsFromIndex(index), teamMeetingOptOut)
 			if len(uids) == 0 {
 				rep.Warnings = append(rep.Warnings, fmt.Sprintf(
 					"KW %d/%d: GT %s–%s ohne Mitarbeiter-Index.", w.ISOWk, w.ISOYear, line.GTStart, line.GTEnd))

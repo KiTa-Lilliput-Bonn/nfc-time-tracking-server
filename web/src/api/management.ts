@@ -44,6 +44,7 @@ export async function patchEmployee(
   body: {
     display_name?: string
     active?: boolean
+    default_team_meeting_participant?: boolean
     role?: string
     opening_hours_balance?: number
     opening_vacation_days?: number

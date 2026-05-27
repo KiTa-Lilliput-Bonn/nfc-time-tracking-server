@@ -87,6 +87,7 @@ func (h *EmployeeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	u := &model.User{
 		Username: body.Username, DisplayName: body.DisplayName, Role: role,
 		PasswordHash: hash, Active: true, MustChangePassword: true,
+		DefaultTeamMeetingParticipant: true,
 	}
 	if err := h.Users.Create(r.Context(), u); err != nil {
 		response.Error(w, http.StatusBadRequest, "create failed (duplicate username?)")
@@ -106,6 +107,7 @@ type patchEmployeeBody struct {
 	DisplayName *string     `json:"display_name"`
 	Role        *model.Role `json:"role"`
 	Active      *bool       `json:"active"`
+	DefaultTeamMeetingParticipant *bool `json:"default_team_meeting_participant"`
 	// Start-Salden (Import), optional
 	OpeningHoursBalance *float64 `json:"opening_hours_balance"`
 	OpeningVacationDays *float64 `json:"opening_vacation_days"`
@@ -138,6 +140,9 @@ func (h *EmployeeHandler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Active != nil {
 		u.Active = *body.Active
+	}
+	if body.DefaultTeamMeetingParticipant != nil {
+		u.DefaultTeamMeetingParticipant = *body.DefaultTeamMeetingParticipant
 	}
 	if body.Role != nil {
 		if middleware.Role(r) != string(model.RoleSuperadmin) {

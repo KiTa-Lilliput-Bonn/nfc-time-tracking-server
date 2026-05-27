@@ -296,8 +296,14 @@ function toggleMeetingParticipant(uid: number, on: boolean) {
 }
 
 /** Alle Mitarbeiter aus der Dienstplan-Liste (aktiv, ohne Superadmin) als Teilnehmer setzen. */
+function isDefaultTeamMeetingParticipant(e: Employee): boolean {
+  return e.default_team_meeting_participant !== false
+}
+
 function addAllMeetingParticipants() {
-  mergeMeetingParticipantIds(scheduleEmployees.value.map((e) => e.id))
+  mergeMeetingParticipantIds(
+    scheduleEmployees.value.filter(isDefaultTeamMeetingParticipant).map((e) => e.id),
+  )
 }
 
 /** Teilnehmerliste mit weiteren IDs vereinigen (ohne Duplikate). */
@@ -311,7 +317,9 @@ function mergeMeetingParticipantIds(ids: number[]) {
 
 /** Alle Mitarbeiter einer Dienstplan-Sektion (Gruppe / „Ohne Gruppe“) zur Teilnehmerliste hinzufügen. */
 function addMeetingParticipantsFromSection(employees: Employee[]) {
-  mergeMeetingParticipantIds(employees.map((e) => e.id))
+  mergeMeetingParticipantIds(
+    employees.filter(isDefaultTeamMeetingParticipant).map((e) => e.id),
+  )
 }
 
 function timeFieldOk(s: string): boolean {

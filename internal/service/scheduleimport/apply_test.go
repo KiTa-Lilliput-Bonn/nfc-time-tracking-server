@@ -327,6 +327,10 @@ func TestApply_TeamMeetingsKTFromParsedWeek(t *testing.T) {
 	if err := us.Create(ctx, u2); err != nil {
 		t.Fatal(err)
 	}
+	u2.DefaultTeamMeetingParticipant = false
+	if err := us.Update(ctx, u2); err != nil {
+		t.Fatal(err)
+	}
 
 	mon := time.Date(2026, 3, 16, 12, 0, 0, 0, time.Local)
 	isoY, isoW := mon.ISOWeek()
@@ -385,7 +389,10 @@ func TestApply_TeamMeetingsKTFromParsedWeek(t *testing.T) {
 	if list[0].Kind != model.TeamMeetingKindKT {
 		t.Fatalf("kind: %s", list[0].Kind)
 	}
-	if len(list[0].UserIDs) != 2 {
+	if len(list[0].UserIDs) != 1 {
 		t.Fatalf("user ids: %v", list[0].UserIDs)
+	}
+	if list[0].UserIDs[0] != u1.ID {
+		t.Fatalf("expected only Anna (id %d), got %v", u1.ID, list[0].UserIDs)
 	}
 }

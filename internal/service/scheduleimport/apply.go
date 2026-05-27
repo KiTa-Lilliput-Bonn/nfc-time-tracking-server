@@ -16,7 +16,7 @@ func Apply(ctx context.Context, deps Deps, parsed *ParsedSheet, createdBy int, t
 		return &Report{}, nil
 	}
 
-	index, ambWarnings, err := buildEmployeeNameIndex(ctx, deps.Users)
+	index, teamMeetingOptOut, ambWarnings, err := buildEmployeeNameIndex(ctx, deps.Users)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func Apply(ctx context.Context, deps Deps, parsed *ParsedSheet, createdBy int, t
 		}
 		skippedCellsByWeek[wkKey] += skippedThisBlock
 
-		applyTeamMeetingsForWeek(ctx, deps, w, index, skip, todayLocal, rep, &wr)
+		applyTeamMeetingsForWeek(ctx, deps, w, index, teamMeetingOptOut, skip, todayLocal, rep, &wr)
 
 		rep.Weeks = append(rep.Weeks, wr)
 	}
@@ -264,16 +264,20 @@ func normalizeName(s string) string {
 	return strings.ToLower(s)
 }
 
-func buildEmployeeNameIndex(ctx context.Context, users store.UserStore) (map[string]int, []string, error) {
+func buildEmployeeNameIndex(ctx context.Context, users store.UserStore) (map[string]int, map[int]struct{}, []string, error) {
 	list, err := users.List(ctx, true)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	buckets := map[string][]int{}
+	teamMeetingOptOut := map[int]struct{}{}
 	for _, u := range list {
 		if !u.Active || u.Role == model.RoleSuperadmin {
 			continue
+		}
+		if !u.DefaultTeamMeetingParticipant {
+			teamMeetingOptOut[u.ID] = struct{}{}
 		}
 		n := normalizeName(u.DisplayName)
 		if n == "" {
@@ -291,7 +295,7 @@ func buildEmployeeNameIndex(ctx context.Context, users store.UserStore) (map[str
 		}
 		index[n] = ids[0]
 	}
-	return index, warns, nil
+	return index, teamMeetingOptOut, warns, nil
 }
 
 func deleteSchedule(ctx context.Context, schStore store.ScheduleStore, ref cellRef, rep *Report, wr *WeekReport) error {

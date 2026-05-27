@@ -72,8 +72,8 @@ func (s *UserStore) GetByID(ctx context.Context, id int) (*model.User, error) {
 	var gid sql.NullInt64
 	var fnw string
 	err := s.db.DB.QueryRowContext(ctx,
-		`SELECT id, username, password_hash, display_name, group_id, role, active, must_change_password, opening_hours_balance, opening_vacation_days, fixed_non_work_weekdays, created_at, updated_at FROM users WHERE id = ?`, id).
-		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &gid, &u.Role, &u.Active, &u.MustChangePassword, &u.OpeningHoursBalance, &u.OpeningVacationDays, &fnw, &u.CreatedAt, &u.UpdatedAt)
+		`SELECT id, username, password_hash, display_name, group_id, role, active, must_change_password, default_team_meeting_participant, opening_hours_balance, opening_vacation_days, fixed_non_work_weekdays, created_at, updated_at FROM users WHERE id = ?`, id).
+		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &gid, &u.Role, &u.Active, &u.MustChangePassword, &u.DefaultTeamMeetingParticipant, &u.OpeningHoursBalance, &u.OpeningVacationDays, &fnw, &u.CreatedAt, &u.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found: %d", id)
 	}
@@ -92,8 +92,8 @@ func (s *UserStore) GetByUsername(ctx context.Context, username string) (*model.
 	var gid sql.NullInt64
 	var fnw string
 	err := s.db.DB.QueryRowContext(ctx,
-		`SELECT id, username, password_hash, display_name, group_id, role, active, must_change_password, opening_hours_balance, opening_vacation_days, fixed_non_work_weekdays, created_at, updated_at FROM users WHERE username = ?`, username).
-		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &gid, &u.Role, &u.Active, &u.MustChangePassword, &u.OpeningHoursBalance, &u.OpeningVacationDays, &fnw, &u.CreatedAt, &u.UpdatedAt)
+		`SELECT id, username, password_hash, display_name, group_id, role, active, must_change_password, default_team_meeting_participant, opening_hours_balance, opening_vacation_days, fixed_non_work_weekdays, created_at, updated_at FROM users WHERE username = ?`, username).
+		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &gid, &u.Role, &u.Active, &u.MustChangePassword, &u.DefaultTeamMeetingParticipant, &u.OpeningHoursBalance, &u.OpeningVacationDays, &fnw, &u.CreatedAt, &u.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found: %s", username)
 	}
@@ -108,7 +108,7 @@ func (s *UserStore) GetByUsername(ctx context.Context, username string) (*model.
 }
 
 func (s *UserStore) List(ctx context.Context, activeOnly bool) ([]model.User, error) {
-	query := `SELECT id, username, password_hash, display_name, group_id, role, active, must_change_password, opening_hours_balance, opening_vacation_days, fixed_non_work_weekdays, created_at, updated_at FROM users`
+	query := `SELECT id, username, password_hash, display_name, group_id, role, active, must_change_password, default_team_meeting_participant, opening_hours_balance, opening_vacation_days, fixed_non_work_weekdays, created_at, updated_at FROM users`
 	if activeOnly {
 		query += ` WHERE active = 1`
 	}
@@ -125,7 +125,7 @@ func (s *UserStore) List(ctx context.Context, activeOnly bool) ([]model.User, er
 		var u model.User
 		var gid sql.NullInt64
 		var fnw string
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &gid, &u.Role, &u.Active, &u.MustChangePassword, &u.OpeningHoursBalance, &u.OpeningVacationDays, &fnw, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &gid, &u.Role, &u.Active, &u.MustChangePassword, &u.DefaultTeamMeetingParticipant, &u.OpeningHoursBalance, &u.OpeningVacationDays, &fnw, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, err
 		}
 		scanGroupID(&u.GroupID, gid)
@@ -146,8 +146,8 @@ func (s *UserStore) Update(ctx context.Context, u *model.User) error {
 		gid = *u.GroupID
 	}
 	_, err := s.db.DB.ExecContext(ctx,
-		`UPDATE users SET display_name = ?, group_id = ?, role = ?, active = ?, opening_hours_balance = ?, opening_vacation_days = ?, fixed_non_work_weekdays = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		u.DisplayName, gid, u.Role, u.Active, u.OpeningHoursBalance, u.OpeningVacationDays, marshalFixedNonWorkWeekdays(u.FixedNonWorkWeekdays), u.ID)
+		`UPDATE users SET display_name = ?, group_id = ?, role = ?, active = ?, default_team_meeting_participant = ?, opening_hours_balance = ?, opening_vacation_days = ?, fixed_non_work_weekdays = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		u.DisplayName, gid, u.Role, u.Active, u.DefaultTeamMeetingParticipant, u.OpeningHoursBalance, u.OpeningVacationDays, marshalFixedNonWorkWeekdays(u.FixedNonWorkWeekdays), u.ID)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}

@@ -47,6 +47,7 @@ const groups = ref<UserGroup[]>([])
 const groupDraft = ref<number | null>(null)
 const displayName = ref('')
 const active = ref(true)
+const defaultTeamMeetingParticipant = ref(true)
 
 const groupOptions = computed(() => [
   { label: 'Keine Gruppe', value: null as number | null },
@@ -170,6 +171,7 @@ async function load() {
   }
   displayName.value = employee.value.display_name
   active.value = employee.value.active
+  defaultTeamMeetingParticipant.value = employee.value.default_team_meeting_participant !== false
   groupDraft.value = employee.value.group_id ?? null
   openHours.value = employee.value.opening_hours_balance ?? 0
   openVac.value = employee.value.opening_vacation_days ?? 0
@@ -220,11 +222,13 @@ async function saveProfile() {
     const body: {
       display_name: string
       active: boolean
+      default_team_meeting_participant: boolean
       role?: string
       group_id?: number | null
     } = {
       display_name: displayName.value.trim(),
       active: active.value,
+      default_team_meeting_participant: defaultTeamMeetingParticipant.value,
     }
     if (auth.role === 'superadmin' && roleDraft.value !== employee.value.role) {
       body.role = roleDraft.value
@@ -383,6 +387,10 @@ function onTagUidEnter() {
           <label class="row">
             <span>Aktiv</span>
             <InputSwitch v-model="active" />
+          </label>
+          <label class="row">
+            <span>Nimmt standardmäßig an Teamsitzungen teil</span>
+            <InputSwitch v-model="defaultTeamMeetingParticipant" />
           </label>
           <template v-if="auth.role === 'superadmin'">
             <label>Rolle (nur Superadmin)</label>

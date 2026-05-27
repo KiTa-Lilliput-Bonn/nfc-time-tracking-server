@@ -20,6 +20,8 @@ type User struct {
 	Role               Role      `json:"role"`
 	Active             bool      `json:"active"`
 	MustChangePassword bool      `json:"must_change_password"`
+	// DefaultTeamMeetingParticipant: bei false nicht per „Alle“/Gruppe/Excel-Import vorausgewählt.
+	DefaultTeamMeetingParticipant bool `json:"default_team_meeting_participant"`
 	// OpeningHoursBalance: Stundensaldo aus Alt-/Fremdsystem, wird fürs Jahr mit Ist−Soll addiert.
 	OpeningHoursBalance float64 `json:"opening_hours_balance"`
 	// OpeningVacationDays: Urlaub-Startwert (Tage), addiert zu Anspruch − genommen.
