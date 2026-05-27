@@ -3,8 +3,7 @@ import Toast from 'primevue/toast'
 </script>
 
 <template>
-  <Toast position="top-right" />
-  <Toast group="dashboard-center" position="top-center" />
+  <Toast position="top-center" />
   <router-view />
 </template>
 

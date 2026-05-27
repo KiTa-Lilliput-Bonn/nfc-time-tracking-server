@@ -233,7 +233,7 @@ Dann:
 
 ## Hinweise zum ersten Setup
 
-- Falls noch keine Feiertage fuer das aktuelle und naechste Jahr vorhanden sind, werden diese beim Start automatisch erzeugt.
+- Falls noch keine Feiertage fuer das aktuelle und naechste Jahr vorhanden sind, werden beim Start automatisch 14 Kalendertage erzeugt: 11 gesetzliche NRW-Feiertage sowie die Brauchtumstage Heiligabend (24.12.), Silvester (31.12.) und Rosenmontag (48 Tage vor Ostersonntag). In der Admin- und Schließtage-Uebersicht sind Feiertage und Brauchtumstage optisch getrennt (`kind`: `feiertag` / `brauchtum`); die Stundengutschrift ist fuer beide gleich.
 - Wenn `auth.jwt_secret` leer ist, erzeugt der Server ein temporaeres Secret. Fuer produktive Nutzung sollte ein festes Secret gesetzt werden.
 ## Nuetzliche Make-Ziele
 

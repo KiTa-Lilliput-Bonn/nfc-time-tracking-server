@@ -348,7 +348,6 @@ async function submitQuickSick() {
       holidaySet = await holidayDateSetForRange(df, dt, fetchHolidays)
     } catch {
       toast.add({
-        group: 'dashboard-center',
         severity: 'error',
         summary: 'Feiertage',
         detail: 'Die Feiertagsliste konnte nicht geladen werden. Bitte erneut versuchen.',
@@ -367,7 +366,6 @@ async function submitQuickSick() {
 
     if (datesToBook.length === 0) {
       toast.add({
-        group: 'dashboard-center',
         severity: 'info',
         summary: 'Keine Arbeitstage',
         detail: 'Im gewählten Zeitraum gibt es keinen Arbeitstag (nur Wochenende/Feiertag/Schließtag/fix frei).',
@@ -378,7 +376,6 @@ async function submitQuickSick() {
 
     if (quickSickHalfDay.value && datesToBook.length !== 1) {
       toast.add({
-        group: 'dashboard-center',
         severity: 'error',
         summary: 'Halbtag nicht möglich',
         detail: 'Halbtags-Krankmeldung ist nur an einem einzelnen Arbeitstag möglich.',
@@ -410,11 +407,10 @@ async function submitQuickSick() {
 
     if (ok > 0) {
       const summary = ok === 1 ? 'Krankmeldung eingetragen' : `${ok} Kranktage eingetragen`
-      toast.add({ group: 'dashboard-center', severity: 'success', summary, life: 10000 })
+      toast.add({ severity: 'success', summary, life: 10000 })
     }
     if (skipped > 0) {
       toast.add({
-        group: 'dashboard-center',
         severity: 'info',
         summary: 'Übersprungen',
         detail: `${skipped} Kalendertag(e) waren Wochenende, Feiertag, Schließtag oder fix frei und wurden nicht eingetragen.`,
@@ -427,7 +423,6 @@ async function submitQuickSick() {
           ? `${formatGermanDate(failed[0].iso)}: ${failed[0].msg}`
           : `${failed.length} Tag(e) konnten nicht eingetragen werden (z. B. bereits vorhanden).`
       toast.add({
-        group: 'dashboard-center',
         severity: ok > 0 ? 'warn' : 'error',
         summary: 'Teilweise fehlgeschlagen',
         detail,

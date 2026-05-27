@@ -192,6 +192,7 @@ export interface Holiday {
   id: number
   holiday_date: string
   name: string
+  kind: 'feiertag' | 'brauchtum'
   auto_generated: boolean
 }
 

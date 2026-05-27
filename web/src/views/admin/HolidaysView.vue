@@ -8,6 +8,7 @@ import DatePicker from 'primevue/datepicker'
 import Dialog from 'primevue/dialog'
 import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
+import Select from 'primevue/select'
 import Tag from 'primevue/tag'
 import { useToast } from 'primevue/usetoast'
 
@@ -25,6 +26,11 @@ const toast = useToast()
 const year = ref(new Date().getFullYear())
 const rows = ref<Holiday[]>([])
 const loading = ref(false)
+
+const kindOptions = [
+  { label: 'Feiertag', value: 'feiertag' as const },
+  { label: 'Brauchtumstag', value: 'brauchtum' as const },
+]
 
 const sorted = computed(() =>
   [...rows.value].sort((a, b) => a.holiday_date.localeCompare(b.holiday_date)),
@@ -47,13 +53,17 @@ watch(year, load)
 const generating = ref(false)
 
 async function generate() {
-  if (!confirm(`NRW-Feiertage für ${year.value} generieren? Bestehende automatische Einträge des Jahres werden ersetzt.`)) {
+  if (
+    !confirm(
+      `Feiertage und Brauchtumstage für ${year.value} generieren? Bestehende automatische Einträge des Jahres werden ersetzt.`,
+    )
+  ) {
     return
   }
   generating.value = true
   try {
     await generateHolidaysForYear(year.value)
-    toast.add({ severity: 'success', summary: 'Feiertage generiert', life: 10000 })
+    toast.add({ severity: 'success', summary: 'Kalendertage generiert', life: 10000 })
     await load()
   } catch {
     toast.add({ severity: 'error', summary: 'Generieren fehlgeschlagen', life: 10000 })
@@ -65,11 +75,13 @@ async function generate() {
 const showAdd = ref(false)
 const addDate = ref<Date>(new Date())
 const addName = ref('')
+const addKind = ref<'feiertag' | 'brauchtum'>('feiertag')
 const saving = ref(false)
 
 function openAdd() {
   addDate.value = new Date(year.value, 0, 1)
   addName.value = ''
+  addKind.value = 'feiertag'
   showAdd.value = true
 }
 
@@ -80,7 +92,11 @@ async function submitAdd() {
     const y = addDate.value.getFullYear()
     const m = String(addDate.value.getMonth() + 1).padStart(2, '0')
     const d = String(addDate.value.getDate()).padStart(2, '0')
-    await createHoliday({ holiday_date: `${y}-${m}-${d}`, name: addName.value.trim() })
+    await createHoliday({
+      holiday_date: `${y}-${m}-${d}`,
+      name: addName.value.trim(),
+      kind: addKind.value,
+    })
     toast.add({ severity: 'success', summary: 'Gespeichert', life: 10000 })
     showAdd.value = false
     const prevY = year.value
@@ -94,7 +110,7 @@ async function submitAdd() {
 }
 
 async function remove(h: Holiday) {
-  if (!confirm(`Feiertag „${h.name}“ am ${formatGermanDate(h.holiday_date)} löschen?`)) return
+  if (!confirm(`Eintrag „${h.name}“ am ${formatGermanDate(h.holiday_date)} löschen?`)) return
   try {
     await deleteHoliday(h.id)
     toast.add({ severity: 'success', summary: 'Gelöscht', life: 10000 })
@@ -114,20 +130,30 @@ async function remove(h: Holiday) {
           <label class="lbl">Jahr</label>
           <InputNumber v-model="year" :min="2000" :max="2100" :use-grouping="false" show-buttons />
           <Button
-            label="NRW generieren"
+            label="Kalender generieren"
             icon="pi pi-refresh"
             severity="secondary"
             outlined
             :loading="generating"
             @click="generate"
           />
-          <Button label="Feiertag hinzufügen" icon="pi pi-plus" @click="openAdd" />
+          <Button label="Tag hinzufügen" icon="pi pi-plus" @click="openAdd" />
         </div>
         <DataTable :value="sorted" :loading="loading" data-key="id" striped-rows>
           <Column field="holiday_date" header="Datum" sortable>
             <template #body="{ data }">{{ formatGermanDate(data.holiday_date) }}</template>
           </Column>
           <Column field="name" header="Name" sortable />
+          <Column header="Art" sortable sort-field="kind">
+            <template #body="{ data }">
+              <Tag
+                v-if="data.kind === 'brauchtum'"
+                severity="warn"
+                value="Brauchtumstag"
+              />
+              <Tag v-else severity="info" value="Feiertag" />
+            </template>
+          </Column>
           <Column header="Herkunft">
             <template #body="{ data }">
               <Tag
@@ -145,10 +171,12 @@ async function remove(h: Holiday) {
       </template>
     </Card>
 
-    <Dialog v-model:visible="showAdd" header="Feiertag" modal :style="{ width: '400px' }">
+    <Dialog v-model:visible="showAdd" header="Kalendertag" modal :style="{ width: '400px' }">
       <div class="form">
         <label>Datum</label>
         <DatePicker v-model="addDate" date-format="dd.mm.yy" show-icon class="w" />
+        <label>Art</label>
+        <Select v-model="addKind" :options="kindOptions" option-label="label" option-value="value" class="w" />
         <label>Name</label>
         <InputText v-model="addName" class="w" />
       </div>

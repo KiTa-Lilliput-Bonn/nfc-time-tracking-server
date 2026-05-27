@@ -42,7 +42,11 @@ export async function generateHolidaysForYear(year: number) {
   await api.post('/holidays/generate', {}, { params: { year } })
 }
 
-export async function createHoliday(body: { holiday_date: string; name: string }) {
+export async function createHoliday(body: {
+  holiday_date: string
+  name: string
+  kind?: 'feiertag' | 'brauchtum'
+}) {
   const { data } = await api.post<Holiday>('/holidays', body)
   return data
 }

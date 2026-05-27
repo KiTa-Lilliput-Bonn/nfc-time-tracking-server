@@ -39,6 +39,7 @@ function parseISODateSafe(s: string): Date {
 
 interface UnifiedRow {
   kind: 'holiday' | 'closure'
+  holidayKind?: 'feiertag' | 'brauchtum'
   rowKey: string
   date: string
   dateTo?: string
@@ -54,6 +55,7 @@ const rows = computed<UnifiedRow[]>(() => {
     const iso = normalizeISODate(h.holiday_date)
     out.push({
       kind: 'holiday',
+      holidayKind: h.kind === 'brauchtum' ? 'brauchtum' : 'feiertag',
       rowKey: `h-${h.id}`,
       date: iso,
       name: h.name,
@@ -336,8 +338,9 @@ async function remove(row: UnifiedRow) {
       <template #title>Schließtage &amp; Feiertage</template>
       <template #content>
         <p class="hint">
-          Feiertage (NRW usw.) sind hier eingebunden und werden von der Zeitauswertung berücksichtigt. Bearbeiten
-          kann sie nur die Administration; Schließtage (z.&nbsp;B. Betriebsferien) trägst du hier ein.
+          Gesetzliche Feiertage (NRW) und Brauchtumstage (Heiligabend, Silvester, Rosenmontag) sind hier eingebunden
+          und werden von der Zeitauswertung berücksichtigt. Bearbeiten kann sie nur die Administration; Schließtage
+          (z.&nbsp;B. Betriebsferien) trägst du hier ein.
         </p>
         <div class="toolbar">
           <label class="lbl">Jahr</label>
@@ -360,7 +363,12 @@ async function remove(row: UnifiedRow) {
           </Column>
           <Column header="Art" sortable :sort-field="'kind'">
             <template #body="{ data }: { data: UnifiedRow }">
-              <Tag v-if="data.kind === 'holiday'" severity="info" value="Feiertag" />
+              <Tag
+                v-if="data.kind === 'holiday' && data.holidayKind === 'brauchtum'"
+                severity="warn"
+                value="Brauchtumstag"
+              />
+              <Tag v-else-if="data.kind === 'holiday'" severity="info" value="Feiertag" />
               <Tag v-else severity="secondary" value="Schließtag" />
             </template>
           </Column>
