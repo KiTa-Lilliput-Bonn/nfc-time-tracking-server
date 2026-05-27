@@ -217,6 +217,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Get("/schedules/export-defaults", sh.ExportDefaults)
 			r.Get("/schedules/export-excel", sh.ExportExcel)
 			r.Post("/schedules/import-excel", sh.ImportExcel)
+			r.Post("/schedules/preview-excel-import", sh.PreviewExcelImport)
 			r.Post("/schedules", sh.Create)
 			r.Put("/schedules/{id}", sh.Update)
 			r.Delete("/schedules/{id}", sh.Delete)

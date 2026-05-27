@@ -14,6 +14,7 @@ import type {
   NFCTag,
   Schedule,
   ScheduleExcelImportReport,
+  ScheduleExcelPastPreview,
   TeamMeeting,
   TeamOverviewRow,
   TimeCorrection,
@@ -298,14 +299,24 @@ export async function postTeamMeeting(body: {
 
 export type ScheduleExcelImportScope = 'future' | 'past'
 
+export async function previewScheduleExcelImport(file: File) {
+  const fd = new FormData()
+  fd.append('file', file)
+  const { data } = await api.post<ScheduleExcelPastPreview>('/schedules/preview-excel-import', fd)
+  return data
+}
+
 export async function importScheduleExcel(
   file: File,
-  options?: { scope?: ScheduleExcelImportScope },
+  options?: { scope?: ScheduleExcelImportScope; include_past?: boolean },
 ) {
   const fd = new FormData()
   fd.append('file', file)
   if (options?.scope) {
     fd.append('scope', options.scope)
+  }
+  if (options?.include_past !== undefined) {
+    fd.append('include_past', options.include_past ? 'true' : 'false')
   }
   const { data } = await api.post<ScheduleExcelImportReport>('/schedules/import-excel', fd)
   return data

@@ -100,6 +100,12 @@ export interface ScheduleExcelImportReport {
   warnings: string[]
 }
 
+/** Antwort von POST /schedules/preview-excel-import */
+export type ScheduleExcelPastPreview = Pick<
+  ScheduleExcelImportReport,
+  'past_cells_skipped' | 'past_week_notes_skipped' | 'past_team_meetings_skipped'
+>
+
 export interface Absence {
   id: number
   user_id: number

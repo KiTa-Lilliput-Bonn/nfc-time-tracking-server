@@ -558,6 +558,9 @@ func (h *ScheduleHandler) ImportExcel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scope := scheduleimport.ParseImportScope(r.FormValue("scope"))
+	if strings.EqualFold(strings.TrimSpace(r.FormValue("include_past")), "true") {
+		scope = scheduleimport.ImportScopeAll
+	}
 
 	rep, err := scheduleimport.Import(r.Context(), scheduleimport.Deps{
 		Users:                h.Users,
@@ -578,4 +581,41 @@ func (h *ScheduleHandler) ImportExcel(w http.ResponseWriter, r *http.Request) {
 		Summary: audit.JSONSummary(rep),
 	})
 	response.JSON(w, http.StatusOK, rep)
+}
+
+// PreviewExcelImport parst .xlsx und zählt vergangene Inhalte, die beim Import „ab heute“ ausgelassen würden (keine DB-Änderung).
+func (h *ScheduleHandler) PreviewExcelImport(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		response.Error(w, http.StatusBadRequest, "multipart form erwartet")
+		return
+	}
+	fh, _, err := r.FormFile("file")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Dateifeld 'file' erforderlich")
+		return
+	}
+	defer func() { _ = fh.Close() }()
+
+	buf, err := io.ReadAll(fh)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Datei konnte nicht gelesen werden")
+		return
+	}
+
+	today := time.Now().In(time.Local).Format("2006-01-02")
+	prev, err := scheduleimport.PreviewPastImport(r.Context(), scheduleimport.Deps{
+		Users:                h.Users,
+		FixedNonWorkWeekdays: h.FixedNonWorkWeekdays,
+		Schedules:            h.Schedules,
+		TeamMeetings:         h.TeamMeetings,
+		Absences:             h.Absences,
+		Holidays:             h.Holidays,
+		Closures:             h.Closures,
+		Claims:               h.CompensationDayClaims,
+	}, buf, today)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, prev)
 }

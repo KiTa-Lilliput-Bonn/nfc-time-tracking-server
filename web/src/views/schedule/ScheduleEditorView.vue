@@ -17,6 +17,7 @@ import {
   fetchScheduleExportDefaults,
   fetchScheduleExportExcel,
   importScheduleExcel,
+  previewScheduleExcelImport,
   deleteTeamMeeting,
   postTeamMeeting,
   putScheduleWeekNotes,
@@ -24,11 +25,17 @@ import {
 } from '@/api/management'
 import { triggerDownload } from '@/api/exportReport'
 import ScheduleGrid from '@/components/ScheduleGrid.vue'
-import type { Employee, ScheduleExcelImportReport, TeamMeeting, UserGroup } from '@/types/api'
+import type {
+  Employee,
+  ScheduleExcelImportReport,
+  ScheduleExcelPastPreview,
+  TeamMeeting,
+  TeamMeetingKind,
+  UserGroup,
+} from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { addDays, formatGermanDate, compareISOWeek, isoWeekAndYear, mondayOfISOWeek, toISODateLocal } from '@/utils/dates'
 import { teamMeetingListLabel } from '@/utils/teamMeetingLabel'
-import type { TeamMeetingKind } from '@/types/api'
 
 const toast = useToast()
 
@@ -554,19 +561,17 @@ const planActionsDisabled = computed(() => {
   return Boolean(unref(g.loading)) || Boolean(unref(g.copyBusy))
 })
 
-function excelReportPastContentCount(rep: ScheduleExcelImportReport): number {
+function excelPastSignalCount(p: ScheduleExcelPastPreview): number {
   return (
-    (rep.past_cells_skipped ?? 0) +
-    (rep.past_week_notes_skipped ?? 0) +
-    (rep.past_team_meetings_skipped ?? 0)
+    (p.past_cells_skipped ?? 0) + (p.past_week_notes_skipped ?? 0) + (p.past_team_meetings_skipped ?? 0)
   )
 }
 
-function buildExcelPastImportPrompt(rep: ScheduleExcelImportReport): string {
+function buildExcelPastImportPrompt(p: ScheduleExcelPastPreview): string {
   const parts: string[] = []
-  const cells = rep.past_cells_skipped ?? 0
-  const notes = rep.past_week_notes_skipped ?? 0
-  const meetings = rep.past_team_meetings_skipped ?? 0
+  const cells = p.past_cells_skipped ?? 0
+  const notes = p.past_week_notes_skipped ?? 0
+  const meetings = p.past_team_meetings_skipped ?? 0
   if (cells > 0) {
     parts.push(`${cells} vergangene Zelle${cells === 1 ? '' : 'n'} mit Schichten oder Abwesenheiten`)
   }
@@ -579,10 +584,10 @@ function buildExcelPastImportPrompt(rep: ScheduleExcelImportReport): string {
   if (parts.length === 0) {
     return 'Die Datei enthält Daten in der Vergangenheit. Diese importieren?'
   }
-  return `Die Datei enthält ${parts.join(', ')}. Einträge ab heute wurden bereits übernommen. Sollen die vergangenen Daten ebenfalls importiert werden?`
+  return `Die Datei enthält ${parts.join(', ')}. Sollen diese vergangenen Daten ebenfalls importiert werden?`
 }
 
-function summarizeExcelImport(rep: ScheduleExcelImportReport, options?: { pastOnly?: boolean }): string {
+function summarizeExcelImport(rep: ScheduleExcelImportReport): string {
   const bits: string[] = []
   bits.push(`${rep.schedules_written} Schicht-Einträge`)
   if (rep.schedules_deleted) bits.push(`${rep.schedules_deleted} Schichten gelöscht`)
@@ -594,14 +599,12 @@ function summarizeExcelImport(rep: ScheduleExcelImportReport, options?: { pastOn
   }
   if (rep.absences_skipped)
     bits.push(`${rep.absences_skipped} Feiertagstage übersprungen (je Werktagsspalte)`)
-  if (!options?.pastOnly) {
-    if (rep.past_cells_skipped)
-      bits.push(`${rep.past_cells_skipped} Vergangenheit ignoriert (nur ab heute)`)
-    if (rep.past_week_notes_skipped)
-      bits.push(`${rep.past_week_notes_skipped} Wochennotiz(en) in der Vergangenheit nicht gespeichert`)
-    if (rep.past_team_meetings_skipped)
-      bits.push(`${rep.past_team_meetings_skipped} Teamsitzung(en) in der Vergangenheit nicht importiert`)
-  }
+  if (rep.past_cells_skipped)
+    bits.push(`${rep.past_cells_skipped} Vergangenheit ignoriert (nur ab heute)`)
+  if (rep.past_week_notes_skipped)
+    bits.push(`${rep.past_week_notes_skipped} Wochennotiz(en) in der Vergangenheit nicht gespeichert`)
+  if (rep.past_team_meetings_skipped)
+    bits.push(`${rep.past_team_meetings_skipped} Teamsitzung(en) in der Vergangenheit nicht importiert`)
   return bits.join(' · ')
 }
 
@@ -703,20 +706,20 @@ function dismissExcelPastImportDialog() {
   excelPastImportPrompt.value = ''
 }
 
-async function runExcelImportPastPhase() {
+async function runExcelImportAfterPastChoice(includePast: boolean) {
   const file = pendingPastImportFile.value
   if (!file) return
   excelImportBusy.value = true
   try {
-    const rep = await importScheduleExcel(file, { scope: 'past' })
+    const rep = await importScheduleExcel(file, { include_past: includePast })
     lastExcelReport.value = rep
     await scheduleGridRef.value?.reloadFromServer()
     dismissExcelPastImportDialog()
     const issues = excelReportHasDetails(rep)
     toast.add({
       severity: issues ? 'warn' : 'success',
-      summary: 'Excel-Import (Vergangenheit)',
-      detail: summarizeExcelImport(rep, { pastOnly: true }),
+      summary: 'Excel-Import',
+      detail: summarizeExcelImport(rep),
       life: 10000,
     })
   } catch (err: unknown) {
@@ -726,8 +729,10 @@ async function runExcelImportPastPhase() {
       (typeof err === 'string' && err.trim() ? err : undefined)
     toast.add({
       severity: 'error',
-      summary: 'Excel-Import (Vergangenheit)',
-      detail: serverMsg ?? 'Import der Vergangenheitsdaten fehlgeschlagen.',
+      summary: 'Excel-Import',
+      detail:
+        serverMsg ??
+        'Import fehlgeschlagen. In den Entwicklertools (F12) → Netzwerk → „import-excel“ / „preview-excel-import“ prüfen.',
       life: 10000,
     })
   } finally {
@@ -740,7 +745,14 @@ async function runExcelImport(file: File) {
   lastExcelReport.value = null
   dismissExcelPastImportDialog()
   try {
-    const rep = await importScheduleExcel(file, { scope: 'future' })
+    const preview = await previewScheduleExcelImport(file)
+    if (excelPastSignalCount(preview) > 0) {
+      pendingPastImportFile.value = file
+      excelPastImportPrompt.value = buildExcelPastImportPrompt(preview)
+      excelPastImportDialogVisible.value = true
+      return
+    }
+    const rep = await importScheduleExcel(file)
     lastExcelReport.value = rep
     await scheduleGridRef.value?.reloadFromServer()
     const issues = excelReportHasDetails(rep)
@@ -750,11 +762,6 @@ async function runExcelImport(file: File) {
       detail: summarizeExcelImport(rep),
       life: 10000,
     })
-    if (excelReportPastContentCount(rep) > 0) {
-      pendingPastImportFile.value = file
-      excelPastImportPrompt.value = buildExcelPastImportPrompt(rep)
-      excelPastImportDialogVisible.value = true
-    }
   } catch (err: unknown) {
     const serverMsg =
       getApiErrorMessage(err) ??
@@ -765,7 +772,7 @@ async function runExcelImport(file: File) {
       summary: 'Excel-Import',
       detail:
         serverMsg ??
-        'Import fehlgeschlagen. In den Entwicklertools (F12) → Netzwerk → „import-excel“ die Antwort prüfen.',
+        'Import fehlgeschlagen. In den Entwicklertools (F12) → Netzwerk → „import-excel“ / „preview-excel-import“ prüfen.',
       life: 10000,
     })
   } finally {
@@ -1319,7 +1326,10 @@ function thisWeek() {
     >
       <p class="muted export-dialog-hint">{{ excelPastImportPrompt }}</p>
       <p class="muted export-dialog-hint">
-        Standard: Vergangenheitsdaten werden nicht übernommen (nur Einträge ab heute sind bereits importiert).
+        Es wurde noch nichts importiert — der Dienstplan wird erst nach Ihrer Auswahl geschrieben.
+      </p>
+      <p class="muted export-dialog-hint">
+        Standard: Vergangenheitsdaten werden nicht übernommen (nur Einträge ab heute).
       </p>
       <template #footer>
         <Button
@@ -1328,13 +1338,13 @@ function thisWeek() {
           type="button"
           :disabled="excelImportBusy"
           autofocus
-          @click="dismissExcelPastImportDialog"
+          @click="runExcelImportAfterPastChoice(false)"
         />
         <Button
           label="Vergangenheit importieren"
           type="button"
           :loading="excelImportBusy"
-          @click="runExcelImportPastPhase"
+          @click="runExcelImportAfterPastChoice(true)"
         />
       </template>
     </Dialog>
