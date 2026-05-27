@@ -177,6 +177,15 @@ export interface VacationEntitlement {
   mutable?: boolean
 }
 
+export interface FixedNonWorkWeekdays {
+  id: number
+  user_id: number
+  weekdays: number[]
+  valid_from: string
+  created_at: string
+  mutable?: boolean
+}
+
 export interface NFCTag {
   id: number
   tag_uid: string

@@ -14,15 +14,17 @@ import (
 	"nfc-time-tracking-server/internal/api/response"
 	"nfc-time-tracking-server/internal/audit"
 	"nfc-time-tracking-server/internal/model"
+	"nfc-time-tracking-server/internal/service/fixednonwork"
 	"nfc-time-tracking-server/internal/store"
 )
 
 type ClosureHandler struct {
-	Closures store.ClosureDayStore
-	Holidays store.HolidayStore
-	Users    store.UserStore
-	Absences store.AbsenceStore
-	Audit    *audit.Logger
+	Closures             store.ClosureDayStore
+	Holidays             store.HolidayStore
+	Users                store.UserStore
+	FixedNonWorkWeekdays store.FixedNonWorkWeekdaysStore
+	Absences             store.AbsenceStore
+	Audit                *audit.Logger
 }
 
 func normalizeClosureDateISO(s string) string {
@@ -72,7 +74,7 @@ func (h *ClosureHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.Users != nil && h.Absences != nil {
-		syncVacationAbsencesForClosureDay(r.Context(), h.Users, h.Absences, dateStr, middleware.UserID(r))
+		syncVacationAbsencesForClosureDay(r.Context(), h.Users, h.FixedNonWorkWeekdays, h.Absences, dateStr, middleware.UserID(r))
 	}
 	logAudit(h.Audit, r.Context(), audit.Entry{
 		Action: audit.ActionCreate, EntityType: audit.EntityClosureDay, EntityID: auditID(c.ID),
@@ -83,7 +85,7 @@ func (h *ClosureHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // syncVacationAbsencesForClosureDay legt für alle aktiven Nicht-Superadmin-Nutzer an Werktagen
 // (ohne fix frei) einen Ganztags-Urlaub an, sofern noch keine Abwesenheit existiert.
-func syncVacationAbsencesForClosureDay(ctx context.Context, users store.UserStore, absences store.AbsenceStore, dateStr string, createdBy int) {
+func syncVacationAbsencesForClosureDay(ctx context.Context, users store.UserStore, fnw store.FixedNonWorkWeekdaysStore, absences store.AbsenceStore, dateStr string, createdBy int) {
 	day, err := time.ParseInLocation("2006-01-02", dateStr, time.Local)
 	if err != nil {
 		return
@@ -97,7 +99,8 @@ func syncVacationAbsencesForClosureDay(ctx context.Context, users store.UserStor
 		if u.Role == model.RoleSuperadmin {
 			continue
 		}
-		if !model.IsEmployeeWorkday(day, u.FixedNonWorkWeekdays) {
+		fixed := fixednonwork.WeekdaysForUserDate(ctx, fnw, u.ID, dateStr)
+		if !model.IsEmployeeWorkday(day, fixed) {
 			continue
 		}
 		existing, err := absences.GetForUserDate(ctx, u.ID, dateStr)

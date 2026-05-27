@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"nfc-time-tracking-server/internal/model"
+	"nfc-time-tracking-server/internal/service/fixednonwork"
 	"nfc-time-tracking-server/internal/store"
 )
 
@@ -13,7 +14,7 @@ import (
 // one open claim exists iff there is at least one closed non-break work interval (after latest correction).
 func SyncClaimAfterWorkDayChange(
 	ctx context.Context,
-	users store.UserStore,
+	fnw store.FixedNonWorkWeekdaysStore,
 	wp store.WorkPeriodStore,
 	corrs store.CorrectionStore,
 	claims store.CompensationDayClaimStore,
@@ -23,7 +24,7 @@ func SyncClaimAfterWorkDayChange(
 	if claims == nil {
 		return nil
 	}
-	fixed := loadFixedNonWorkWeekdays(ctx, users, userID)
+	fixed := fixednonwork.WeekdaysForUserDate(ctx, fnw, userID, dateStr)
 	if !isCompensationClaimEligibleDate(dateStr, fixed) {
 		return nil
 	}
@@ -32,17 +33,6 @@ func SyncClaimAfterWorkDayChange(
 		return err
 	}
 	return claims.EnsureForWorkDate(ctx, userID, dateStr, ok)
-}
-
-func loadFixedNonWorkWeekdays(ctx context.Context, users store.UserStore, userID int) []int {
-	if users == nil {
-		return nil
-	}
-	u, err := users.GetByID(ctx, userID)
-	if err != nil || u == nil {
-		return nil
-	}
-	return u.FixedNonWorkWeekdays
 }
 
 func isWeekendDate(dateStr string) bool {
@@ -95,7 +85,7 @@ func dayHasEligibleWork(ctx context.Context, wp store.WorkPeriodStore, corrs sto
 }
 
 // BootstrapScanUsers recomputes weekend and fixed-non-work claims from stored work periods (import/manual).
-func BootstrapScanUsers(ctx context.Context, users store.UserStore, wp store.WorkPeriodStore, corrs store.CorrectionStore, claims store.CompensationDayClaimStore) error {
+func BootstrapScanUsers(ctx context.Context, users store.UserStore, fnw store.FixedNonWorkWeekdaysStore, wp store.WorkPeriodStore, corrs store.CorrectionStore, claims store.CompensationDayClaimStore) error {
 	if claims == nil {
 		return nil
 	}
@@ -108,9 +98,9 @@ func BootstrapScanUsers(ctx context.Context, users store.UserStore, wp store.Wor
 		if err != nil {
 			return err
 		}
-		fixed := u.FixedNonWorkWeekdays
 		seen := map[string]struct{}{}
 		for _, p := range periods {
+			fixed := fixednonwork.WeekdaysForUserDate(ctx, fnw, u.ID, p.WorkDate)
 			if !isCompensationClaimEligibleDate(p.WorkDate, fixed) {
 				continue
 			}
@@ -118,7 +108,7 @@ func BootstrapScanUsers(ctx context.Context, users store.UserStore, wp store.Wor
 				continue
 			}
 			seen[p.WorkDate] = struct{}{}
-			if err := SyncClaimAfterWorkDayChange(ctx, users, wp, corrs, claims, u.ID, p.WorkDate); err != nil {
+			if err := SyncClaimAfterWorkDayChange(ctx, fnw, wp, corrs, claims, u.ID, p.WorkDate); err != nil {
 				return err
 			}
 		}

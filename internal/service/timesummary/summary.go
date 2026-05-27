@@ -150,20 +150,21 @@ func WeekdaysInMonth(year, month int) int {
 
 // TargetHoursMonth is the sum of daily targets for each calendar day in the month (local timezone):
 // each employee workday (Mon–Fri excluding fixed non-work weekdays) contributes DailyHours(hoursPerWeek, fixed).
-func TargetHoursMonth(hoursPerWeek float64, year, month int, fixedNonWork []int) float64 {
+func TargetHoursMonth(hoursPerWeek float64, year, month int, fnwRows []model.FixedNonWorkWeekdays) float64 {
 	if hoursPerWeek <= 0 {
 		return 0
 	}
 	loc := time.Local
-	d := model.DailyHours(hoursPerWeek, fixedNonWork)
-	if d <= 0 {
-		return 0
-	}
 	t := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, loc)
 	var sum float64
 	for t.Month() == time.Month(month) {
-		if model.IsEmployeeWorkday(t, fixedNonWork) {
-			sum += d
+		ds := t.Format("2006-01-02")
+		fixed := model.FixedNonWorkWeekdaysForDate(fnwRows, ds)
+		if model.IsEmployeeWorkday(t, fixed) {
+			d := model.DailyHours(hoursPerWeek, fixed)
+			if d > 0 {
+				sum += d
+			}
 		}
 		t = t.AddDate(0, 0, 1)
 	}

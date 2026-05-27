@@ -13,6 +13,7 @@ func TestSyncClaimAfterWorkDayChange_CreatesSeparateWeekendClaims(t *testing.T) 
 	db := openCompensationDayTestDB(t)
 	ctx := context.Background()
 	users := sqlite.NewUserStore(db)
+	fnw := sqlite.NewFixedNonWorkWeekdaysStore(db)
 	workPeriods := sqlite.NewWorkPeriodStore(db)
 	corrections := sqlite.NewCorrectionStore(db)
 	claims := sqlite.NewCompensationDayClaimStore(db)
@@ -21,10 +22,10 @@ func TestSyncClaimAfterWorkDayChange_CreatesSeparateWeekendClaims(t *testing.T) 
 	insertImportedPeriod(t, ctx, workPeriods, user.ID, "2026-04-04", 9, 10, false)
 	insertImportedPeriod(t, ctx, workPeriods, user.ID, "2026-04-05", 9, 10, false)
 
-	if err := SyncClaimAfterWorkDayChange(ctx, users, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
+	if err := SyncClaimAfterWorkDayChange(ctx, fnw, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
 		t.Fatal(err)
 	}
-	if err := SyncClaimAfterWorkDayChange(ctx, users, workPeriods, corrections, claims, user.ID, "2026-04-05"); err != nil {
+	if err := SyncClaimAfterWorkDayChange(ctx, fnw, workPeriods, corrections, claims, user.ID, "2026-04-05"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -41,6 +42,7 @@ func TestSyncClaimAfterWorkDayChange_KeepsOneClaimForMultipleSameDayPeriods(t *t
 	db := openCompensationDayTestDB(t)
 	ctx := context.Background()
 	users := sqlite.NewUserStore(db)
+	fnw := sqlite.NewFixedNonWorkWeekdaysStore(db)
 	workPeriods := sqlite.NewWorkPeriodStore(db)
 	corrections := sqlite.NewCorrectionStore(db)
 	claims := sqlite.NewCompensationDayClaimStore(db)
@@ -49,10 +51,10 @@ func TestSyncClaimAfterWorkDayChange_KeepsOneClaimForMultipleSameDayPeriods(t *t
 	insertImportedPeriod(t, ctx, workPeriods, user.ID, "2026-04-04", 9, 10, false)
 	insertManualPeriod(t, ctx, workPeriods, user.ID, "2026-04-04", 12, 13, false)
 
-	if err := SyncClaimAfterWorkDayChange(ctx, users, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
+	if err := SyncClaimAfterWorkDayChange(ctx, fnw, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
 		t.Fatal(err)
 	}
-	if err := SyncClaimAfterWorkDayChange(ctx, users, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
+	if err := SyncClaimAfterWorkDayChange(ctx, fnw, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -69,6 +71,7 @@ func TestSyncClaimAfterWorkDayChange_IgnoresBreakOnlyWeekendWork(t *testing.T) {
 	db := openCompensationDayTestDB(t)
 	ctx := context.Background()
 	users := sqlite.NewUserStore(db)
+	fnw := sqlite.NewFixedNonWorkWeekdaysStore(db)
 	workPeriods := sqlite.NewWorkPeriodStore(db)
 	corrections := sqlite.NewCorrectionStore(db)
 	claims := sqlite.NewCompensationDayClaimStore(db)
@@ -76,7 +79,7 @@ func TestSyncClaimAfterWorkDayChange_IgnoresBreakOnlyWeekendWork(t *testing.T) {
 
 	insertImportedPeriod(t, ctx, workPeriods, user.ID, "2026-04-04", 9, 10, true)
 
-	if err := SyncClaimAfterWorkDayChange(ctx, users, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
+	if err := SyncClaimAfterWorkDayChange(ctx, fnw, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -93,13 +96,14 @@ func TestSyncClaimAfterWorkDayChange_RemovesOpenClaimWhenCorrectionEliminatesEli
 	db := openCompensationDayTestDB(t)
 	ctx := context.Background()
 	users := sqlite.NewUserStore(db)
+	fnw := sqlite.NewFixedNonWorkWeekdaysStore(db)
 	workPeriods := sqlite.NewWorkPeriodStore(db)
 	corrections := sqlite.NewCorrectionStore(db)
 	claims := sqlite.NewCompensationDayClaimStore(db)
 	user := createCompensationDayTestUser(t, ctx, users, "correctedaway")
 
 	insertImportedPeriod(t, ctx, workPeriods, user.ID, "2026-04-04", 9, 10, false)
-	if err := SyncClaimAfterWorkDayChange(ctx, users, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
+	if err := SyncClaimAfterWorkDayChange(ctx, fnw, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -121,7 +125,7 @@ func TestSyncClaimAfterWorkDayChange_RemovesOpenClaimWhenCorrectionEliminatesEli
 		t.Fatal(err)
 	}
 
-	if err := SyncClaimAfterWorkDayChange(ctx, users, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
+	if err := SyncClaimAfterWorkDayChange(ctx, fnw, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
 		t.Fatal(err)
 	}
 	open, err := claims.CountOpen(ctx, user.ID)
@@ -190,17 +194,19 @@ func TestSyncClaimAfterWorkDayChange_FixedNonWorkWeekday(t *testing.T) {
 	db := openCompensationDayTestDB(t)
 	ctx := context.Background()
 	users := sqlite.NewUserStore(db)
+	fnw := sqlite.NewFixedNonWorkWeekdaysStore(db)
 	workPeriods := sqlite.NewWorkPeriodStore(db)
 	corrections := sqlite.NewCorrectionStore(db)
 	claims := sqlite.NewCompensationDayClaimStore(db)
 	user := createCompensationDayTestUser(t, ctx, users, "fixedfriday")
-	user.FixedNonWorkWeekdays = []int{int(time.Friday)}
-	if err := users.Update(ctx, user); err != nil {
+	if err := fnw.Set(ctx, &model.FixedNonWorkWeekdays{
+		UserID: user.ID, Weekdays: []int{int(time.Friday)}, ValidFrom: "2000-01-01",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	// 2026-03-13 is a Friday
 	insertImportedPeriod(t, ctx, workPeriods, user.ID, "2026-03-13", 9, 10, false)
-	if err := SyncClaimAfterWorkDayChange(ctx, users, workPeriods, corrections, claims, user.ID, "2026-03-13"); err != nil {
+	if err := SyncClaimAfterWorkDayChange(ctx, fnw, workPeriods, corrections, claims, user.ID, "2026-03-13"); err != nil {
 		t.Fatal(err)
 	}
 	open, err := claims.CountOpen(ctx, user.ID)

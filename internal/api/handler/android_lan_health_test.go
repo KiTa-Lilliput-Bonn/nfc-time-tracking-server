@@ -53,7 +53,7 @@ func TestAndroidLanHealth_LeitungGetsJSON(t *testing.T) {
 	}
 
 	settings := sqlite.NewSettingsStore(db)
-	svc := stampspoll.NewService(settings, sqlite.NewApiPairedClientStore(db), sqlite.NewPunchStore(db), sqlite.NewWorkPeriodStore(db), sqlite.NewNFCTagStore(db), sqlite.NewCompensationDayClaimStore(db), sqlite.NewUserStore(db), nil)
+	svc := stampspoll.NewService(settings, sqlite.NewApiPairedClientStore(db), sqlite.NewPunchStore(db), sqlite.NewWorkPeriodStore(db), sqlite.NewNFCTagStore(db), sqlite.NewCompensationDayClaimStore(db), sqlite.NewFixedNonWorkWeekdaysStore(db), sqlite.NewUserStore(db), nil)
 	h := &AndroidLanHealthHandler{Stamps: svc}
 
 	leitung := []string{string(model.RoleLeitung), string(model.RoleSuperadmin)}

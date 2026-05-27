@@ -16,12 +16,13 @@ import {
   fetchEmployeeAbsences,
   fetchEmployeeCompensationDayClaims,
   fetchClosureDays,
+  fetchFixedNonWorkWeekdays,
   fetchHolidays,
   fetchTeamOverview,
   waiveEmployeeCompensationDayClaim,
 } from '@/api/management'
 import { fetchEmployees } from '@/api/employees'
-import type { Absence, ClosureDay, CompensationDayClaim, Employee } from '@/types/api'
+import type { Absence, ClosureDay, CompensationDayClaim, Employee, FixedNonWorkWeekdays } from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { friendlyAbsenceCreateError } from '@/utils/absenceErrors'
 import { endOfMonth, formatGermanDate, parseISODate, startOfMonth, toISODateLocal } from '@/utils/dates'
@@ -31,6 +32,7 @@ import {
   enumerateInclusiveCalendarISO,
   enumerateWorkdayISO,
   holidayDateSetForRange,
+  isFixedNonWorkDayISO,
   normalizeISODate,
   vacationDisplayGapOnlySkippable,
 } from '@/utils/workdays'
@@ -42,6 +44,7 @@ function germanWeekdayLong(d: Date): string {
 const toast = useToast()
 
 const employees = ref<Employee[]>([])
+const fnwByUser = ref<Map<number, FixedNonWorkWeekdays[]>>(new Map())
 const from = ref<Date>(startOfMonth(new Date()))
 const to = ref<Date>(endOfMonth(new Date()))
 const filterEmployeeId = ref<number | null>(null)
@@ -69,6 +72,25 @@ const waiveEmployeeOptions = computed(() => {
     .filter((e) => allow.has(e.id))
     .map((e) => ({ label: e.display_name, value: e.id }))
 })
+
+async function loadFnwForEmployees() {
+  const next = new Map<number, FixedNonWorkWeekdays[]>()
+  await Promise.all(
+    employees.value.map(async (e) => {
+      try {
+        next.set(e.id, await fetchFixedNonWorkWeekdays(e.id))
+      } catch {
+        next.set(e.id, [])
+      }
+    }),
+  )
+  fnwByUser.value = next
+}
+
+function fnwRowsFor(userId: number | null | undefined): FixedNonWorkWeekdays[] {
+  if (userId == null) return []
+  return fnwByUser.value.get(userId) ?? []
+}
 
 async function refreshWaiveEligibleIds() {
   waiveOverviewLoading.value = true
@@ -159,13 +181,13 @@ const viewRows = computed<ViewRow[]>(() => {
 
   const ranges: ViewRow[] = []
   const skipBase = new Set<string>([...closureDateSet.value, ...holidayDates.value])
-  const fixedByUser = new Map<number, Set<number>>()
+  const fixedByUser = new Map<number, FixedNonWorkWeekdays[]>()
   for (const e of employees.value) {
-    fixedByUser.set(e.id, new Set(e.fixed_non_work_weekdays ?? []))
+    fixedByUser.set(e.id, fnwRowsFor(e.id))
   }
 
   for (const [uid, arr0] of vacByUser.entries()) {
-    const fixedSet = fixedByUser.get(uid) ?? new Set<number>()
+    const fixedSet = fixedByUser.get(uid) ?? []
     const arr = arr0.slice().sort((a, b) => a.absence_date.localeCompare(b.absence_date))
     let curFrom = ''
     let curTo = ''
@@ -261,6 +283,7 @@ async function load() {
   loading.value = true
   try {
     employees.value = await fetchEmployees()
+    await loadFnwForEmployees()
     await refreshWaiveEligibleIds()
     syncWaiveEmployeeSelection()
     closures.value = await fetchClosureDays().catch((): ClosureDay[] => [])
@@ -359,11 +382,8 @@ function normalizeAddRange(): [Date, Date] {
   return [b, a]
 }
 
-/** Urlaub: nur Werktage ohne Feiertage/Schließtage/fix frei. */
 function enumerateVacationWorkdayISO(from: Date, to: Date, holidaySet: Set<string>, closureSet: Set<string>): string[] {
-  const emp = employees.value.find((e) => e.id === addEmpId.value)
-  const fixed = new Set(emp?.fixed_non_work_weekdays ?? [])
-  return enumerateWorkdayISO(from, to, holidaySet, closureSet, fixed)
+  return enumerateWorkdayISO(from, to, holidaySet, closureSet, fnwRowsFor(addEmpId.value))
 }
 
 async function submitAdd() {
@@ -373,12 +393,9 @@ async function submitAdd() {
   const isoSingle = toISODateLocal(df)
 
   if (addType.value === 'compensation_day') {
-    const emp = employees.value.find((e) => e.id === addEmpId.value)
-    const fixed = new Set(emp?.fixed_non_work_weekdays ?? [])
-    const dow = df.getDay()
     const pretty = formatGermanDate(isoSingle)
     const weekday = germanWeekdayLong(df)
-    if (fixed.has(dow)) {
+    if (isFixedNonWorkDayISO(isoSingle, fnwRowsFor(addEmpId.value))) {
       toast.add({
         severity: 'error',
         summary: 'Ausgleichstag nicht möglich',
@@ -396,6 +413,7 @@ async function submitAdd() {
       })
       return
     }
+    const dow = df.getDay()
     if (dow === 0 || dow === 6) {
       toast.add({
         severity: 'error',
@@ -492,9 +510,7 @@ async function submitAdd() {
       })
       return
     }
-    const emp = employees.value.find((e) => e.id === addEmpId.value)
-    const fixedSet = new Set(emp?.fixed_non_work_weekdays ?? [])
-    const skipped = countSkippedNonWorkdays(allCal, holidaySet, closureDateSet.value, fixedSet)
+    const skipped = countSkippedNonWorkdays(allCal, holidaySet, closureDateSet.value, fnwRowsFor(addEmpId.value))
     if (addHalf.value && datesToBook.length !== 1) {
       toast.add({
         severity: 'error',

@@ -26,8 +26,6 @@ type User struct {
 	OpeningHoursBalance float64 `json:"opening_hours_balance"`
 	// OpeningVacationDays: Urlaub-Startwert (Tage), addiert zu Anspruch − genommen.
 	OpeningVacationDays float64 `json:"opening_vacation_days"`
-	// FixedNonWorkWeekdays: Mo–Fr als time.Weekday-Zahl (1=Montag … 5=Freitag), regulär frei.
-	FixedNonWorkWeekdays []int `json:"fixed_non_work_weekdays,omitempty"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }

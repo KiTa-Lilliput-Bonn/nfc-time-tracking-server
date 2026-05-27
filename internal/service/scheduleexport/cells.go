@@ -47,25 +47,17 @@ func fmtInt2(h int) string {
 	return strconv.Itoa(h)
 }
 
-func isFixedNonWorkDay(u *model.User, date time.Time) bool {
-	if u == nil || len(u.FixedNonWorkWeekdays) == 0 {
+func isFixedNonWorkDay(fixed []int, date time.Time) bool {
+	if len(fixed) == 0 {
 		return false
 	}
-	dow := int(date.Weekday())
-	if dow == 0 {
-		dow = 7
-	}
-	for _, d := range u.FixedNonWorkWeekdays {
-		if d == dow {
-			return true
-		}
-	}
-	return false
+	return model.IsFixedNonWorkWeekday(date.Weekday(), fixed)
 }
 
 type weekCellData struct {
 	schedules map[int]map[string]*model.Schedule // userID -> date -> schedule
 	absences  map[int]map[string]*model.Absence
+	fnwByUser map[int][]model.FixedNonWorkWeekdays
 	skipDay   [5]bool
 	holiday   [5]string
 }
@@ -93,7 +85,7 @@ func (d *weekCellData) cellValue(u *model.User, dayIdx int, date time.Time) stri
 			return otherAbsenceLabel(abs)
 		}
 	}
-	if isFixedNonWorkDay(u, date) {
+	if isFixedNonWorkDay(model.FixedNonWorkWeekdaysForDate(d.fnwByUser[u.ID], dateISO), date) {
 		return "xxx"
 	}
 	// Weder Schicht noch Abwesenheit — freier Planungstag (Import: CellFreeDay).

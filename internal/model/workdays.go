@@ -70,6 +70,27 @@ func DailyHours(hoursPerWeek float64, fixed []int) float64 {
 	return hoursPerWeek / float64(sw)
 }
 
+// FixedNonWorkWeekdaysForDate returns weekdays from the greatest valid_from row with valid_from <= date.
+func FixedNonWorkWeekdaysForDate(rows []FixedNonWorkWeekdays, date string) []int {
+	if len(rows) == 0 {
+		return nil
+	}
+	var best *FixedNonWorkWeekdays
+	for i := range rows {
+		row := &rows[i]
+		if row.ValidFrom > date {
+			continue
+		}
+		if best == nil || row.ValidFrom > best.ValidFrom {
+			best = row
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	return append([]int(nil), best.Weekdays...)
+}
+
 // IsFixedNonWorkWeekday reports whether wd (Monday..Friday) is a fixed non-work day.
 func IsFixedNonWorkWeekday(wd time.Weekday, fixed []int) bool {
 	if wd == time.Saturday || wd == time.Sunday {

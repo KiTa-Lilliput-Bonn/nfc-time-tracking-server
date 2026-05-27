@@ -6,10 +6,11 @@ import { useToast } from 'primevue/usetoast'
 import {
   createSchedule,
   deleteSchedule,
+  fetchFixedNonWorkWeekdays,
   fetchSchedulesForWeek,
   updateSchedule,
 } from '@/api/management'
-import type { Absence, Employee, Holiday, Schedule, TeamMeeting } from '@/types/api'
+import type { Absence, Employee, FixedNonWorkWeekdays, Holiday, Schedule, TeamMeeting } from '@/types/api'
 import { addDays, formatGermanDate, mondayOfISOWeek, shiftISOWeek, toISODateLocal } from '@/utils/dates'
 import {
   horizontalBarPercentages,
@@ -20,6 +21,7 @@ import {
   timelineHourLabels,
 } from '@/utils/scheduleShiftLayout'
 import { teamMeetingBarLabel } from '@/utils/teamMeetingLabel'
+import { isFixedNonWorkDayISO } from '@/utils/workdays'
 import {
   clampMoveShift,
   clampResizeEnd,
@@ -179,6 +181,7 @@ interface Cell {
 const cells = ref<Record<string, Cell>>({})
 /** Rohdaten von GET /schedules (Abschnitt absences); Anzeige ableiten wir per computed (auch wenn Mitarbeiterliste später geladen wird). */
 const lastWeekAbsences = ref<Absence[]>([])
+const fnwByUser = ref<Map<number, FixedNonWorkWeekdays[]>>(new Map())
 /** Gesetzliche Feiertage Mo–Fr dieser KW (week_holidays). */
 const lastWeekHolidays = ref<Holiday[]>([])
 const teamMeetings = ref<TeamMeeting[]>([])
@@ -491,16 +494,26 @@ function publicHolidayName(date: string): string {
   return h?.name ?? ''
 }
 
-function employeeById(uid: number): Employee | undefined {
-  return allEmployees.value.find((e) => e.id === uid)
-}
 
 /** Fester freier Wochentag (Mo–Fr) laut Stammdaten — keine reguläre Schichtplanung. */
 function isFixedNonWorkDay(userId: number, date: string): boolean {
-  const emp = employeeById(userId)
-  if (!emp?.fixed_non_work_weekdays?.length) return false
-  const dow = new Date(`${normalizeCalendarDay(date)}T12:00:00`).getDay()
-  return emp.fixed_non_work_weekdays.includes(dow)
+  const rows = fnwByUser.value.get(userId)
+  return isFixedNonWorkDayISO(normalizeCalendarDay(date), rows)
+}
+
+async function loadFnwForEmployees() {
+  const ids = [...new Set(allEmployees.value.map((e) => e.id))]
+  const next = new Map<number, FixedNonWorkWeekdays[]>()
+  await Promise.all(
+    ids.map(async (uid) => {
+      try {
+        next.set(uid, await fetchFixedNonWorkWeekdays(uid))
+      } catch {
+        next.set(uid, [])
+      }
+    }),
+  )
+  fnwByUser.value = next
 }
 
 function scheduleCellDisabled(userId: number, date: string): boolean {
@@ -753,6 +766,7 @@ async function load(opts?: { silent?: boolean }) {
   if (!silent) overlayLoading.value = true
   applyingServerSchedule.value = true
   try {
+    await loadFnwForEmployees()
     const { schedules: list, weekNotes: notes, absences, weekHolidays, teamMeetings: tml } =
       await fetchSchedulesForWeek(props.weekYear, props.week)
     lastWeekHolidays.value = Array.isArray(weekHolidays) ? weekHolidays : []

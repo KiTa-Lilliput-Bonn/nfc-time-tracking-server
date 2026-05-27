@@ -367,7 +367,7 @@ func TestApply_TeamMeetingsKTFromParsedWeek(t *testing.T) {
 	ss := sqlite.NewScheduleStore(db)
 	tms := sqlite.NewTeamMeetingStore(db)
 	deps := scheduleimport.Deps{
-		Users: us, Schedules: ss, Absences: sqlite.NewAbsenceStore(db),
+		Users: us, FixedNonWorkWeekdays: sqlite.NewFixedNonWorkWeekdaysStore(db), Schedules: ss, Absences: sqlite.NewAbsenceStore(db),
 		Holidays: sqlite.NewHolidayStore(db), Closures: sqlite.NewClosureDayStore(db),
 		Claims: sqlite.NewCompensationDayClaimStore(db), TeamMeetings: tms,
 	}
@@ -407,12 +407,17 @@ func TestApply_WarnsShiftOnFixedFreeWeekday(t *testing.T) {
 	ctx := context.Background()
 
 	us := sqlite.NewUserStore(db)
+	fnw := sqlite.NewFixedNonWorkWeekdaysStore(db)
 	u := &model.User{
 		Username: "fri", PasswordHash: "x", DisplayName: "Freitag Frei",
 		Role: model.RoleUser, Active: true,
-		FixedNonWorkWeekdays: []int{int(time.Friday)},
 	}
 	if err := us.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if err := fnw.Set(ctx, &model.FixedNonWorkWeekdays{
+		UserID: u.ID, Weekdays: []int{int(time.Friday)}, ValidFrom: "2000-01-01",
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -441,7 +446,7 @@ func TestApply_WarnsShiftOnFixedFreeWeekday(t *testing.T) {
 
 	ss := sqlite.NewScheduleStore(db)
 	deps := scheduleimport.Deps{
-		Users: us, Schedules: ss, Absences: sqlite.NewAbsenceStore(db),
+		Users: us, FixedNonWorkWeekdays: fnw, Schedules: ss, Absences: sqlite.NewAbsenceStore(db),
 		Holidays: sqlite.NewHolidayStore(db), Closures: sqlite.NewClosureDayStore(db),
 		Claims: sqlite.NewCompensationDayClaimStore(db), TeamMeetings: nil,
 	}
@@ -483,12 +488,17 @@ func TestApply_NoWarnShiftOnNormalWorkday(t *testing.T) {
 	ctx := context.Background()
 
 	us := sqlite.NewUserStore(db)
+	fnw := sqlite.NewFixedNonWorkWeekdaysStore(db)
 	u := &model.User{
 		Username: "norm", PasswordHash: "x", DisplayName: "Normal Tag",
 		Role: model.RoleUser, Active: true,
-		FixedNonWorkWeekdays: []int{int(time.Friday)},
 	}
 	if err := us.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if err := fnw.Set(ctx, &model.FixedNonWorkWeekdays{
+		UserID: u.ID, Weekdays: []int{int(time.Friday)}, ValidFrom: "2000-01-01",
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -516,7 +526,7 @@ func TestApply_NoWarnShiftOnNormalWorkday(t *testing.T) {
 
 	ss := sqlite.NewScheduleStore(db)
 	deps := scheduleimport.Deps{
-		Users: us, Schedules: ss, Absences: sqlite.NewAbsenceStore(db),
+		Users: us, FixedNonWorkWeekdays: fnw, Schedules: ss, Absences: sqlite.NewAbsenceStore(db),
 		Holidays: sqlite.NewHolidayStore(db), Closures: sqlite.NewClosureDayStore(db),
 		Claims: sqlite.NewCompensationDayClaimStore(db), TeamMeetings: nil,
 	}

@@ -38,6 +38,7 @@ type Service struct {
 	periods    store.WorkPeriodStore
 	tags       store.NFCTagStore
 	claims     store.CompensationDayClaimStore
+	fnw        store.FixedNonWorkWeekdaysStore
 	users      store.UserStore
 	http       *http.Client
 
@@ -53,7 +54,7 @@ type pollTarget struct {
 }
 
 // NewService constructs a stamps poll service. employeeLAN may be nil (tests); when set, RunPoll also syncs employees to each LAN target.
-func NewService(settings store.SettingsStore, apiClients store.ApiPairedClientStore, punch store.PunchStore, periods store.WorkPeriodStore, tags store.NFCTagStore, claims store.CompensationDayClaimStore, users store.UserStore, employeeLAN *lanemployeesync.Service) *Service {
+func NewService(settings store.SettingsStore, apiClients store.ApiPairedClientStore, punch store.PunchStore, periods store.WorkPeriodStore, tags store.NFCTagStore, claims store.CompensationDayClaimStore, fnw store.FixedNonWorkWeekdaysStore, users store.UserStore, employeeLAN *lanemployeesync.Service) *Service {
 	return &Service{
 		settings:     settings,
 		apiClients:   apiClients,
@@ -61,6 +62,7 @@ func NewService(settings store.SettingsStore, apiClients store.ApiPairedClientSt
 		periods:      periods,
 		tags:         tags,
 		claims:       claims,
+		fnw:          fnw,
 		users:        users,
 		employeeLAN:  employeeLAN,
 		http:         &http.Client{Timeout: 45 * time.Second},
@@ -396,7 +398,7 @@ func (s *Service) runPollOneWithQuery(ctx context.Context, pt pollTarget, query 
 		s.noteTargetCheck(t.ID, err)
 		return inserted, err
 	}
-	_, err = importer.RecomputeAffectedDaysFromPunches(ctx, s.punch, s.periods, s.tags, s.claims, s.users, raw)
+	_, err = importer.RecomputeAffectedDaysFromPunches(ctx, s.punch, s.periods, s.tags, s.claims, s.fnw, raw)
 	if err != nil {
 		s.noteTargetCheck(t.ID, err)
 		return inserted, err

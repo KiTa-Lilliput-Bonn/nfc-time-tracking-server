@@ -684,6 +684,38 @@ func TestWeeklyHoursStore_SetAndGetForDate(t *testing.T) {
 	}
 }
 
+func TestFixedNonWorkWeekdaysStore_SetAndGetForDate(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	us := NewUserStore(db)
+	fnw := NewFixedNonWorkWeekdaysStore(db)
+
+	u := &model.User{Username: "fnw", PasswordHash: "x", DisplayName: "F", Role: model.RoleUser, Active: true}
+	if err := us.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if err := fnw.Set(ctx, &model.FixedNonWorkWeekdays{UserID: u.ID, Weekdays: []int{5}, ValidFrom: "2026-01-01"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fnw.Set(ctx, &model.FixedNonWorkWeekdays{UserID: u.ID, Weekdays: []int{4, 5}, ValidFrom: "2026-03-01"}); err != nil {
+		t.Fatal(err)
+	}
+	gotFeb, err := fnw.GetForDate(ctx, u.ID, "2026-02-15")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotFeb == nil || len(gotFeb.Weekdays) != 1 || gotFeb.Weekdays[0] != 5 {
+		t.Fatalf("expected Friday only in February, got %+v", gotFeb)
+	}
+	got, err := fnw.GetForDate(ctx, u.ID, "2026-03-15")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || len(got.Weekdays) != 2 {
+		t.Fatalf("expected Thu+Fri from March, got %+v", got)
+	}
+}
+
 func TestWeeklyHoursStore_Delete(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()

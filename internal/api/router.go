@@ -37,6 +37,7 @@ type Deps struct {
 	Absences              store.AbsenceStore
 	CompensationDayClaims store.CompensationDayClaimStore
 	WeeklyHours           store.WeeklyHoursStore
+	FixedNonWorkWeekdays  store.FixedNonWorkWeekdaysStore
 	VacationEnt           store.VacationEntitlementStore
 	NFCTags               store.NFCTagStore
 	Schedules             store.ScheduleStore
@@ -116,12 +117,14 @@ func NewRouter(d Deps) http.Handler {
 
 		me := &handler.MeHandler{
 			Users: d.UserStore, WorkPeriods: d.WorkPeriods, WeeklyHours: d.WeeklyHours,
+			FixedNonWorkWeekdays: d.FixedNonWorkWeekdays,
 			VacationEnt: d.VacationEnt, Absences: d.Absences, CompensationDayClaims: d.CompensationDayClaims,
 			Schedules: d.Schedules, TeamMeetings: d.TeamMeetings, Corrections: d.Corrections, Holidays: d.Holidays,
 			Audit: d.Audit,
 		}
 		ch := &handler.ClosureHandler{
-			Closures: d.ClosureDays, Holidays: d.Holidays, Users: d.UserStore, Absences: d.Absences,
+			Closures: d.ClosureDays, Holidays: d.Holidays, Users: d.UserStore,
+			FixedNonWorkWeekdays: d.FixedNonWorkWeekdays, Absences: d.Absences,
 			Audit: d.Audit,
 		}
 		r.Group(func(r chi.Router) {
@@ -144,6 +147,7 @@ func NewRouter(d Deps) http.Handler {
 			Holidays:    d.Holidays,
 			ClosureDays: d.ClosureDays,
 			WeeklyHours: d.WeeklyHours, VacationEnt: d.VacationEnt, NFCTags: d.NFCTags,
+			FixedNonWorkWeekdays: d.FixedNonWorkWeekdays,
 			Schedules: d.Schedules, TeamMeetings: d.TeamMeetings, Audit: d.Audit,
 		}
 		sh := &handler.ScheduleHandler{
@@ -156,6 +160,7 @@ func NewRouter(d Deps) http.Handler {
 			Closures:              d.ClosureDays,
 			CompensationDayClaims: d.CompensationDayClaims,
 			Audit:                 d.Audit,
+			FixedNonWorkWeekdays:  d.FixedNonWorkWeekdays,
 		}
 		ex := &handler.ExportHandler{Users: d.UserStore, ExportData: d.Export}
 		dh := &handler.DashboardHandler{
@@ -163,6 +168,7 @@ func NewRouter(d Deps) http.Handler {
 			Absences: d.Absences, CompensationDayClaims: d.CompensationDayClaims,
 			Holidays: d.Holidays, Closures: d.ClosureDays,
 			WeeklyHours: d.WeeklyHours, Settings: d.Settings, VacationEnt: d.VacationEnt,
+			FixedNonWorkWeekdays: d.FixedNonWorkWeekdays,
 			Schedules: d.Schedules,
 		}
 		hh := &handler.HolidayHandler{Holidays: d.Holidays, Audit: d.Audit}
@@ -200,6 +206,9 @@ func NewRouter(d Deps) http.Handler {
 			r.Put("/employees/{id}/vacation-entitlement", eh.PutVacationEntitlement)
 			r.Get("/employees/{id}/vacation-entitlement", eh.GetVacationEntitlement)
 			r.Delete("/employees/{id}/vacation-entitlement/{veId}", eh.DeleteVacationEntitlement)
+			r.Put("/employees/{id}/fixed-non-work-weekdays", eh.PutFixedNonWorkWeekdays)
+			r.Get("/employees/{id}/fixed-non-work-weekdays", eh.GetFixedNonWorkWeekdays)
+			r.Delete("/employees/{id}/fixed-non-work-weekdays/{fnwId}", eh.DeleteFixedNonWorkWeekdays)
 			r.Post("/employees/{id}/nfc-tags", eh.PostNFCTag)
 			r.Get("/employees/{id}/nfc-tags", eh.ListNFCTags)
 

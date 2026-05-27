@@ -27,6 +27,7 @@ type Deps struct {
 	Closures    store.ClosureDayStore
 	WeeklyHours store.WeeklyHoursStore
 	Settings              store.SettingsStore
+	FixedNonWorkWeekdays  store.FixedNonWorkWeekdaysStore
 	VacationEnt           store.VacationEntitlementStore
 	CompensationDayClaims store.CompensationDayClaimStore
 	Schedules             store.ScheduleStore
@@ -119,6 +120,7 @@ func Build(ctx context.Context, d Deps, vacationYear int, now time.Time) ([]Row,
 	type userPrep struct {
 		u         model.User
 		whRows    []model.WeeklyHours
+		fnwRows   []model.FixedNonWorkWeekdays
 		startDay  time.Time
 	}
 	prep := make([]userPrep, 0, len(filtered))
@@ -127,8 +129,15 @@ func Build(ctx context.Context, d Deps, vacationYear int, now time.Time) ([]Row,
 		if err != nil {
 			return nil, "", err
 		}
+		var fnwRows []model.FixedNonWorkWeekdays
+		if d.FixedNonWorkWeekdays != nil {
+			fnwRows, err = d.FixedNonWorkWeekdays.ListByUser(ctx, u.ID)
+			if err != nil {
+				return nil, "", err
+			}
+		}
 		startDay := userHoursRangeStart(whRows, yesterday, loc)
-		prep = append(prep, userPrep{u: u, whRows: whRows, startDay: startDay})
+		prep = append(prep, userPrep{u: u, whRows: whRows, fnwRows: fnwRows, startDay: startDay})
 	}
 
 	hasTeamRange := false
@@ -195,6 +204,7 @@ func Build(ctx context.Context, d Deps, vacationYear int, now time.Time) ([]Row,
 			hoursAbsByDate := indexFirstAbsenceByDate(hoursAbsences)
 
 			whRows := p.whRows
+			fnwRows := p.fnwRows
 
 			var schByDate map[string]*model.Schedule
 			if d.Schedules != nil {
@@ -216,7 +226,7 @@ func Build(ctx context.Context, d Deps, vacationYear int, now time.Time) ([]Row,
 				}
 				net := daycalc.NetHours(dayWps, breakRules, roundMin, shiftBounds)
 
-				fixed := u.FixedNonWorkWeekdays
+				fixed := model.FixedNonWorkWeekdaysForDate(fnwRows, ds)
 				var daily float64
 				if wh := weeklyHoursForDate(whRows, ds); wh != nil {
 					daily = model.DailyHours(wh.HoursPerWeek, fixed)

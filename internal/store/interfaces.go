@@ -78,6 +78,14 @@ type VacationEntitlementStore interface {
 	ListByUser(ctx context.Context, userID int) ([]model.VacationEntitlement, error)
 }
 
+type FixedNonWorkWeekdaysStore interface {
+	Set(ctx context.Context, row *model.FixedNonWorkWeekdays) error
+	Delete(ctx context.Context, userID int, id int) error
+	GetByID(ctx context.Context, userID int, id int) (*model.FixedNonWorkWeekdays, error)
+	GetForDate(ctx context.Context, userID int, date string) (*model.FixedNonWorkWeekdays, error)
+	ListByUser(ctx context.Context, userID int) ([]model.FixedNonWorkWeekdays, error)
+}
+
 type ScheduleStore interface {
 	Set(ctx context.Context, s *model.Schedule) error
 	GetByID(ctx context.Context, id int) (*model.Schedule, error)

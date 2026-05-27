@@ -27,3 +27,12 @@ type VacationEntitlement struct {
 	ValidFrom   string    `json:"valid_from"`
 	CreatedAt   time.Time `json:"created_at"`
 }
+
+// FixedNonWorkWeekdays is one versioned block of fixed free weekdays (Mo–Fr, 1=Monday … 5=Friday).
+type FixedNonWorkWeekdays struct {
+	ID        int       `json:"id"`
+	UserID    int       `json:"user_id"`
+	Weekdays  []int     `json:"weekdays"`
+	ValidFrom string    `json:"valid_from"`
+	CreatedAt time.Time `json:"created_at"`
+}

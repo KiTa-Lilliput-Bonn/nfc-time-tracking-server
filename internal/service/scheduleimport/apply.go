@@ -17,7 +17,7 @@ func Apply(ctx context.Context, deps Deps, parsed *ParsedSheet, createdBy int, t
 		return &Report{}, nil
 	}
 
-	index, fixedByUID, teamMeetingOptOut, ambWarnings, err := buildEmployeeNameIndex(ctx, deps.Users)
+	index, fnwByUID, teamMeetingOptOut, ambWarnings, err := buildEmployeeNameIndex(ctx, deps.Users, deps.FixedNonWorkWeekdays)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func Apply(ctx context.Context, deps Deps, parsed *ParsedSheet, createdBy int, t
 						wr.TimesWritten++
 						maybeWarnShiftOnFixedFreeDay(
 							rep, seenFixedFreeShiftWarn, uid, row.RawName, date,
-							fmt.Sprintf("%s-%s", pc.ShiftStart, pc.ShiftEnd), fixedByUID,
+							fmt.Sprintf("%s-%s", pc.ShiftStart, pc.ShiftEnd), fnwByUID,
 						)
 					}
 				}
@@ -270,14 +270,14 @@ func normalizeName(s string) string {
 	return strings.ToLower(s)
 }
 
-func buildEmployeeNameIndex(ctx context.Context, users store.UserStore) (map[string]int, map[int][]int, map[int]struct{}, []string, error) {
+func buildEmployeeNameIndex(ctx context.Context, users store.UserStore, fnw store.FixedNonWorkWeekdaysStore) (map[string]int, map[int][]model.FixedNonWorkWeekdays, map[int]struct{}, []string, error) {
 	list, err := users.List(ctx, true)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
 	buckets := map[string][]int{}
-	fixedByUID := map[int][]int{}
+	fnwByUID := map[int][]model.FixedNonWorkWeekdays{}
 	teamMeetingOptOut := map[int]struct{}{}
 	for _, u := range list {
 		if !u.Active || u.Role == model.RoleSuperadmin {
@@ -286,8 +286,10 @@ func buildEmployeeNameIndex(ctx context.Context, users store.UserStore) (map[str
 		if !u.DefaultTeamMeetingParticipant {
 			teamMeetingOptOut[u.ID] = struct{}{}
 		}
-		if len(u.FixedNonWorkWeekdays) > 0 {
-			fixedByUID[u.ID] = append([]int(nil), u.FixedNonWorkWeekdays...)
+		if fnw != nil {
+			if rows, err := fnw.ListByUser(ctx, u.ID); err == nil && len(rows) > 0 {
+				fnwByUID[u.ID] = rows
+			}
 		}
 		n := normalizeName(u.DisplayName)
 		if n == "" {
@@ -305,7 +307,7 @@ func buildEmployeeNameIndex(ctx context.Context, users store.UserStore) (map[str
 		}
 		index[n] = ids[0]
 	}
-	return index, fixedByUID, teamMeetingOptOut, warns, nil
+	return index, fnwByUID, teamMeetingOptOut, warns, nil
 }
 
 // maybeWarnShiftOnFixedFreeDay meldet Schichtimport an einem in den Stammdaten fest freien Wochentag.
@@ -314,9 +316,9 @@ func maybeWarnShiftOnFixedFreeDay(
 	seen map[string]struct{},
 	uid int,
 	userLabel, date, shiftRange string,
-	fixedByUID map[int][]int,
+	fnwByUID map[int][]model.FixedNonWorkWeekdays,
 ) {
-	fixed := fixedByUID[uid]
+	fixed := model.FixedNonWorkWeekdaysForDate(fnwByUID[uid], date)
 	if len(fixed) == 0 {
 		return
 	}
@@ -391,7 +393,7 @@ func replaceWithVacation(ctx context.Context, deps Deps, uid int, date string, c
 	if err := deleteExistingAbsenceOnly(ctx, deps, uid, date, rep, wr); err != nil {
 		return err
 	}
-	fixed := fixedNonWorkWeekdaysForUser(ctx, deps.Users, uid)
+	fixed := fixedNonWorkWeekdaysForUser(ctx, deps.FixedNonWorkWeekdays, uid, date)
 	if err := validateVacationAbsenceDate(ctx, deps.Holidays, deps.Closures, fixed, date); err != nil {
 		return fmt.Errorf("Urlaub %d %s: %v", uid, date, err)
 	}
@@ -418,7 +420,7 @@ func replaceWithCompensationDay(ctx context.Context, deps Deps, uid int, date st
 	if err := deleteExistingAbsenceOnly(ctx, deps, uid, date, rep, wr); err != nil {
 		return err
 	}
-	fixed := fixedNonWorkWeekdaysForUser(ctx, deps.Users, uid)
+	fixed := fixedNonWorkWeekdaysForUser(ctx, deps.FixedNonWorkWeekdays, uid, date)
 	if err := validateCompensationDayAbsenceDate(ctx, deps.Holidays, fixed, date); err != nil {
 		return fmt.Errorf("Ausgleichstag %d %s: %v", uid, date, err)
 	}

@@ -7,18 +7,12 @@ import (
 	"time"
 
 	"nfc-time-tracking-server/internal/model"
+	"nfc-time-tracking-server/internal/service/fixednonwork"
 	"nfc-time-tracking-server/internal/store"
 )
 
-func fixedNonWorkWeekdaysForUser(ctx context.Context, users store.UserStore, uid int) []int {
-	if users == nil {
-		return nil
-	}
-	u, err := users.GetByID(ctx, uid)
-	if err != nil || u == nil {
-		return nil
-	}
-	return u.FixedNonWorkWeekdays
+func fixedNonWorkWeekdaysForUser(ctx context.Context, fnw store.FixedNonWorkWeekdaysStore, uid int, dateStr string) []int {
+	return fixednonwork.WeekdaysForUserDate(ctx, fnw, uid, dateStr)
 }
 
 var germanWeekdayName = map[time.Weekday]string{

@@ -57,12 +57,17 @@ func TestClosureDayCreate_SyncsVacationExceptFixedFree(t *testing.T) {
 	if err := us.Create(ctx, &model.User{
 		Username: "wedfree", PasswordHash: hash, DisplayName: "WF",
 		Role: model.RoleUser, Active: true,
-		FixedNonWorkWeekdays: []int{int(time.Wednesday)},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	userFixedWed, err := us.GetByUsername(ctx, "wedfree")
 	if err != nil {
+		t.Fatal(err)
+	}
+	fnw := sqlite.NewFixedNonWorkWeekdaysStore(db)
+	if err := fnw.Set(ctx, &model.FixedNonWorkWeekdays{
+		UserID: userFixedWed.ID, Weekdays: []int{int(time.Wednesday)}, ValidFrom: "2000-01-01",
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -72,10 +77,11 @@ func TestClosureDayCreate_SyncsVacationExceptFixedFree(t *testing.T) {
 	}
 
 	ch := &ClosureHandler{
-		Closures: sqlite.NewClosureDayStore(db),
-		Holidays: sqlite.NewHolidayStore(db),
-		Users:    us,
-		Absences: sqlite.NewAbsenceStore(db),
+		Closures:             sqlite.NewClosureDayStore(db),
+		Holidays:             sqlite.NewHolidayStore(db),
+		Users:                us,
+		FixedNonWorkWeekdays: fnw,
+		Absences:             sqlite.NewAbsenceStore(db),
 	}
 
 	r := chi.NewRouter()

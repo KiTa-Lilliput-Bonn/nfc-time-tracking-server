@@ -281,10 +281,16 @@ func loadWeekData(
 	data := &weekCellData{
 		schedules: map[int]map[string]*model.Schedule{},
 		absences:  map[int]map[string]*model.Absence{},
+		fnwByUser: map[int][]model.FixedNonWorkWeekdays{},
 	}
 	for _, e := range employees {
 		data.schedules[e.ID] = map[string]*model.Schedule{}
 		data.absences[e.ID] = map[string]*model.Absence{}
+		if deps.FixedNonWorkWeekdays != nil {
+			if rows, err := deps.FixedNonWorkWeekdays.ListByUser(ctx, e.ID); err == nil {
+				data.fnwByUser[e.ID] = rows
+			}
+		}
 	}
 
 	schedules, err := deps.Schedules.ListByWeek(ctx, isoYear, isoWeek)

@@ -22,6 +22,7 @@ type DashboardHandler struct {
 	Holidays               store.HolidayStore
 	Closures    store.ClosureDayStore
 	WeeklyHours store.WeeklyHoursStore
+	FixedNonWorkWeekdays store.FixedNonWorkWeekdaysStore
 	Settings    store.SettingsStore
 	VacationEnt store.VacationEntitlementStore
 	Schedules   store.ScheduleStore
@@ -37,6 +38,7 @@ func (h *DashboardHandler) teamDeps() teamoverview.Deps {
 		Holidays:              h.Holidays,
 		Closures:              h.Closures,
 		WeeklyHours:           h.WeeklyHours,
+		FixedNonWorkWeekdays:  h.FixedNonWorkWeekdays,
 		Settings:              h.Settings,
 		VacationEnt:           h.VacationEnt,
 		Schedules:             h.Schedules,

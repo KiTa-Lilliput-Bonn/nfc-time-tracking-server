@@ -3,7 +3,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import Button from 'primevue/button'
 import Card from 'primevue/card'
-import Checkbox from 'primevue/checkbox'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import DatePicker from 'primevue/datepicker'
@@ -22,8 +21,8 @@ import {
   fetchEmployeeSchedule,
   fetchEmployeeTimes,
   fetchEmployeeVacation,
+  fetchFixedNonWorkWeekdays,
   fetchWeeklyHours,
-  patchEmployee,
 } from '@/api/management'
 import { fetchEmployees } from '@/api/employees'
 import BalanceCard from '@/components/BalanceCard.vue'
@@ -33,6 +32,7 @@ import type {
   Absence,
   ClosureDay,
   Employee,
+  FixedNonWorkWeekdays,
   HolidayCredit,
   MonthBalance,
   Schedule,
@@ -48,7 +48,6 @@ import {
   startOfISOWeek,
   toISODateLocal,
 } from '@/utils/dates'
-import { getApiErrorMessage } from '@/utils/apiError'
 import { canManageEmployeeByRole } from '@/utils/roles'
 import { enumerateWorkdayISO, vacationDisplayGapOnlySkippable } from '@/utils/workdays'
 import { useAuthStore } from '@/stores/auth'
@@ -66,25 +65,8 @@ const canManageEmployee = computed(() =>
 
 const employee = ref<Employee | null>(null)
 const weeklyHoursList = ref<WeeklyHours[]>([])
-const fixedNonWorkEditing = ref<number[]>([])
-const fixedFreeSaving = ref(false)
+const fnwList = ref<FixedNonWorkWeekdays[]>([])
 const tab = ref<'times' | 'balance' | 'absences' | 'corrections' | 'settings'>('times')
-
-const weekdayFixedOptions = [
-  { label: 'Montag', value: 1 },
-  { label: 'Dienstag', value: 2 },
-  { label: 'Mittwoch', value: 3 },
-  { label: 'Donnerstag', value: 4 },
-  { label: 'Freitag', value: 5 },
-]
-
-watch(
-  employee,
-  (e) => {
-    fixedNonWorkEditing.value = [...(e?.fixed_non_work_weekdays ?? [])]
-  },
-  { immediate: true },
-)
 
 const from = ref<Date>(startOfISOWeek(new Date()))
 const to = ref<Date>(endOfISOWeek(new Date()))
@@ -129,13 +111,14 @@ async function loadTimesBlock() {
   try {
     const f = toISODateLocal(from.value)
     const t = toISODateLocal(to.value)
-    const [tRes, aRes, cRes, schRes, cls, wh] = await Promise.all([
+    const [tRes, aRes, cRes, schRes, cls, wh, fnw] = await Promise.all([
       fetchEmployeeTimes(employee.value.id, f, t),
       fetchEmployeeAbsences(employee.value.id, f, t),
       fetchEmployeeCorrections(employee.value.id, f, t),
       fetchEmployeeSchedule(employee.value.id, f, t),
       fetchClosureDays().catch((): ClosureDay[] => []),
       fetchWeeklyHours(employee.value.id).catch((): WeeklyHours[] => []),
+      fetchFixedNonWorkWeekdays(employee.value.id).catch((): FixedNonWorkWeekdays[] => []),
     ])
     periods.value = tRes.work_periods
     holidays.value = tRes.holidays ?? []
@@ -144,6 +127,7 @@ async function loadTimesBlock() {
     schedules.value = schRes.schedules
     closures.value = cls
     weeklyHoursList.value = wh
+    fnwList.value = fnw
   } finally {
     timesLoading.value = false
   }
@@ -212,7 +196,6 @@ function absenceTypeLabel(t: string) {
 
 const holidayDateSet = computed(() => new Set(holidays.value.map((h) => normalizeISODate(h.holiday_date))))
 const closureDateSet = computed(() => new Set(closures.value.map((c) => normalizeISODate(c.closure_date))))
-const fixedNonWorkSet = computed(() => new Set(employee.value?.fixed_non_work_weekdays ?? []))
 const skipDatesSet = computed(() => {
   const s = new Set<string>()
   for (const x of holidayDateSet.value) s.add(x)
@@ -237,7 +220,7 @@ const absenceViewRows = computed<AbsenceViewRow[]>(() => {
     .map((a) => ({ ...a, absence_date: normalizeISODate(a.absence_date) }))
     .sort((a, b) => a.absence_date.localeCompare(b.absence_date) || (a.id ?? 0) - (b.id ?? 0))
 
-  const fixedSet = new Set(employee.value?.fixed_non_work_weekdays ?? [])
+  const fixedSet = fnwList.value
   const skip = skipDatesSet.value
 
   const singles: AbsenceViewRow[] = []
@@ -345,46 +328,7 @@ async function removeVacationRow(row: AbsenceViewRow) {
 }
 
 function enumerateVacationWorkdayISO(fromD: Date, toD: Date): string[] {
-  return enumerateWorkdayISO(fromD, toD, holidayDateSet.value, closureDateSet.value, fixedNonWorkSet.value)
-}
-
-function toggleFixedWeekday(val: number, checked: boolean) {
-  const s = new Set(fixedNonWorkEditing.value)
-  if (checked) {
-    if (s.size >= 4 && !s.has(val)) {
-      toast.add({
-        severity: 'warn',
-        summary: 'Hinweis',
-        detail: 'Mindestens ein Arbeitstag (Mo–Fr) muss erhalten bleiben.',
-        life: 8000,
-      })
-      return
-    }
-    s.add(val)
-  } else {
-    s.delete(val)
-  }
-  fixedNonWorkEditing.value = [...s].sort((a, b) => a - b)
-}
-
-async function saveFixedFreeWeekdays() {
-  if (!employee.value || !canManageEmployee.value) return
-  fixedFreeSaving.value = true
-  try {
-    const sorted = [...fixedNonWorkEditing.value].sort((a, b) => a - b)
-    const updated = await patchEmployee(employee.value.id, { fixed_non_work_weekdays: sorted })
-    employee.value = updated
-    toast.add({ severity: 'success', summary: 'Feste freie Tage gespeichert', life: 6000 })
-  } catch (e) {
-    toast.add({
-      severity: 'error',
-      summary: 'Speichern fehlgeschlagen',
-      detail: getApiErrorMessage(e) ?? 'Bitte erneut versuchen.',
-      life: 10000,
-    })
-  } finally {
-    fixedFreeSaving.value = false
-  }
+  return enumerateWorkdayISO(fromD, toD, holidayDateSet.value, closureDateSet.value, fnwList.value)
 }
 
 async function submitVacationEdit() {
@@ -483,7 +427,7 @@ async function submitVacationEdit() {
         :holidays="holidays"
         :schedule-by-date="scheduleByDate"
         :weekly-hours="weeklyHoursList"
-        :fixed-non-work-weekdays="employee.fixed_non_work_weekdays"
+        :fixed-non-work-weekdays-history="fnwList"
         :loading="timesLoading"
         :row-correction="
           canManageEmployee ? { mode: 'employee', employeeId: employee.id } : undefined
@@ -636,32 +580,6 @@ async function submitVacationEdit() {
               {{ (employee.opening_vacation_days ?? 0).toFixed(1) }} Tg.
             </dd>
           </dl>
-        </template>
-      </Card>
-      <Card v-if="canManageEmployee">
-        <template #title>Feste freie Wochentage</template>
-        <template #content>
-          <p class="hint">
-            Regelmäßig freie Mo–Fr (z. B. 4-Tage-Woche). Soll-Stunden pro verbleibendem Arbeitstag: Wochenarbeitszeit ÷
-            Arbeitstage. Im Dienstplan werden die Tage gekennzeichnet und nicht verplant.
-          </p>
-          <div class="fixed-free-row">
-            <label v-for="opt in weekdayFixedOptions" :key="opt.value" class="fixed-free-item">
-              <Checkbox
-                :binary="true"
-                :model-value="fixedNonWorkEditing.includes(opt.value)"
-                @update:model-value="(v: boolean) => toggleFixedWeekday(opt.value, Boolean(v))"
-              />
-              <span>{{ opt.label }}</span>
-            </label>
-          </div>
-          <Button
-            label="Feste freie Tage speichern"
-            class="mt"
-            icon="pi pi-save"
-            :loading="fixedFreeSaving"
-            @click="saveFixedFreeWeekdays"
-          />
         </template>
       </Card>
     </div>

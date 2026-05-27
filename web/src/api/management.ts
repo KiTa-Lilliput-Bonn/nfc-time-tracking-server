@@ -19,6 +19,7 @@ import type {
   TimeCorrection,
   VacationBalance,
   VacationEntitlement,
+  FixedNonWorkWeekdays,
   WeeklyHours,
   WorkPeriod,
 } from '@/types/api'
@@ -50,7 +51,6 @@ export async function patchEmployee(
     opening_vacation_days?: number
     /** Zuweisung ändern oder mit null entfernen */
     group_id?: number | null
-    fixed_non_work_weekdays?: number[]
   },
 ) {
   const { data } = await api.patch<Employee>(`/employees/${id}`, body)
@@ -189,6 +189,28 @@ export async function putWeeklyHours(
 ) {
   const { data } = await api.put<WeeklyHours>(`/employees/${employeeId}/weekly-hours`, body)
   return data
+}
+
+export async function fetchFixedNonWorkWeekdays(employeeId: number) {
+  const { data } = await api.get<{ fixed_non_work_weekdays: FixedNonWorkWeekdays[] | null }>(
+    `/employees/${employeeId}/fixed-non-work-weekdays`,
+  )
+  return data.fixed_non_work_weekdays ?? []
+}
+
+export async function putFixedNonWorkWeekdays(
+  employeeId: number,
+  body: { weekdays: number[]; valid_from: string },
+) {
+  const { data } = await api.put<FixedNonWorkWeekdays>(
+    `/employees/${employeeId}/fixed-non-work-weekdays`,
+    body,
+  )
+  return data
+}
+
+export async function deleteFixedNonWorkWeekdays(employeeId: number, rowId: number) {
+  await api.delete(`/employees/${employeeId}/fixed-non-work-weekdays/${rowId}`)
 }
 
 export async function fetchVacationEntitlements(employeeId: number) {

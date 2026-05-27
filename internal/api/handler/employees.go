@@ -20,6 +20,7 @@ import (
 	authsvc "nfc-time-tracking-server/internal/service/auth"
 	"nfc-time-tracking-server/internal/service/compensationday"
 	"nfc-time-tracking-server/internal/service/entrylock"
+	"nfc-time-tracking-server/internal/service/fixednonwork"
 	"nfc-time-tracking-server/internal/service/saldocalc"
 	"nfc-time-tracking-server/internal/service/timesummary"
 	"nfc-time-tracking-server/internal/service/vacationbalance"
@@ -38,6 +39,7 @@ type EmployeeHandler struct {
 	Holidays               store.HolidayStore
 	ClosureDays            store.ClosureDayStore
 	WeeklyHours            store.WeeklyHoursStore
+	FixedNonWorkWeekdays   store.FixedNonWorkWeekdaysStore
 	VacationEnt store.VacationEntitlementStore
 	NFCTags     store.NFCTagStore
 	Schedules   store.ScheduleStore
@@ -51,7 +53,7 @@ func (h *EmployeeHandler) List(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return
 	}
-	response.JSON(w, http.StatusOK, map[string]interface{}{"employees": users})
+	response.JSON(w, http.StatusOK, map[string]interface{}{"employees": employeesJSONForList(r.Context(), h.FixedNonWorkWeekdays, users)})
 }
 
 type createEmployeeBody struct {
@@ -112,7 +114,6 @@ type patchEmployeeBody struct {
 	OpeningHoursBalance *float64 `json:"opening_hours_balance"`
 	OpeningVacationDays *float64 `json:"opening_vacation_days"`
 	GroupID             OptionalPatchInt `json:"group_id"`
-	FixedNonWorkWeekdays *[]int `json:"fixed_non_work_weekdays"`
 }
 
 func (h *EmployeeHandler) Patch(w http.ResponseWriter, r *http.Request) {
@@ -177,13 +178,6 @@ func (h *EmployeeHandler) Patch(w http.ResponseWriter, r *http.Request) {
 			u.GroupID = nil
 		}
 	}
-	if body.FixedNonWorkWeekdays != nil {
-		if err := model.ValidateFixedNonWorkWeekdays(*body.FixedNonWorkWeekdays); err != nil {
-			response.Error(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		u.FixedNonWorkWeekdays = append([]int(nil), *body.FixedNonWorkWeekdays...)
-	}
 	if err := h.Users.Update(r.Context(), u); err != nil {
 		response.Error(w, http.StatusInternalServerError, "update failed")
 		return
@@ -193,7 +187,7 @@ func (h *EmployeeHandler) Patch(w http.ResponseWriter, r *http.Request) {
 		TargetUserID: auditTarget(u.ID),
 		Summary:      audit.JSONSummary(map[string]any{"username": u.Username, "role": u.Role, "active": u.Active}),
 	})
-	response.JSON(w, http.StatusOK, u)
+	response.JSON(w, http.StatusOK, employeeJSONForUser(r.Context(), h.FixedNonWorkWeekdays, *u, time.Now().In(time.Local).Format("2006-01-02")))
 }
 
 func (h *EmployeeHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
@@ -248,13 +242,7 @@ func (h *EmployeeHandler) Times(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return
 	}
-	fixed := []int(nil)
-	if h.Users != nil {
-		if u, err := h.Users.GetByID(r.Context(), uid); err == nil && u != nil {
-			fixed = u.FixedNonWorkWeekdays
-		}
-	}
-	holCredits := buildHolidayCredits(r.Context(), uid, from, to, fixed, h.WeeklyHours, h.Holidays)
+	holCredits := buildHolidayCredits(r.Context(), uid, from, to, h.FixedNonWorkWeekdays, h.WeeklyHours, h.Holidays)
 	response.JSON(w, http.StatusOK, map[string]interface{}{
 		"from": from, "to": to, "work_periods": periods,
 		"worked_hours": worked,
@@ -315,7 +303,7 @@ func (h *EmployeeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "user query failed")
 		return
 	}
-	mb, err := saldocalc.MonthWithOpening(r.Context(), uid, y, m, u.OpeningHoursBalance, u.FixedNonWorkWeekdays, h.WorkPeriods, h.WeeklyHours, h.Schedules)
+	mb, err := saldocalc.MonthWithOpening(r.Context(), uid, y, m, u.OpeningHoursBalance, h.FixedNonWorkWeekdays, h.WorkPeriods, h.WeeklyHours, h.Schedules)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return
@@ -379,7 +367,7 @@ func (h *EmployeeHandler) CreateWorkPeriod(w http.ResponseWriter, r *http.Reques
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := compensationday.SyncClaimAfterWorkDayChange(r.Context(), h.Users, h.WorkPeriods, h.Corrections, h.CompensationDayClaims, uid, body.WorkDate); err != nil {
+	if err := compensationday.SyncClaimAfterWorkDayChange(r.Context(), h.FixedNonWorkWeekdays, h.WorkPeriods, h.Corrections, h.CompensationDayClaims, uid, body.WorkDate); err != nil {
 		response.Error(w, http.StatusInternalServerError, "Ausgleichstag-Anspruch konnte nicht aktualisiert werden")
 		return
 	}
@@ -426,7 +414,7 @@ func (h *EmployeeHandler) DeleteWorkPeriod(w http.ResponseWriter, r *http.Reques
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := compensationday.SyncClaimAfterWorkDayChange(r.Context(), h.Users, h.WorkPeriods, h.Corrections, h.CompensationDayClaims, uid, workDate); err != nil {
+	if err := compensationday.SyncClaimAfterWorkDayChange(r.Context(), h.FixedNonWorkWeekdays, h.WorkPeriods, h.Corrections, h.CompensationDayClaims, uid, workDate); err != nil {
 		response.Error(w, http.StatusInternalServerError, "Ausgleichstag-Anspruch konnte nicht aktualisiert werden")
 		return
 	}
@@ -514,7 +502,7 @@ func (h *EmployeeHandler) CreateCorrection(w http.ResponseWriter, r *http.Reques
 		response.Error(w, http.StatusInternalServerError, "create failed")
 		return
 	}
-	if err := compensationday.SyncClaimAfterWorkDayChange(r.Context(), h.Users, h.WorkPeriods, h.Corrections, h.CompensationDayClaims, uid, day); err != nil {
+	if err := compensationday.SyncClaimAfterWorkDayChange(r.Context(), h.FixedNonWorkWeekdays, h.WorkPeriods, h.Corrections, h.CompensationDayClaims, uid, day); err != nil {
 		response.Error(w, http.StatusInternalServerError, "Ausgleichstag-Anspruch konnte nicht aktualisiert werden")
 		return
 	}
@@ -701,11 +689,11 @@ func (h *EmployeeHandler) CreateAbsence(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	targetUser, err := h.Users.GetByID(r.Context(), uid)
-	if err != nil {
+	if err != nil || targetUser == nil {
 		response.Error(w, http.StatusInternalServerError, "user query failed")
 		return
 	}
-	fixed := targetUser.FixedNonWorkWeekdays
+	fixed := fixednonwork.WeekdaysForUserDate(r.Context(), h.FixedNonWorkWeekdays, uid, body.AbsenceDate)
 	if body.AbsenceType == model.AbsenceVacation {
 		if err := validateVacationAbsenceDate(r.Context(), h.Holidays, h.ClosureDays, fixed, body.AbsenceDate); err != nil {
 			response.Error(w, http.StatusBadRequest, err.Error())
@@ -1103,6 +1091,91 @@ func (h *EmployeeHandler) DeleteVacationEntitlement(w http.ResponseWriter, r *ht
 	}
 	logAudit(h.Audit, r.Context(), audit.Entry{
 		Action: audit.ActionDelete, EntityType: audit.EntityVacationEntitlement, EntityID: auditID(veID),
+		TargetUserID: auditTarget(uid),
+	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *EmployeeHandler) PutFixedNonWorkWeekdays(w http.ResponseWriter, r *http.Request) {
+	uid, ok := h.parseEmployeeIDForWrite(w, r)
+	if !ok {
+		return
+	}
+	var body fixedNonWorkWeekdaysBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if body.ValidFrom == "" {
+		response.Error(w, http.StatusBadRequest, "valid_from required")
+		return
+	}
+	if err := model.ValidateFixedNonWorkWeekdays(body.Weekdays); err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	row := &model.FixedNonWorkWeekdays{UserID: uid, Weekdays: append([]int(nil), body.Weekdays...), ValidFrom: body.ValidFrom}
+	if err := h.FixedNonWorkWeekdays.Set(r.Context(), row); err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	logAudit(h.Audit, r.Context(), audit.Entry{
+		Action: audit.ActionUpdate, EntityType: audit.EntityFixedNonWorkWeekdays, EntityID: auditID(row.ID),
+		TargetUserID: auditTarget(uid),
+		Summary:      audit.JSONSummary(map[string]any{"weekdays": body.Weekdays, "valid_from": body.ValidFrom}),
+	})
+	resp := fixedNonWorkWeekdaysResponse{
+		FixedNonWorkWeekdays: *row,
+		Mutable:              entrylock.IsMutable(row.CreatedAt, time.Now().UTC()),
+	}
+	response.JSON(w, http.StatusOK, resp)
+}
+
+func (h *EmployeeHandler) GetFixedNonWorkWeekdays(w http.ResponseWriter, r *http.Request) {
+	uid, ok := h.parseEmployeeID(w, r)
+	if !ok {
+		return
+	}
+	list, err := h.FixedNonWorkWeekdays.ListByUser(r.Context(), uid)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]interface{}{"fixed_non_work_weekdays": fixedNonWorkWeekdaysResponses(list)})
+}
+
+func (h *EmployeeHandler) DeleteFixedNonWorkWeekdays(w http.ResponseWriter, r *http.Request) {
+	uid, ok := h.parseEmployeeIDForWrite(w, r)
+	if !ok {
+		return
+	}
+	rowID, err := strconv.Atoi(chi.URLParam(r, "fnwId"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	row, err := h.FixedNonWorkWeekdays.GetByID(r.Context(), uid, rowID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	if row == nil {
+		response.Error(w, http.StatusNotFound, "not found")
+		return
+	}
+	if !h.enforceMutableEntry(w, r, row.CreatedAt) {
+		return
+	}
+	if err := h.FixedNonWorkWeekdays.Delete(r.Context(), uid, rowID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			response.Error(w, http.StatusNotFound, "not found")
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	logAudit(h.Audit, r.Context(), audit.Entry{
+		Action: audit.ActionDelete, EntityType: audit.EntityFixedNonWorkWeekdays, EntityID: auditID(rowID),
 		TargetUserID: auditTarget(uid),
 	})
 	w.WriteHeader(http.StatusNoContent)

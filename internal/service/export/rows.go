@@ -34,6 +34,7 @@ type Data struct {
 	Holidays    store.HolidayStore
 	Closures    store.ClosureDayStore
 	WeeklyHours store.WeeklyHoursStore
+	FixedNonWorkWeekdays store.FixedNonWorkWeekdaysStore
 	Settings    store.SettingsStore
 	Users       store.UserStore
 }
@@ -62,11 +63,9 @@ func BuildDayRows(ctx context.Context, d Data, userID int, from, to string) ([]D
 		return nil, fmt.Errorf("to before from")
 	}
 
-	var fixed []int
-	if d.Users != nil {
-		if usr, err := d.Users.GetByID(ctx, userID); err == nil && usr != nil {
-			fixed = usr.FixedNonWorkWeekdays
-		}
+	var fnwRows []model.FixedNonWorkWeekdays
+	if d.FixedNonWorkWeekdays != nil {
+		fnwRows, _ = d.FixedNonWorkWeekdays.ListByUser(ctx, userID)
 	}
 
 	roundMin := 15
@@ -103,6 +102,7 @@ func BuildDayRows(ctx context.Context, d Data, userID int, from, to string) ([]D
 		netH := daycalc.NetHours(wps, breakRules, roundMin, shiftBounds)
 
 		wh, _ := d.WeeklyHours.GetForDate(ctx, userID, ds)
+		fixed := model.FixedNonWorkWeekdaysForDate(fnwRows, ds)
 		var daily float64
 		if wh != nil {
 			daily = model.DailyHours(wh.HoursPerWeek, fixed)

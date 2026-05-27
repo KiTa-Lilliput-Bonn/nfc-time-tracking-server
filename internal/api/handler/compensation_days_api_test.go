@@ -217,6 +217,7 @@ func compensationDayEmployeeRouter(db *sqlite.DB, auth *authsvc.Service) http.Ha
 		Holidays:              sqlite.NewHolidayStore(db),
 		ClosureDays:           sqlite.NewClosureDayStore(db),
 		WeeklyHours:           sqlite.NewWeeklyHoursStore(db),
+		FixedNonWorkWeekdays:  sqlite.NewFixedNonWorkWeekdaysStore(db),
 		VacationEnt:           sqlite.NewVacationEntitlementStore(db),
 		NFCTags:               sqlite.NewNFCTagStore(db),
 	}

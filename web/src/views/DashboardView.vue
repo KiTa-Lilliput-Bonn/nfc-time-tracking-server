@@ -15,7 +15,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { fetchEmployees } from '@/api/employees'
 import { fetchGroups } from '@/api/groups'
-import { createEmployeeAbsence, fetchClosureDays, fetchTeamOverview, fetchHolidays } from '@/api/management'
+import { createEmployeeAbsence, fetchClosureDays, fetchFixedNonWorkWeekdays, fetchTeamOverview, fetchHolidays } from '@/api/management'
 import VacationBalanceBar from '@/components/VacationBalanceBar.vue'
 import { fetchMeBalance, fetchMeSchedule, fetchMeTimes, fetchMeVacation } from '@/api/me'
 import { addDays, formatGermanDate, toISODateLocal } from '@/utils/dates'
@@ -29,7 +29,7 @@ import {
   normalizeISODate,
 } from '@/utils/workdays'
 import { focusSelectFilterOnShow, openSelectDropdown } from '@/utils/selectFilterFocus'
-import type { Employee, Schedule, TeamOverviewRow, UserGroup, VacationBalance } from '@/types/api'
+import type { Employee, FixedNonWorkWeekdays, Schedule, TeamOverviewRow, UserGroup, VacationBalance } from '@/types/api'
 import type { ClosureDay } from '@/types/api'
 
 const auth = useAuthStore()
@@ -289,10 +289,7 @@ onMounted(load)
 
 const showQuickSick = ref(false)
 const quickSickEmpId = ref<number | null>(null)
-const quickSickFixedNonWorkSet = computed(() => {
-  const e = employees.value.find((x) => x.id === quickSickEmpId.value)
-  return new Set(e?.fixed_non_work_weekdays ?? [])
-})
+const quickSickFnwRows = ref<FixedNonWorkWeekdays[]>([])
 const quickSickFrom = ref<Date>(new Date())
 const quickSickTo = ref<Date>(new Date())
 const quickSickHalfDay = ref(false)
@@ -305,6 +302,22 @@ const quickSickEmployeeOptions = computed(() =>
     .map((e) => ({ label: e.display_name, value: e.id })),
 )
 
+async function loadQuickSickFnw() {
+  if (quickSickEmpId.value == null) {
+    quickSickFnwRows.value = []
+    return
+  }
+  try {
+    quickSickFnwRows.value = await fetchFixedNonWorkWeekdays(quickSickEmpId.value)
+  } catch {
+    quickSickFnwRows.value = []
+  }
+}
+
+watch(quickSickEmpId, () => {
+  void loadQuickSickFnw()
+})
+
 function openQuickSick() {
   const today = new Date()
   quickSickEmpId.value = quickSickEmployeeOptions.value[0]?.value ?? null
@@ -312,6 +325,7 @@ function openQuickSick() {
   quickSickTo.value = new Date(today)
   quickSickHalfDay.value = false
   showQuickSick.value = true
+  void loadQuickSickFnw()
   // Dialog transition + overlay init; open employee dropdown so search is immediately active.
   setTimeout(() => openSelectDropdown(quickSickEmpSelect.value), 50)
 }
@@ -356,12 +370,12 @@ async function submitQuickSick() {
       return
     }
 
-    const datesToBook = enumerateWorkdayISO(df, dt, holidaySet, closureDateSet.value, quickSickFixedNonWorkSet.value)
+    const datesToBook = enumerateWorkdayISO(df, dt, holidaySet, closureDateSet.value, quickSickFnwRows.value)
     const skipped = countSkippedNonWorkdays(
       allCal,
       holidaySet,
       closureDateSet.value,
-      quickSickFixedNonWorkSet.value,
+      quickSickFnwRows.value,
     )
 
     if (datesToBook.length === 0) {

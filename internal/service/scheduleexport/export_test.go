@@ -21,12 +21,17 @@ func TestBuildXLSX_roundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	us := sqlite.NewUserStore(db)
+	fnw := sqlite.NewFixedNonWorkWeekdaysStore(db)
 	u := &model.User{
 		Username: "exp", PasswordHash: "x", DisplayName: "Anna Tester",
 		Role: model.RoleUser, Active: true,
-		FixedNonWorkWeekdays: []int{5}, // Friday
 	}
 	if err := us.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if err := fnw.Set(ctx, &model.FixedNonWorkWeekdays{
+		UserID: u.ID, Weekdays: []int{5}, ValidFrom: "2000-01-01",
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -63,6 +68,7 @@ func TestBuildXLSX_roundTrip(t *testing.T) {
 	buf, err := scheduleexport.BuildXLSX(ctx, scheduleexport.Deps{
 		Users: us, Groups: sqlite.NewGroupStore(db),
 		Schedules: ss, Absences: as, Holidays: sqlite.NewHolidayStore(db),
+		FixedNonWorkWeekdays: fnw,
 	}, isoY, isoW, isoY, isoW)
 	if err != nil {
 		t.Fatal(err)

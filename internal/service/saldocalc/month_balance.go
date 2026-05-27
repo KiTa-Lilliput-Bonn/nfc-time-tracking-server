@@ -15,13 +15,17 @@ func MonthWithOpening(
 	userID int,
 	year, month int,
 	openingHours float64,
-	fixedNonWork []int,
+	fnw store.FixedNonWorkWeekdaysStore,
 	wps store.WorkPeriodStore,
 	whs store.WeeklyHoursStore,
 	schedules store.ScheduleStore,
 ) (model.MonthBalance, error) {
 	if month < 1 || month > 12 {
 		return model.MonthBalance{}, fmt.Errorf("invalid month")
+	}
+	fnwRows, err := fnw.ListByUser(ctx, userID)
+	if err != nil {
+		return model.MonthBalance{}, err
 	}
 	from, to := timesummary.MonthDateRange(year, month)
 	periods, err := wps.ListByUserDateRange(ctx, userID, from, to)
@@ -36,7 +40,7 @@ func MonthWithOpening(
 	if wh, err := whs.GetForDate(ctx, userID, from); err == nil && wh != nil {
 		hpw = wh.HoursPerWeek
 	}
-	target := timesummary.TargetHoursMonth(hpw, year, month, fixedNonWork)
+	target := timesummary.TargetHoursMonth(hpw, year, month, fnwRows)
 	balM := worked - target
 
 	yearFrom := fmt.Sprintf("%d-01-01", year)
@@ -56,7 +60,7 @@ func MonthWithOpening(
 		if wh, err := whs.GetForDate(ctx, userID, mf); err == nil && wh != nil {
 			h = wh.HoursPerWeek
 		}
-		ytdTarget += timesummary.TargetHoursMonth(h, year, mm, fixedNonWork)
+		ytdTarget += timesummary.TargetHoursMonth(h, year, mm, fnwRows)
 	}
 	ytdDelta := ytdWorked - ytdTarget
 	total := openingHours + ytdDelta

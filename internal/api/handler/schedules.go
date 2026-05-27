@@ -30,6 +30,7 @@ type ScheduleHandler struct {
 	Holidays              store.HolidayStore
 	Closures              store.ClosureDayStore
 	CompensationDayClaims store.CompensationDayClaimStore
+	FixedNonWorkWeekdays  store.FixedNonWorkWeekdaysStore
 	Audit                 *audit.Logger
 }
 
@@ -519,12 +520,13 @@ func (h *ScheduleHandler) ExportExcel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	buf, err := scheduleexport.BuildXLSX(r.Context(), scheduleexport.Deps{
-		Users:        h.Users,
-		Groups:       h.Groups,
-		Schedules:    h.Schedules,
-		TeamMeetings: h.TeamMeetings,
-		Absences:     h.Absences,
-		Holidays:     h.Holidays,
+		Users:                h.Users,
+		Groups:               h.Groups,
+		Schedules:            h.Schedules,
+		TeamMeetings:         h.TeamMeetings,
+		Absences:             h.Absences,
+		Holidays:             h.Holidays,
+		FixedNonWorkWeekdays: h.FixedNonWorkWeekdays,
 	}, fromYear, fromWeek, toYear, toWeek)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())
@@ -556,13 +558,14 @@ func (h *ScheduleHandler) ImportExcel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rep, err := scheduleimport.Import(r.Context(), scheduleimport.Deps{
-		Users:          h.Users,
-		Schedules:      h.Schedules,
-		TeamMeetings:   h.TeamMeetings,
-		Absences:       h.Absences,
-		Holidays:       h.Holidays,
-		Closures:       h.Closures,
-		Claims:         h.CompensationDayClaims,
+		Users:                h.Users,
+		FixedNonWorkWeekdays: h.FixedNonWorkWeekdays,
+		Schedules:            h.Schedules,
+		TeamMeetings:         h.TeamMeetings,
+		Absences:             h.Absences,
+		Holidays:             h.Holidays,
+		Closures:             h.Closures,
+		Claims:               h.CompensationDayClaims,
 	}, buf, apimw.UserID(r))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())

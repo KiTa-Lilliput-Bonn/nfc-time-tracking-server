@@ -110,7 +110,7 @@ func TestRunPoll_watermarkQuery(t *testing.T) {
 	_ = settings.Set(ctx, "stamps_poll_interval_seconds", "300")
 	_ = settings.Set(ctx, WatermarkSettingKey(tid), "2026-03-26T08:00:00Z")
 
-	svc := NewService(settings, apiStore, ps, ws, ns, cs, nil, nil)
+	svc := NewService(settings, apiStore, ps, ws, ns, cs, nil, nil, nil)
 	svc.SetHTTPClient(srv.Client())
 
 	if err := svc.RunPoll(ctx); err != nil {
@@ -172,7 +172,7 @@ func TestProbeHealth_ok(t *testing.T) {
 	_ = settings.Set(ctx, "android_lan_targets", lanTargetsJSON(host, portStr, tid, ac.ID))
 	_ = settings.Set(ctx, "stamps_poll_interval_seconds", "60")
 
-	svc := NewService(settings, apiStore, sqlite.NewPunchStore(db), sqlite.NewWorkPeriodStore(db), sqlite.NewNFCTagStore(db), sqlite.NewCompensationDayClaimStore(db), sqlite.NewUserStore(db), nil)
+	svc := NewService(settings, apiStore, sqlite.NewPunchStore(db), sqlite.NewWorkPeriodStore(db), sqlite.NewNFCTagStore(db), sqlite.NewCompensationDayClaimStore(db), nil, sqlite.NewUserStore(db), nil)
 	svc.SetHTTPClient(srv.Client())
 	tgt := bootstrap.AndroidLanTarget{ID: tid, Host: host, Port: mustAtoi(t, portStr), APIClientID: ac.ID}
 	if err := svc.ProbeHealth(ctx, tgt); err != nil {
@@ -201,7 +201,7 @@ func TestLanHealth_disabled(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()
 	settings := sqlite.NewSettingsStore(db)
-	svc := NewService(settings, nil, sqlite.NewPunchStore(db), sqlite.NewWorkPeriodStore(db), sqlite.NewNFCTagStore(db), sqlite.NewCompensationDayClaimStore(db), sqlite.NewUserStore(db), nil)
+	svc := NewService(settings, nil, sqlite.NewPunchStore(db), sqlite.NewWorkPeriodStore(db), sqlite.NewNFCTagStore(db), sqlite.NewCompensationDayClaimStore(db), nil, sqlite.NewUserStore(db), nil)
 	st := svc.LanHealth(ctx)
 	if st.Mode != "disabled" {
 		t.Fatalf("%+v", st)
@@ -236,7 +236,7 @@ func TestRunPoll_marksUnreachableOnBadHTTP(t *testing.T) {
 	_ = settings.Set(ctx, "android_lan_targets", lanTargetsJSON(host, portStr, tid, ac.ID))
 	_ = settings.Set(ctx, "stamps_poll_interval_seconds", "60")
 
-	svc := NewService(settings, apiStore, sqlite.NewPunchStore(db), sqlite.NewWorkPeriodStore(db), sqlite.NewNFCTagStore(db), sqlite.NewCompensationDayClaimStore(db), sqlite.NewUserStore(db), nil)
+	svc := NewService(settings, apiStore, sqlite.NewPunchStore(db), sqlite.NewWorkPeriodStore(db), sqlite.NewNFCTagStore(db), sqlite.NewCompensationDayClaimStore(db), nil, sqlite.NewUserStore(db), nil)
 	svc.SetHTTPClient(srv.Client())
 	_ = svc.RunPoll(ctx)
 	st := svc.LanHealth(ctx)
@@ -342,7 +342,7 @@ func TestRunPoll_pushesTodayStampsLANPOSTBerlin(t *testing.T) {
 	_ = settings.Set(ctx, "android_lan_targets", lanTargetsJSON(host, portStr, tid, ac.ID))
 	_ = settings.Set(ctx, "stamps_poll_interval_seconds", "300")
 
-	svc := NewService(settings, apiStore, ps, ws, ns, cs, nil, nil)
+	svc := NewService(settings, apiStore, ps, ws, ns, cs, nil, nil, nil)
 	svc.SetHTTPClient(srv.Client())
 
 	if err := svc.RunPoll(ctx); err != nil {
@@ -406,7 +406,7 @@ func TestRunManualRangeSync_rejects15InclusiveBerlinDays(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()
 	settings := sqlite.NewSettingsStore(db)
-	svc := NewService(settings, nil, sqlite.NewPunchStore(db), sqlite.NewWorkPeriodStore(db), sqlite.NewNFCTagStore(db), sqlite.NewCompensationDayClaimStore(db), sqlite.NewUserStore(db), nil)
+	svc := NewService(settings, nil, sqlite.NewPunchStore(db), sqlite.NewWorkPeriodStore(db), sqlite.NewNFCTagStore(db), sqlite.NewCompensationDayClaimStore(db), nil, sqlite.NewUserStore(db), nil)
 
 	from, err := ParseBerlinYMD("2026-01-01")
 	if err != nil {
@@ -495,7 +495,7 @@ func TestRunManualRangeSync_doesNotUpdateWatermark(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := NewService(settings, apiStore, ps, ws, ns, cs, nil, nil)
+	svc := NewService(settings, apiStore, ps, ws, ns, cs, nil, nil, nil)
 	svc.SetHTTPClient(srv.Client())
 
 	from, err := ParseBerlinYMD("2026-03-26")

@@ -145,6 +145,7 @@ func main() {
 	compensationDayClaims := sqlite.NewCompensationDayClaimStore(db)
 	closures := sqlite.NewClosureDayStore(db)
 	weeklyHours := sqlite.NewWeeklyHoursStore(db)
+	fixedNonWorkWeekdays := sqlite.NewFixedNonWorkWeekdaysStore(db)
 	settings := sqlite.NewSettingsStore(db)
 	punches := sqlite.NewPunchStore(db)
 	nfcTags := sqlite.NewNFCTagStore(db)
@@ -153,14 +154,14 @@ func main() {
 		log.Printf("bootstrap backup target path: %v", err)
 	}
 
-	if err := compensationday.BootstrapScanUsers(ctx, users, workPeriods, corrections, compensationDayClaims); err != nil {
+	if err := compensationday.BootstrapScanUsers(ctx, users, fixedNonWorkWeekdays, workPeriods, corrections, compensationDayClaims); err != nil {
 		log.Printf("bootstrap compensation day claims: %v", err)
 	}
 
 	apiClients := sqlite.NewApiPairedClientStore(db)
 	apiPairingSessions := sqlite.NewApiPairingSessionStore(db)
 	lanEmpSync := lanemployeesync.NewService(users, nfcTags, settings, apiClients)
-	stampsSvc := stampspoll.NewService(settings, apiClients, punches, workPeriods, nfcTags, compensationDayClaims, users, lanEmpSync)
+	stampsSvc := stampspoll.NewService(settings, apiClients, punches, workPeriods, nfcTags, compensationDayClaims, fixedNonWorkWeekdays, users, lanEmpSync)
 	stampsSvc.StartScheduler(ctx)
 	stampsSvc.StartRecoveryLoop(ctx)
 	if iv := bootstrap.StampsPollIntervalSeconds(ctx, settings); iv > 0 {
@@ -219,6 +220,7 @@ func main() {
 		Absences:              absences,
 		CompensationDayClaims: compensationDayClaims,
 		WeeklyHours:           weeklyHours,
+		FixedNonWorkWeekdays:  fixedNonWorkWeekdays,
 		VacationEnt:           sqlite.NewVacationEntitlementStore(db),
 		NFCTags:               nfcTags,
 		Schedules:             schedules,
@@ -237,6 +239,7 @@ func main() {
 			Holidays:    holidays,
 			Closures:    closures,
 			WeeklyHours: weeklyHours,
+			FixedNonWorkWeekdays: fixedNonWorkWeekdays,
 			Settings:    settings,
 			Users:       users,
 		},

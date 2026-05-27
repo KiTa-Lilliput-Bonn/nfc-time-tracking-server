@@ -17,6 +17,7 @@ const (
 	EntityAbsence              = "absence"
 	EntityWeeklyHours          = "weekly_hours"
 	EntityVacationEntitlement  = "vacation_entitlement"
+	EntityFixedNonWorkWeekdays = "fixed_non_work_weekdays"
 	EntityNFCTag               = "nfc_tag"
 	EntityCompensationDayClaim = "compensation_day_claim"
 	EntityGroup                = "group"

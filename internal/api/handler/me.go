@@ -11,6 +11,7 @@ import (
 	"nfc-time-tracking-server/internal/audit"
 	"nfc-time-tracking-server/internal/model"
 	"nfc-time-tracking-server/internal/service/compensationday"
+	"nfc-time-tracking-server/internal/service/fixednonwork"
 	"nfc-time-tracking-server/internal/service/saldocalc"
 	"nfc-time-tracking-server/internal/service/timesummary"
 	"nfc-time-tracking-server/internal/service/vacationbalance"
@@ -21,6 +22,7 @@ type MeHandler struct {
 	Users       store.UserStore
 	WorkPeriods store.WorkPeriodStore
 	WeeklyHours store.WeeklyHoursStore
+	FixedNonWorkWeekdays store.FixedNonWorkWeekdaysStore
 	VacationEnt store.VacationEntitlementStore
 	Absences              store.AbsenceStore
 	CompensationDayClaims store.CompensationDayClaimStore
@@ -55,13 +57,7 @@ func (h *MeHandler) Times(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return
 	}
-	fixed := []int(nil)
-	if h.Users != nil {
-		if u, err := h.Users.GetByID(r.Context(), uid); err == nil && u != nil {
-			fixed = u.FixedNonWorkWeekdays
-		}
-	}
-	holCredits := buildHolidayCredits(r.Context(), uid, from, to, fixed, h.WeeklyHours, h.Holidays)
+	holCredits := buildHolidayCredits(r.Context(), uid, from, to, h.FixedNonWorkWeekdays, h.WeeklyHours, h.Holidays)
 	response.JSON(w, http.StatusOK, map[string]interface{}{
 		"from":         from,
 		"to":           to,
@@ -77,10 +73,11 @@ type holidayCredit struct {
 	CreditHours float64 `json:"credit_hours"`
 }
 
-func buildHolidayCredits(ctx context.Context, userID int, from, to string, fixedNonWork []int, weekly store.WeeklyHoursStore, holidays store.HolidayStore) []holidayCredit {
+func buildHolidayCredits(ctx context.Context, userID int, from, to string, fnw store.FixedNonWorkWeekdaysStore, weekly store.WeeklyHoursStore, holidays store.HolidayStore) []holidayCredit {
 	if weekly == nil || holidays == nil {
 		return []holidayCredit{}
 	}
+	fnwRows, _ := fnw.ListByUser(ctx, userID)
 	loc := time.Local
 	a, err := time.ParseInLocation("2006-01-02", from, loc)
 	if err != nil {
@@ -94,10 +91,11 @@ func buildHolidayCredits(ctx context.Context, userID int, from, to string, fixed
 	b = time.Date(b.Year(), b.Month(), b.Day(), 0, 0, 0, 0, loc)
 	out := make([]holidayCredit, 0, 8)
 	for d := a; !d.After(b); d = d.AddDate(0, 0, 1) {
+		ds := d.Format("2006-01-02")
+		fixedNonWork := fixednonwork.WeekdaysFromRows(fnwRows, ds)
 		if !model.IsEmployeeWorkday(d, fixedNonWork) {
 			continue
 		}
-		ds := d.Format("2006-01-02")
 		hol, err := holidays.GetForDate(ctx, ds)
 		if err != nil || hol == nil || hol.ID == 0 {
 			continue
@@ -128,7 +126,7 @@ func (h *MeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "user query failed")
 		return
 	}
-	mb, err := saldocalc.MonthWithOpening(r.Context(), uid, y, m, u.OpeningHoursBalance, u.FixedNonWorkWeekdays, h.WorkPeriods, h.WeeklyHours, h.Schedules)
+	mb, err := saldocalc.MonthWithOpening(r.Context(), uid, y, m, u.OpeningHoursBalance, h.FixedNonWorkWeekdays, h.WorkPeriods, h.WeeklyHours, h.Schedules)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return
@@ -168,7 +166,7 @@ func (h *MeHandler) Profile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"fixed_non_work_weekdays": u.FixedNonWorkWeekdays,
+		"fixed_non_work_weekdays": fixednonwork.WeekdaysForUserDate(r.Context(), h.FixedNonWorkWeekdays, uid, time.Now().In(time.Local).Format("2006-01-02")),
 	})
 }
 
@@ -318,7 +316,7 @@ func (h *MeHandler) CreateCorrection(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "create failed")
 		return
 	}
-	if err := compensationday.SyncClaimAfterWorkDayChange(r.Context(), h.Users, h.WorkPeriods, h.Corrections, h.CompensationDayClaims, uid, day); err != nil {
+	if err := compensationday.SyncClaimAfterWorkDayChange(r.Context(), h.FixedNonWorkWeekdays, h.WorkPeriods, h.Corrections, h.CompensationDayClaims, uid, day); err != nil {
 		response.Error(w, http.StatusInternalServerError, "Ausgleichstag-Anspruch konnte nicht aktualisiert werden")
 		return
 	}

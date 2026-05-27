@@ -1,5 +1,27 @@
-import type { Holiday } from '@/types/api'
+import type { Holiday, FixedNonWorkWeekdays } from '@/types/api'
 import { addDays, parseISODate, toISODateLocal } from '@/utils/dates'
+
+export function fixedNonWorkWeekdaysForDate(
+  workDate: string,
+  rows: FixedNonWorkWeekdays[] | undefined,
+): number[] {
+  if (!rows?.length) return []
+  let best: FixedNonWorkWeekdays | null = null
+  for (const r of rows) {
+    if (r.valid_from <= workDate) {
+      if (!best || r.valid_from > best.valid_from) best = r
+    }
+  }
+  return best?.weekdays ?? []
+}
+
+export function isFixedNonWorkDayISO(workDate: string, rows: FixedNonWorkWeekdays[] | undefined): boolean {
+  const d = parseISODate(workDate)
+  const dow = d.getDay()
+  if (dow === 0 || dow === 6) return false
+  const fixed = new Set(fixedNonWorkWeekdaysForDate(workDate, rows))
+  return fixed.has(dow)
+}
 
 export function normalizeISODate(s: string): string {
   const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/)
@@ -24,21 +46,26 @@ export function enumerateWorkdayISO(
   to: Date,
   holidaySet: Set<string>,
   closureSet: Set<string>,
-  fixedNonWorkWeekdays?: Set<number>,
+  fixedNonWorkWeekdays?: Set<number> | FixedNonWorkWeekdays[],
 ): string[] {
-  const fixed = fixedNonWorkWeekdays ?? new Set<number>()
+  const useRows = Array.isArray(fixedNonWorkWeekdays)
+  const fixedSet = useRows ? null : (fixedNonWorkWeekdays ?? new Set<number>())
+  const fnwRows = useRows ? fixedNonWorkWeekdays : undefined
   const out: string[] = []
   let cur = new Date(from.getFullYear(), from.getMonth(), from.getDate())
   const end = new Date(to.getFullYear(), to.getMonth(), to.getDate())
   while (cur.getTime() <= end.getTime()) {
     const dow = cur.getDay()
     const iso = toISODateLocal(cur)
+    const fixedFree = useRows
+      ? isFixedNonWorkDayISO(iso, fnwRows)
+      : fixedSet!.has(dow)
     if (
       dow !== 0 &&
       dow !== 6 &&
       !holidaySet.has(iso) &&
       !closureSet.has(iso) &&
-      !fixed.has(dow)
+      !fixedFree
     ) {
       out.push(iso)
     }
@@ -56,9 +83,12 @@ export function vacationDisplayGapOnlySkippable(
   lastVacationISO: string,
   nextVacationISO: string,
   holidayOrClosure: Set<string>,
-  fixedNonWorkWeekdays: Set<number>,
+  fixedNonWorkWeekdays: Set<number> | FixedNonWorkWeekdays[],
 ): boolean {
   if (nextVacationISO <= lastVacationISO) return false
+  const useRows = Array.isArray(fixedNonWorkWeekdays)
+  const fixedSet = useRows ? null : fixedNonWorkWeekdays
+  const fnwRows = useRows ? fixedNonWorkWeekdays : undefined
   const end = parseISODate(nextVacationISO)
   const d = parseISODate(lastVacationISO)
   d.setDate(d.getDate() + 1)
@@ -66,7 +96,9 @@ export function vacationDisplayGapOnlySkippable(
     const iso = toISODateLocal(d)
     const dow = d.getDay()
     const weekend = dow === 0 || dow === 6
-    const fixedFree = dow >= 1 && dow <= 5 && fixedNonWorkWeekdays.has(dow)
+    const fixedFree = useRows
+      ? isFixedNonWorkDayISO(iso, fnwRows)
+      : dow >= 1 && dow <= 5 && fixedSet!.has(dow)
     if (!weekend && !holidayOrClosure.has(iso) && !fixedFree) return false
     d.setDate(d.getDate() + 1)
   }
@@ -77,14 +109,19 @@ export function countSkippedNonWorkdays(
   allDatesISO: string[],
   holidaySet: Set<string>,
   closureSet: Set<string>,
-  fixedNonWorkWeekdays?: Set<number>,
+  fixedNonWorkWeekdays?: Set<number> | FixedNonWorkWeekdays[],
 ): number {
-  const fixed = fixedNonWorkWeekdays ?? new Set<number>()
+  const useRows = Array.isArray(fixedNonWorkWeekdays)
+  const fixedSet = useRows ? null : (fixedNonWorkWeekdays ?? new Set<number>())
+  const fnwRows = useRows ? fixedNonWorkWeekdays : undefined
   let n = 0
   for (const iso of allDatesISO) {
     const d = new Date(`${iso}T00:00:00`)
     const dow = d.getDay()
-    if (dow === 0 || dow === 6 || holidaySet.has(iso) || closureSet.has(iso) || fixed.has(dow)) n++
+    const fixedFree = useRows
+      ? isFixedNonWorkDayISO(iso, fnwRows)
+      : fixedSet!.has(dow)
+    if (dow === 0 || dow === 6 || holidaySet.has(iso) || closureSet.has(iso) || fixedFree) n++
   }
   return n
 }

@@ -1,6 +1,7 @@
 import type {
   Absence,
   BreakRule,
+  FixedNonWorkWeekdays,
   HolidayCredit,
   TeamMeeting,
   TimeCorrection,
@@ -8,6 +9,7 @@ import type {
   WorkPeriod,
 } from '@/types/api'
 import { localInstantISOFromDateAndClock, maxInstantISO } from '@/utils/dates'
+import { fixedNonWorkWeekdaysForDate } from '@/utils/workdays'
 
 export interface TimeTableRow {
   /** Eindeutiger Schlüssel für Tabellenzeilen (z. B. Tag + Perioden-ID). */
@@ -151,6 +153,7 @@ export function buildTimeTableRows(opts: {
   roundingMinutes?: number
   weeklyHours?: WeeklyHours[]
   fixedNonWorkWeekdays?: number[]
+  fixedNonWorkWeekdaysHistory?: FixedNonWorkWeekdays[]
 }): TimeTableRow[] {
   const rules: BreakRule[] =
     opts.breakRules && opts.breakRules.length ? opts.breakRules : DEFAULT_BREAK_RULES
@@ -202,7 +205,11 @@ export function buildTimeTableRows(opts: {
     const holCredit = h && Number.isFinite(h.credit_hours) ? h.credit_hours : 0
     const wh = weeklyHoursForDate(workDate, opts.weeklyHours)
     const hpw = wh?.hours_per_week ?? 0
-    const dailyAbs = hpw > 0 ? dailyHoursFromWeekly(hpw, opts.fixedNonWorkWeekdays) : 8
+    const fnw =
+      opts.fixedNonWorkWeekdaysHistory != null
+        ? fixedNonWorkWeekdaysForDate(workDate, opts.fixedNonWorkWeekdaysHistory)
+        : opts.fixedNonWorkWeekdays
+    const dailyAbs = hpw > 0 ? dailyHoursFromWeekly(hpw, fnw) : 8
     const credit = holCredit + absenceCreditHours(abs, dailyAbs)
 
     let notesFirst = ''

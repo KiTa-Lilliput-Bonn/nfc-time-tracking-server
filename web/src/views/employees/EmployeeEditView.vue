@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Card from 'primevue/card'
+import Checkbox from 'primevue/checkbox'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import DatePicker from 'primevue/datepicker'
@@ -15,19 +16,22 @@ import { useToast } from 'primevue/usetoast'
 
 import {
   assignNFCTag,
+  deleteFixedNonWorkWeekdays,
   deleteVacationEntitlement,
+  fetchFixedNonWorkWeekdays,
   fetchNFCTags,
   fetchVacationEntitlements,
   deleteWeeklyHours,
   fetchWeeklyHours,
   patchEmployee,
   postEmployeeResetPassword,
+  putFixedNonWorkWeekdays,
   putVacationEntitlement,
   putWeeklyHours,
 } from '@/api/management'
 import { fetchEmployees } from '@/api/employees'
 import { fetchGroups } from '@/api/groups'
-import type { Employee, NFCTag, UserGroup, VacationEntitlement, WeeklyHours } from '@/types/api'
+import type { Employee, FixedNonWorkWeekdays, NFCTag, UserGroup, VacationEntitlement, WeeklyHours } from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { toastDetailAfterPasswordClipboard } from '@/utils/clipboard'
 import { formatGermanDate, toISODateLocal } from '@/utils/dates'
@@ -55,16 +59,43 @@ const groupOptions = computed(() => [
 ])
 
 const weeklyList = ref<WeeklyHours[]>([])
+const fnwList = ref<FixedNonWorkWeekdays[]>([])
 const vacationList = ref<VacationEntitlement[]>([])
 const nfcTags = ref<NFCTag[]>([])
 
 const whHours = ref(40)
 const whValidFrom = ref<Date>(new Date())
+const fnwDraft = ref<number[]>([])
+const fnwValidFrom = ref<Date>(new Date())
 const vacDays = ref(25)
 const vacValidFrom = ref<Date>(new Date())
 
 const tagUid = ref('')
 const tagFrom = ref<Date>(new Date())
+
+const FNW_WEEKDAY_OPTIONS = [
+  { label: 'Mo', value: 1 },
+  { label: 'Di', value: 2 },
+  { label: 'Mi', value: 3 },
+  { label: 'Do', value: 4 },
+  { label: 'Fr', value: 5 },
+] as const
+
+function formatFnwWeekdays(weekdays: number[]): string {
+  const labels: Record<number, string> = { 1: 'Mo', 2: 'Di', 3: 'Mi', 4: 'Do', 5: 'Fr' }
+  const sorted = [...weekdays].sort((a, b) => a - b)
+  return sorted.map((d) => labels[d] ?? '?').join(', ') || '—'
+}
+
+function toggleFnwDay(dow: number, checked: boolean) {
+  if (checked) {
+    if (!fnwDraft.value.includes(dow)) {
+      fnwDraft.value = [...fnwDraft.value, dow].sort((a, b) => a - b)
+    }
+  } else {
+    fnwDraft.value = fnwDraft.value.filter((d) => d !== dow)
+  }
+}
 
 /** Mindestens 4 Byte-Blöcke (8 Hex-Zeichen), beliebig viele weitere. */
 const TAG_UID_PATTERN = /^[0-9A-F]{2}(:[0-9A-F]{2}){3,}$/
@@ -175,12 +206,14 @@ async function load() {
   groupDraft.value = employee.value.group_id ?? null
   openHours.value = employee.value.opening_hours_balance ?? 0
   openVac.value = employee.value.opening_vacation_days ?? 0
-  const [wh, vac, tags] = await Promise.all([
+  const [wh, fnw, vac, tags] = await Promise.all([
     fetchWeeklyHours(employee.value.id),
+    fetchFixedNonWorkWeekdays(employee.value.id),
     fetchVacationEntitlements(employee.value.id),
     fetchNFCTags(employee.value.id),
   ])
   weeklyList.value = wh
+  fnwList.value = fnw
   vacationList.value = vac
   nfcTags.value = tags
 }
@@ -283,6 +316,48 @@ async function removeWeekly(row: WeeklyHours) {
     await deleteWeeklyHours(employee.value.id, row.id)
     toast.add({ severity: 'success', summary: 'Eintrag gelöscht', life: 10000 })
     weeklyList.value = await fetchWeeklyHours(employee.value.id)
+  } catch {
+    toast.add({
+      severity: 'error',
+      summary: 'Löschen fehlgeschlagen',
+      detail: 'Einträge sind 24 Stunden nach Anlage nicht mehr löschbar.',
+      life: 10000,
+    })
+  } finally {
+    saving.value = false
+  }
+}
+
+async function saveFixedNonWorkWeekdays() {
+  if (!employee.value) return
+  saving.value = true
+  try {
+    await putFixedNonWorkWeekdays(employee.value.id, {
+      weekdays: [...fnwDraft.value],
+      valid_from: toISODateLocal(fnwValidFrom.value),
+    })
+    toast.add({ severity: 'success', summary: 'Feste freie Wochentage gespeichert', life: 10000 })
+    fnwList.value = await fetchFixedNonWorkWeekdays(employee.value.id)
+  } catch {
+    toast.add({ severity: 'error', summary: 'Fehler feste freie Wochentage', life: 10000 })
+  } finally {
+    saving.value = false
+  }
+}
+
+function canDeleteFnwRow(row: FixedNonWorkWeekdays) {
+  return canDeleteEntitlementEntry(auth.role, row)
+}
+
+async function removeFnw(row: FixedNonWorkWeekdays) {
+  if (!employee.value) return
+  const hint = `${formatFnwWeekdays(row.weekdays)} ab ${formatGermanDate(row.valid_from)}`
+  if (!confirm(`Eintrag löschen (${hint})?`)) return
+  saving.value = true
+  try {
+    await deleteFixedNonWorkWeekdays(employee.value.id, row.id)
+    toast.add({ severity: 'success', summary: 'Eintrag gelöscht', life: 10000 })
+    fnwList.value = await fetchFixedNonWorkWeekdays(employee.value.id)
   } catch {
     toast.add({
       severity: 'error',
@@ -542,6 +617,60 @@ function onTagUidEnter() {
     </Card>
 
     <Card>
+      <template #title>Feste freie Wochentage</template>
+      <template #content>
+        <p class="muted">
+          Reguläre freie Wochentage (Mo–Fr) ohne Schichtplanung und ohne Urlaubsabzug an Schließtagen. Ein neuer
+          Eintrag gilt ab dem gewählten Kalendertag. Einträge können 24 Stunden nach Anlage nur noch vom Superadmin
+          gelöscht werden.
+        </p>
+        <div class="fnw-days">
+          <label v-for="opt in FNW_WEEKDAY_OPTIONS" :key="opt.value" class="fnw-day">
+            <Checkbox
+              :binary="true"
+              :model-value="fnwDraft.includes(opt.value)"
+              @update:model-value="(v: boolean) => toggleFnwDay(opt.value, Boolean(v))"
+            />
+            <span>{{ opt.label }}</span>
+          </label>
+        </div>
+        <div class="row2 mt">
+          <div class="field">
+            <label>Gültig ab</label>
+            <DatePicker v-model="fnwValidFrom" date-format="dd.mm.yy" show-icon />
+          </div>
+          <div class="field field--action">
+            <Button label="Speichern" :loading="saving" @click="saveFixedNonWorkWeekdays" />
+          </div>
+        </div>
+        <div class="table-scroll mt">
+          <DataTable :value="fnwList" data-key="id" size="small" striped-rows>
+            <Column header="Wochentage">
+              <template #body="{ data }">{{ formatFnwWeekdays(data.weekdays) }}</template>
+            </Column>
+            <Column field="valid_from" header="Gültig ab">
+              <template #body="{ data }">{{ formatGermanDate(data.valid_from) }}</template>
+            </Column>
+            <Column header="" :exportable="false" style="width: 3.25rem; min-width: 3.25rem">
+              <template #body="{ data }">
+                <Button
+                  v-if="canDeleteFnwRow(data)"
+                  icon="pi pi-trash"
+                  severity="danger"
+                  text
+                  rounded
+                  :disabled="saving"
+                  aria-label="Feste freie Wochentage löschen"
+                  @click="removeFnw(data)"
+                />
+              </template>
+            </Column>
+          </DataTable>
+        </div>
+      </template>
+    </Card>
+
+    <Card>
       <template #title>Urlaubsanspruch</template>
       <template #content>
         <p class="muted">
@@ -712,6 +841,19 @@ function onTagUidEnter() {
 }
 .mt {
   margin-top: 0.75rem;
+}
+.fnw-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+}
+.fnw-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+  color: #334155;
+  cursor: pointer;
 }
 .pw-reset-row {
   margin-top: 0.35rem;
