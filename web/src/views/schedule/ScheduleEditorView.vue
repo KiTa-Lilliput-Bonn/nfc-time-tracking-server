@@ -17,6 +17,7 @@ import {
   fetchScheduleExportDefaults,
   fetchScheduleExportExcel,
   importScheduleExcel,
+  deleteTeamMeeting,
   postTeamMeeting,
   putScheduleWeekNotes,
   putTeamMeeting,
@@ -367,6 +368,41 @@ async function saveTeamMeetingEdits() {
       severity: 'error',
       summary: 'Teamsitzung',
       detail: getApiErrorMessage(err) ?? 'Speichern fehlgeschlagen.',
+      life: 8000,
+    })
+  } finally {
+    teamMeetingSaving.value = false
+  }
+}
+
+function teamMeetingLabel(m: TeamMeeting): string {
+  return `${m.kind === 'kt' ? 'KT' : 'GT'} ${formatGermanDate(m.meeting_date)} ${m.time_start}–${m.time_end}`
+}
+
+async function deleteSelectedTeamMeeting() {
+  const id = selectedTeamMeetingId.value
+  if (id == null) return
+  const m = weekTeamMeetings.value.find((x) => x.id === id)
+  const label = m ? teamMeetingLabel(m) : `Teamsitzung #${id}`
+  if (!confirm(`„${label}“ wirklich löschen?`)) return
+  teamMeetingSaving.value = true
+  try {
+    await deleteTeamMeeting(id)
+    await scheduleGridRef.value?.reloadFromServer()
+    toast.add({ severity: 'success', summary: 'Teamsitzung', detail: 'Gelöscht.', life: 5000 })
+    if (!weekTeamMeetings.value.length) {
+      teamMeetingDialogVisible.value = false
+      return
+    }
+    if (!weekTeamMeetings.value.some((x) => x.id === selectedTeamMeetingId.value)) {
+      selectedTeamMeetingId.value = weekTeamMeetings.value[0]?.id ?? null
+    }
+    syncMeetingFormFromSelection()
+  } catch (err: unknown) {
+    toast.add({
+      severity: 'error',
+      summary: 'Teamsitzung',
+      detail: getApiErrorMessage(err) ?? 'Löschen fehlgeschlagen.',
       life: 8000,
     })
   } finally {
@@ -1207,13 +1243,26 @@ function thisWeek() {
         </div>
       </template>
       <template #footer>
-        <Button label="Abbrechen" severity="secondary" text @click="teamMeetingDialogVisible = false" />
-        <Button
-          :label="teamMeetingDialogMode === 'create' ? 'Anlegen' : 'Speichern'"
-          :disabled="teamMeetingSaveDisabled || teamMeetingSaving"
-          :loading="teamMeetingSaving"
-          @click="saveTeamMeetingEdits"
-        />
+        <div class="tm-dialog-footer">
+          <Button
+            v-if="teamMeetingDialogMode === 'edit' && selectedTeamMeetingId != null && weekTeamMeetings.length"
+            label="Löschen"
+            icon="pi pi-trash"
+            severity="danger"
+            text
+            :disabled="teamMeetingSaving"
+            @click="deleteSelectedTeamMeeting"
+          />
+          <div class="tm-dialog-footer-actions">
+            <Button label="Abbrechen" severity="secondary" text @click="teamMeetingDialogVisible = false" />
+            <Button
+              :label="teamMeetingDialogMode === 'create' ? 'Anlegen' : 'Speichern'"
+              :disabled="teamMeetingSaveDisabled || teamMeetingSaving"
+              :loading="teamMeetingSaving"
+              @click="saveTeamMeetingEdits"
+            />
+          </div>
+        </div>
       </template>
     </Dialog>
   </div>
@@ -1419,6 +1468,18 @@ function thisWeek() {
   font-weight: 600;
   color: #475569;
   padding: 0 0.25rem;
+}
+.tm-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.5rem;
+}
+.tm-dialog-footer-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 .tm-dialog {
   display: flex;

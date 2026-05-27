@@ -213,6 +213,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Delete("/schedules/{id}", sh.Delete)
 			r.Post("/team-meetings", sh.PostTeamMeeting)
 			r.Put("/team-meetings/{id}", sh.PutTeamMeeting)
+			r.Delete("/team-meetings/{id}", sh.DeleteTeamMeeting)
 
 			r.Post("/closure-days", ch.Create)
 			r.Delete("/closure-days/{id}", ch.Delete)

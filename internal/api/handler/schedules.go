@@ -378,6 +378,39 @@ func (h *ScheduleHandler) PutTeamMeeting(w http.ResponseWriter, r *http.Request)
 	response.JSON(w, http.StatusOK, out)
 }
 
+// DeleteTeamMeeting entfernt eine Teamsitzung (Leitung).
+func (h *ScheduleHandler) DeleteTeamMeeting(w http.ResponseWriter, r *http.Request) {
+	if h.TeamMeetings == nil {
+		response.Error(w, http.StatusInternalServerError, "team meetings not configured")
+		return
+	}
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil || id <= 0 {
+		response.Error(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	m, err := h.TeamMeetings.GetByID(r.Context(), id)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if m == nil {
+		response.Error(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err := h.TeamMeetings.Delete(r.Context(), id); err != nil {
+		response.Error(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	logAudit(h.Audit, r.Context(), audit.Entry{
+		Action: audit.ActionDelete, EntityType: audit.EntityTeamMeeting, EntityID: auditID(id),
+		Summary: audit.JSONSummary(map[string]any{
+			"year": m.ISOWeekYear, "week": m.ISOWeek, "kind": m.Kind, "meeting_date": m.MeetingDate,
+		}),
+	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ExportDefaults liefert Standardwerte für den Excel-Export-Dialog.
 func (h *ScheduleHandler) ExportDefaults(w http.ResponseWriter, r *http.Request) {
 	startY, startW, endY, endW, err := scheduleexport.ExportDefaults(r.Context(), h.Schedules)

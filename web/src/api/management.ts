@@ -249,6 +249,10 @@ export async function putTeamMeeting(
   return data
 }
 
+export async function deleteTeamMeeting(id: number) {
+  await api.delete(`/team-meetings/${id}`)
+}
+
 export async function postTeamMeeting(body: {
   year: number
   week: number
