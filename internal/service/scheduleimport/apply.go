@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"nfc-time-tracking-server/internal/model"
 	"nfc-time-tracking-server/internal/store"
@@ -16,7 +17,7 @@ func Apply(ctx context.Context, deps Deps, parsed *ParsedSheet, createdBy int, t
 		return &Report{}, nil
 	}
 
-	index, teamMeetingOptOut, ambWarnings, err := buildEmployeeNameIndex(ctx, deps.Users)
+	index, fixedByUID, teamMeetingOptOut, ambWarnings, err := buildEmployeeNameIndex(ctx, deps.Users)
 	if err != nil {
 		return nil, err
 	}
@@ -25,6 +26,7 @@ func Apply(ctx context.Context, deps Deps, parsed *ParsedSheet, createdBy int, t
 		Warnings: ambWarnings,
 	}
 
+	seenFixedFreeShiftWarn := map[string]struct{}{}
 	weekOccurrences := countISOWeekOccurrences(parsed.Weeks)
 	skippedCellsByWeek := map[isoWeekKey]int{}
 
@@ -152,6 +154,10 @@ func Apply(ctx context.Context, deps Deps, parsed *ParsedSheet, createdBy int, t
 					} else {
 						rep.SchedulesWritten++
 						wr.TimesWritten++
+						maybeWarnShiftOnFixedFreeDay(
+							rep, seenFixedFreeShiftWarn, uid, row.RawName, date,
+							fmt.Sprintf("%s-%s", pc.ShiftStart, pc.ShiftEnd), fixedByUID,
+						)
 					}
 				}
 			}
@@ -264,13 +270,14 @@ func normalizeName(s string) string {
 	return strings.ToLower(s)
 }
 
-func buildEmployeeNameIndex(ctx context.Context, users store.UserStore) (map[string]int, map[int]struct{}, []string, error) {
+func buildEmployeeNameIndex(ctx context.Context, users store.UserStore) (map[string]int, map[int][]int, map[int]struct{}, []string, error) {
 	list, err := users.List(ctx, true)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	buckets := map[string][]int{}
+	fixedByUID := map[int][]int{}
 	teamMeetingOptOut := map[int]struct{}{}
 	for _, u := range list {
 		if !u.Active || u.Role == model.RoleSuperadmin {
@@ -278,6 +285,9 @@ func buildEmployeeNameIndex(ctx context.Context, users store.UserStore) (map[str
 		}
 		if !u.DefaultTeamMeetingParticipant {
 			teamMeetingOptOut[u.ID] = struct{}{}
+		}
+		if len(u.FixedNonWorkWeekdays) > 0 {
+			fixedByUID[u.ID] = append([]int(nil), u.FixedNonWorkWeekdays...)
 		}
 		n := normalizeName(u.DisplayName)
 		if n == "" {
@@ -295,7 +305,38 @@ func buildEmployeeNameIndex(ctx context.Context, users store.UserStore) (map[str
 		}
 		index[n] = ids[0]
 	}
-	return index, teamMeetingOptOut, warns, nil
+	return index, fixedByUID, teamMeetingOptOut, warns, nil
+}
+
+// maybeWarnShiftOnFixedFreeDay meldet Schichtimport an einem in den Stammdaten fest freien Wochentag.
+func maybeWarnShiftOnFixedFreeDay(
+	rep *Report,
+	seen map[string]struct{},
+	uid int,
+	userLabel, date, shiftRange string,
+	fixedByUID map[int][]int,
+) {
+	fixed := fixedByUID[uid]
+	if len(fixed) == 0 {
+		return
+	}
+	t, err := time.ParseInLocation("2006-01-02", date, time.Local)
+	if err != nil {
+		return
+	}
+	if !model.IsFixedNonWorkWeekday(t.Weekday(), fixed) {
+		return
+	}
+	key := fmt.Sprintf("%d|%s", uid, date)
+	if _, dup := seen[key]; dup {
+		return
+	}
+	seen[key] = struct{}{}
+	wd := germanWeekdayName[t.Weekday()]
+	rep.Warnings = append(rep.Warnings, fmt.Sprintf(
+		"Schicht importiert an festem freien Tag (%s, %s %s): %s — Wochentag ist in den Stammdaten regulär frei.",
+		userLabel, wd, t.Format("02.01.2006"), shiftRange,
+	))
 }
 
 func deleteSchedule(ctx context.Context, schStore store.ScheduleStore, ref cellRef, rep *Report, wr *WeekReport) error {

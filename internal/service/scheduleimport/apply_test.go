@@ -2,6 +2,7 @@ package scheduleimport_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -394,5 +395,139 @@ func TestApply_TeamMeetingsKTFromParsedWeek(t *testing.T) {
 	}
 	if list[0].UserIDs[0] != u1.ID {
 		t.Fatalf("expected only Anna (id %d), got %v", u1.ID, list[0].UserIDs)
+	}
+}
+
+func TestApply_WarnsShiftOnFixedFreeWeekday(t *testing.T) {
+	db, err := sqlite.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+
+	us := sqlite.NewUserStore(db)
+	u := &model.User{
+		Username: "fri", PasswordHash: "x", DisplayName: "Freitag Frei",
+		Role: model.RoleUser, Active: true,
+		FixedNonWorkWeekdays: []int{int(time.Friday)},
+	}
+	if err := us.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+
+	mon := time.Date(2026, 3, 16, 12, 0, 0, 0, time.Local)
+	fri := mon.AddDate(0, 0, 4)
+	dates := [5]string{
+		mon.Format("2006-01-02"),
+		mon.AddDate(0, 0, 1).Format("2006-01-02"),
+		mon.AddDate(0, 0, 2).Format("2006-01-02"),
+		mon.AddDate(0, 0, 3).Format("2006-01-02"),
+		fri.Format("2006-01-02"),
+	}
+	isoY, isoW := mon.ISOWeek()
+
+	parsed := &scheduleimport.ParsedSheet{
+		Weeks: []scheduleimport.ParsedWeek{{
+			ISOYear: isoY,
+			ISOWk:   isoW,
+			Dates:   dates,
+			Rows: []scheduleimport.ParsedEmployeeRow{{
+				RawName: "Freitag Frei",
+				Cells:   [5]string{"", "", "", "", "9:00-17:00"},
+			}},
+		}},
+	}
+
+	ss := sqlite.NewScheduleStore(db)
+	deps := scheduleimport.Deps{
+		Users: us, Schedules: ss, Absences: sqlite.NewAbsenceStore(db),
+		Holidays: sqlite.NewHolidayStore(db), Closures: sqlite.NewClosureDayStore(db),
+		Claims: sqlite.NewCompensationDayClaimStore(db), TeamMeetings: nil,
+	}
+
+	const importDay = "2026-01-01"
+	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, importDay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.SchedulesWritten != 1 {
+		t.Fatalf("SchedulesWritten: got %d want 1", rep.SchedulesWritten)
+	}
+
+	sFri, err := ss.GetForUserDate(ctx, u.ID, dates[4])
+	if err != nil || sFri == nil || sFri.ShiftStart != "09:00" {
+		t.Fatalf("Fr schedule: %+v err=%v", sFri, err)
+	}
+
+	var fixedFreeWarns []string
+	for _, w := range rep.Warnings {
+		if strings.Contains(w, "festem freien Tag") {
+			fixedFreeWarns = append(fixedFreeWarns, w)
+		}
+	}
+	if len(fixedFreeWarns) != 1 {
+		t.Fatalf("fixed-free warnings: got %d want 1: %v", len(fixedFreeWarns), rep.Warnings)
+	}
+	if !strings.Contains(fixedFreeWarns[0], "Freitag Frei") || !strings.Contains(fixedFreeWarns[0], "Freitag") {
+		t.Fatalf("warning text: %q", fixedFreeWarns[0])
+	}
+}
+
+func TestApply_NoWarnShiftOnNormalWorkday(t *testing.T) {
+	db, err := sqlite.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+
+	us := sqlite.NewUserStore(db)
+	u := &model.User{
+		Username: "norm", PasswordHash: "x", DisplayName: "Normal Tag",
+		Role: model.RoleUser, Active: true,
+		FixedNonWorkWeekdays: []int{int(time.Friday)},
+	}
+	if err := us.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+
+	mon := time.Date(2026, 3, 16, 12, 0, 0, 0, time.Local)
+	dates := [5]string{
+		mon.Format("2006-01-02"),
+		mon.AddDate(0, 0, 1).Format("2006-01-02"),
+		mon.AddDate(0, 0, 2).Format("2006-01-02"),
+		mon.AddDate(0, 0, 3).Format("2006-01-02"),
+		mon.AddDate(0, 0, 4).Format("2006-01-02"),
+	}
+	isoY, isoW := mon.ISOWeek()
+
+	parsed := &scheduleimport.ParsedSheet{
+		Weeks: []scheduleimport.ParsedWeek{{
+			ISOYear: isoY,
+			ISOWk:   isoW,
+			Dates:   dates,
+			Rows: []scheduleimport.ParsedEmployeeRow{{
+				RawName: "Normal Tag",
+				Cells:   [5]string{"9:00-17:00", "", "", "", ""},
+			}},
+		}},
+	}
+
+	ss := sqlite.NewScheduleStore(db)
+	deps := scheduleimport.Deps{
+		Users: us, Schedules: ss, Absences: sqlite.NewAbsenceStore(db),
+		Holidays: sqlite.NewHolidayStore(db), Closures: sqlite.NewClosureDayStore(db),
+		Claims: sqlite.NewCompensationDayClaimStore(db), TeamMeetings: nil,
+	}
+
+	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, "2026-01-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range rep.Warnings {
+		if strings.Contains(w, "festem freien Tag") {
+			t.Fatalf("unexpected fixed-free warning: %q", w)
+		}
 	}
 }
