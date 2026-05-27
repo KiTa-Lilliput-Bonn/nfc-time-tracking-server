@@ -65,7 +65,7 @@ func TestApply_WritesScheduleAndSkipsHolidayColumn(t *testing.T) {
 	}
 
 	const importDay = "2026-01-01"
-	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, importDay)
+	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, importDay, scheduleimport.ImportScopeFuture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestApply_IdempotentVacation_NoDuplicateReplaceCounts(t *testing.T) {
 	}
 
 	const importDay = "2026-01-01"
-	rep1, err := scheduleimport.Apply(ctx, deps, parsed, 1, importDay)
+	rep1, err := scheduleimport.Apply(ctx, deps, parsed, 1, importDay, scheduleimport.ImportScopeFuture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestApply_IdempotentVacation_NoDuplicateReplaceCounts(t *testing.T) {
 		t.Fatalf("first import: created=%d replaced=%d want 1/0", rep1.AbsencesCreated, rep1.AbsencesReplaced)
 	}
 
-	rep2, err := scheduleimport.Apply(ctx, deps, parsed, 1, importDay)
+	rep2, err := scheduleimport.Apply(ctx, deps, parsed, 1, importDay, scheduleimport.ImportScopeFuture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestApply_SkippedHolidayCountsWorkdaysNotPerEmployeeCells(t *testing.T) {
 	}
 
 	const importDay = "2026-01-01"
-	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, importDay)
+	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, importDay, scheduleimport.ImportScopeFuture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestApply_DoesNotMutatePastDates(t *testing.T) {
 	}
 
 	const todayPastImport = "2026-06-15"
-	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, todayPastImport)
+	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, todayPastImport, scheduleimport.ImportScopeFuture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,6 +302,97 @@ func TestApply_DoesNotMutatePastDates(t *testing.T) {
 	sMon, err := ss.GetForUserDate(ctx, u.ID, dates[0])
 	if err != nil || sMon == nil || sMon.ShiftStart != "09:00" || sMon.ShiftEnd != "17:00" {
 		t.Fatalf("Mo Schicht unverändert: %+v err=%v", sMon, err)
+	}
+}
+
+func TestApply_PastOnlyAfterFuture(t *testing.T) {
+	db, err := sqlite.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+
+	us := sqlite.NewUserStore(db)
+	u := &model.User{
+		Username: "mix", PasswordHash: "x", DisplayName: "Mix User",
+		Role: model.RoleUser, Active: true,
+	}
+	if err := us.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+
+	mon := time.Date(2026, 3, 16, 12, 0, 0, 0, time.Local)
+	dates := [5]string{
+		mon.Format("2006-01-02"),
+		mon.AddDate(0, 0, 1).Format("2006-01-02"),
+		mon.AddDate(0, 0, 2).Format("2006-01-02"),
+		mon.AddDate(0, 0, 3).Format("2006-01-02"),
+		mon.AddDate(0, 0, 4).Format("2006-01-02"),
+	}
+	isoY, isoW := mon.ISOWeek()
+
+	parsed := &scheduleimport.ParsedSheet{
+		Weeks: []scheduleimport.ParsedWeek{{
+			ISOYear: isoY,
+			ISOWk:   isoW,
+			Notes:   "<p>Woche</p>",
+			Dates:   dates,
+			Rows: []scheduleimport.ParsedEmployeeRow{{
+				RawName: "Mix User",
+				Cells:   [5]string{"10:00-18:00", "", "", "09:00-17:00", ""},
+			}},
+		}},
+	}
+
+	ss := sqlite.NewScheduleStore(db)
+	as := sqlite.NewAbsenceStore(db)
+	deps := scheduleimport.Deps{
+		Users: us, Schedules: ss, Absences: as, Holidays: sqlite.NewHolidayStore(db),
+		Closures: sqlite.NewClosureDayStore(db), Claims: sqlite.NewCompensationDayClaimStore(db),
+		TeamMeetings: nil,
+	}
+
+	const today = "2026-03-18" // Mi: Mo–Di Vergangenheit, Do–Fr Zukunft
+
+	repFuture, err := scheduleimport.Apply(ctx, deps, parsed, 1, today, scheduleimport.ImportScopeFuture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repFuture.PastCellsSkipped != 1 {
+		t.Fatalf("PastCellsSkipped: got %d want 1 (Mo)", repFuture.PastCellsSkipped)
+	}
+	if repFuture.SchedulesWritten != 1 {
+		t.Fatalf("future schedules written: got %d want 1 (Do)", repFuture.SchedulesWritten)
+	}
+
+	sMon, _ := ss.GetForUserDate(ctx, u.ID, dates[0])
+	if sMon != nil {
+		t.Fatalf("Mo should be unset after future-only import: %+v", sMon)
+	}
+	sThu, _ := ss.GetForUserDate(ctx, u.ID, dates[3])
+	if sThu == nil || sThu.ShiftStart != "09:00" {
+		t.Fatalf("Do Schicht: %+v", sThu)
+	}
+
+	repPast, err := scheduleimport.Apply(ctx, deps, parsed, 1, today, scheduleimport.ImportScopePastOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repPast.SchedulesWritten != 1 {
+		t.Fatalf("past schedules written: got %d want 1 (Mo)", repPast.SchedulesWritten)
+	}
+	if repPast.PastCellsSkipped != 0 {
+		t.Fatalf("past run should not count skipped past cells: %d", repPast.PastCellsSkipped)
+	}
+
+	sMon, _ = ss.GetForUserDate(ctx, u.ID, dates[0])
+	if sMon == nil || sMon.ShiftStart != "10:00" || sMon.ShiftEnd != "18:00" {
+		t.Fatalf("Mo nach PastOnly: %+v", sMon)
+	}
+	sThu, _ = ss.GetForUserDate(ctx, u.ID, dates[3])
+	if sThu == nil || sThu.ShiftStart != "09:00" {
+		t.Fatalf("Do unverändert: %+v", sThu)
 	}
 }
 
@@ -372,7 +463,7 @@ func TestApply_TeamMeetingsKTFromParsedWeek(t *testing.T) {
 		Claims: sqlite.NewCompensationDayClaimStore(db), TeamMeetings: tms,
 	}
 
-	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, "2026-01-01")
+	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, "2026-01-01", scheduleimport.ImportScopeFuture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,7 +543,7 @@ func TestApply_WarnsShiftOnFixedFreeWeekday(t *testing.T) {
 	}
 
 	const importDay = "2026-01-01"
-	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, importDay)
+	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, importDay, scheduleimport.ImportScopeFuture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +622,7 @@ func TestApply_NoWarnShiftOnNormalWorkday(t *testing.T) {
 		Claims: sqlite.NewCompensationDayClaimStore(db), TeamMeetings: nil,
 	}
 
-	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, "2026-01-01")
+	rep, err := scheduleimport.Apply(ctx, deps, parsed, 1, "2026-01-01", scheduleimport.ImportScopeFuture)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -296,9 +296,17 @@ export async function postTeamMeeting(body: {
   return data
 }
 
-export async function importScheduleExcel(file: File) {
+export type ScheduleExcelImportScope = 'future' | 'past'
+
+export async function importScheduleExcel(
+  file: File,
+  options?: { scope?: ScheduleExcelImportScope },
+) {
   const fd = new FormData()
   fd.append('file', file)
+  if (options?.scope) {
+    fd.append('scope', options.scope)
+  }
   const { data } = await api.post<ScheduleExcelImportReport>('/schedules/import-excel', fd)
   return data
 }

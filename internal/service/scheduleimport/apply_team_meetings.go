@@ -80,6 +80,23 @@ func buildTeamMondaySectionsReport(w ParsedWeek) []TeamMondaySectionReport {
 	return out
 }
 
+func weekHasImportableTeamMeetingContent(w ParsedWeek) bool {
+	for _, sec := range w.TeamMondaySections {
+		switch sec.Line.Kind {
+		case TeamMeetingLineNoMeetings, TeamMeetingLineUnspecified:
+			continue
+		case TeamMeetingLineScheduled:
+			if sec.Line.KTStart != "" && sec.Line.KTEnd != "" {
+				return true
+			}
+			if sec.Line.GTStart != "" && sec.Line.GTEnd != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func applyTeamMeetingsForWeek(
 	ctx context.Context,
 	deps Deps,
@@ -88,6 +105,7 @@ func applyTeamMeetingsForWeek(
 	teamMeetingOptOut map[int]struct{},
 	skip [5]bool,
 	todayLocal string,
+	scope ImportScope,
 	rep *Report,
 	wr *WeekReport,
 ) {
@@ -107,9 +125,12 @@ func applyTeamMeetingsForWeek(
 			"KW %d/%d: Teamsitzungen (Montag) nicht importiert (Feiertag/Freitag-Spalte).", w.ISOWk, w.ISOYear))
 		return
 	}
-	if monday < todayLocal {
-		rep.Warnings = append(rep.Warnings, fmt.Sprintf(
-			"KW %d/%d: Teamsitzungen (Montag) nicht importiert (Datum vor %s).", w.ISOWk, w.ISOYear, todayLocal))
+	if !teamMeetingsInImportScope(monday, todayLocal, scope) {
+		if scope == ImportScopeFuture && monday < todayLocal && weekHasImportableTeamMeetingContent(w) {
+			rep.PastTeamMeetingsSkipped++
+			rep.Warnings = append(rep.Warnings, fmt.Sprintf(
+				"KW %d/%d: Teamsitzungen (Montag) nicht importiert (Datum vor %s).", w.ISOWk, w.ISOYear, todayLocal))
+		}
 		return
 	}
 

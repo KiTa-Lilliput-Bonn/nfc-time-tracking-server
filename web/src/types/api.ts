@@ -93,6 +93,7 @@ export interface ScheduleExcelImportReport {
   week_notes_updated: number
   past_cells_skipped?: number
   past_week_notes_skipped?: number
+  past_team_meetings_skipped?: number
   team_meetings_created?: number
   unknown_names: string[]
   errors: string[]

@@ -557,6 +557,8 @@ func (h *ScheduleHandler) ImportExcel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scope := scheduleimport.ParseImportScope(r.FormValue("scope"))
+
 	rep, err := scheduleimport.Import(r.Context(), scheduleimport.Deps{
 		Users:                h.Users,
 		FixedNonWorkWeekdays: h.FixedNonWorkWeekdays,
@@ -566,7 +568,7 @@ func (h *ScheduleHandler) ImportExcel(w http.ResponseWriter, r *http.Request) {
 		Holidays:             h.Holidays,
 		Closures:             h.Closures,
 		Claims:               h.CompensationDayClaims,
-	}, buf, apimw.UserID(r))
+	}, buf, apimw.UserID(r), scope)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return

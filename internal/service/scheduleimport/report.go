@@ -17,6 +17,8 @@ type Report struct {
 	PastCellsSkipped int `json:"past_cells_skipped"`
 	// PastWeekNotesSkipped: Anzahl KW-Blöcke, bei denen eine Notiz wegen komplett vergangener Woche nicht gespeichert wurde.
 	PastWeekNotesSkipped int `json:"past_week_notes_skipped"`
+	// PastTeamMeetingsSkipped: Teamsitzungen (Montag) in vergangenen Wochen mit Inhalt, nicht importiert (Future-Lauf).
+	PastTeamMeetingsSkipped int `json:"past_team_meetings_skipped"`
 
 	TeamMeetingsCreated int `json:"team_meetings_created"`
 

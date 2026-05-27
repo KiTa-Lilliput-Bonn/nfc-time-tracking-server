@@ -11,8 +11,9 @@ import (
 )
 
 // Apply wendet geparste Wochen auf die Datenbank an.
-// todayLocal ist YYYY-MM-DD (Kalendertag in time.Local): Spalten mit date < todayLocal werden nicht verändert.
-func Apply(ctx context.Context, deps Deps, parsed *ParsedSheet, createdBy int, todayLocal string) (*Report, error) {
+// todayLocal ist YYYY-MM-DD (Kalendertag in time.Local).
+// scope ImportScopeFuture: nur date >= today; ImportScopePastOnly: nur date < today.
+func Apply(ctx context.Context, deps Deps, parsed *ParsedSheet, createdBy int, todayLocal string, scope ImportScope) (*Report, error) {
 	if parsed == nil {
 		return &Report{}, nil
 	}
@@ -44,17 +45,19 @@ func Apply(ctx context.Context, deps Deps, parsed *ParsedSheet, createdBy int, t
 		// Pro Feiertagsspalte höchstens 1 — nicht Mitarbeiter × Spalte (sonst 3 Tage × 2 MA = 6).
 		var skippedHolidayColWithContent [5]bool
 
-		if strings.TrimSpace(w.Notes) != "" {
-			if weekFullyPast(w, todayLocal) {
+		if applyNotes, countPastNotes := weekNotesInImportScope(w, todayLocal, scope); applyNotes || countPastNotes {
+			if countPastNotes {
 				rep.PastWeekNotesSkipped++
 				rep.Warnings = append(rep.Warnings, fmt.Sprintf(
 					"KW %d/%d: Wochennotiz nicht gespeichert (gesamte Woche liegt vor %s).",
 					w.ISOWk, w.ISOYear, todayLocal))
-			} else if err := deps.Schedules.PutWeekNotes(ctx, w.ISOYear, w.ISOWk, w.Notes); err != nil {
-				rep.Errors = append(rep.Errors, fmt.Sprintf("KW %d/%d Wochennotiz: %v", w.ISOWk, w.ISOYear, err))
-			} else {
-				wr.NotesWritten = true
-				rep.WeekNotesUpdated++
+			} else if applyNotes {
+				if err := deps.Schedules.PutWeekNotes(ctx, w.ISOYear, w.ISOWk, w.Notes); err != nil {
+					rep.Errors = append(rep.Errors, fmt.Sprintf("KW %d/%d Wochennotiz: %v", w.ISOWk, w.ISOYear, err))
+				} else {
+					wr.NotesWritten = true
+					rep.WeekNotesUpdated++
+				}
 			}
 		}
 
@@ -85,8 +88,8 @@ func Apply(ctx context.Context, deps Deps, parsed *ParsedSheet, createdBy int, t
 				if date == "" {
 					continue
 				}
-				if date < todayLocal {
-					if strings.TrimSpace(row.Cells[col]) != "" {
+				if !dateInImportScope(date, todayLocal, scope) {
+					if scope == ImportScopeFuture && date < todayLocal && strings.TrimSpace(row.Cells[col]) != "" {
 						rep.PastCellsSkipped++
 						wr.PastCellsSkipped++
 					}
@@ -170,14 +173,14 @@ func Apply(ctx context.Context, deps Deps, parsed *ParsedSheet, createdBy int, t
 		}
 		skippedCellsByWeek[wkKey] += skippedThisBlock
 
-		applyTeamMeetingsForWeek(ctx, deps, w, index, teamMeetingOptOut, skip, todayLocal, rep, &wr)
+		applyTeamMeetingsForWeek(ctx, deps, w, index, teamMeetingOptOut, skip, todayLocal, scope, rep, &wr)
 
 		rep.Weeks = append(rep.Weeks, wr)
 	}
 
 	rep.AbsencesSkipped = aggregateSkippedHolidayCells(skippedCellsByWeek, weekOccurrences, rep)
 
-	if rep.PastCellsSkipped > 0 {
+	if scope == ImportScopeFuture && rep.PastCellsSkipped > 0 {
 		rep.Warnings = append([]string{fmt.Sprintf(
 			"Vergangenheit: %d Zellen mit Inhalt wurden nicht geändert (nur ab %s).",
 			rep.PastCellsSkipped, todayLocal)}, rep.Warnings...)
