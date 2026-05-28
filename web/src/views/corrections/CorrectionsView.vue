@@ -28,6 +28,7 @@ import {
   formatGermanTime,
   isoToTimeInputValue,
   parseTimeHHMM,
+  plusOneHourHHMM,
   startOfISOWeek,
   toISODateLocal,
 } from '@/utils/dates'
@@ -101,6 +102,7 @@ const showCorrect = ref(false)
 const editWp = ref<WorkPeriod | null>(null)
 const corrIn = ref('')
 const corrOut = ref('')
+const corrOutManuallyEdited = ref(false)
 const corrReason = ref('')
 const saving = ref(false)
 
@@ -108,11 +110,18 @@ function openCorrect(p: WorkPeriod) {
   editWp.value = p
   const c = corrByWp.value.get(p.id)
   corrIn.value = isoToTimeInputValue(c ? c.corrected_in : p.punch_in)
+  corrOutManuallyEdited.value = false
   const outSrc = c ? c.corrected_out : p.punch_out
-  corrOut.value = outSrc ? isoToTimeInputValue(outSrc) : isoToTimeInputValue(p.punch_in)
+  corrOut.value = outSrc ? isoToTimeInputValue(outSrc) : (plusOneHourHHMM(corrIn.value) ?? '09:00')
   corrReason.value = ''
   showCorrect.value = true
 }
+
+watch(corrIn, (next) => {
+  if (!showCorrect.value || corrOutManuallyEdited.value) return
+  const auto = plusOneHourHHMM(next)
+  if (auto) corrOut.value = auto
+})
 
 async function submitCorrect() {
   if (!editWp.value || employeeId.value == null) return
@@ -167,6 +176,7 @@ const showManual = ref(false)
 const manDate = ref<Date>(new Date())
 const manIn = ref('08:00')
 const manOut = ref('16:00')
+const manOutManuallyEdited = ref(false)
 
 function endOfLocalToday(): Date {
   const d = new Date()
@@ -179,8 +189,23 @@ function openManual() {
   manDate.value = new Date()
   manualDateMax.value = endOfLocalToday()
   manIn.value = '08:00'
-  manOut.value = '16:00'
+  manOutManuallyEdited.value = false
+  manOut.value = plusOneHourHHMM(manIn.value) ?? '09:00'
   showManual.value = true
+}
+
+watch(manIn, (next) => {
+  if (!showManual.value || manOutManuallyEdited.value) return
+  const auto = plusOneHourHHMM(next)
+  if (auto) manOut.value = auto
+})
+
+function onCorrOutInput() {
+  corrOutManuallyEdited.value = true
+}
+
+function onManOutInput() {
+  manOutManuallyEdited.value = true
 }
 
 function timeOnDateToISO(d: Date, hhmm: string): string {
@@ -339,7 +364,7 @@ async function removeManual(p: WorkPeriod) {
         <label>Kommen (Uhrzeit)</label>
         <input v-model="corrIn" type="time" step="60" class="p-inputtext p-component w" />
         <label>Gehen (Uhrzeit)</label>
-        <input v-model="corrOut" type="time" step="60" class="p-inputtext p-component w" />
+        <input v-model="corrOut" type="time" step="60" class="p-inputtext p-component w" @input="onCorrOutInput" />
         <label>Grund (Pflicht)</label>
         <InputText v-model="corrReason" class="w" />
       </div>
@@ -362,7 +387,7 @@ async function removeManual(p: WorkPeriod) {
         <label>Kommen</label>
         <input v-model="manIn" type="time" step="60" class="p-inputtext p-component w" />
         <label>Gehen</label>
-        <input v-model="manOut" type="time" step="60" class="p-inputtext p-component w" />
+        <input v-model="manOut" type="time" step="60" class="p-inputtext p-component w" @input="onManOutInput" />
       </div>
       <template #footer>
         <Button label="Abbrechen" severity="secondary" text @click="showManual = false" />

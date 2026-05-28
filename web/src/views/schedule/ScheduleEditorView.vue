@@ -34,7 +34,16 @@ import type {
   UserGroup,
 } from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
-import { addDays, formatGermanDate, compareISOWeek, isoWeekAndYear, mondayOfISOWeek, toISODateLocal } from '@/utils/dates'
+import {
+  addDays,
+  formatGermanDate,
+  compareISOWeek,
+  isoWeekAndYear,
+  mondayOfISOWeek,
+  parseTimeHHMM,
+  plusOneHourHHMM,
+  toISODateLocal,
+} from '@/utils/dates'
 import { teamMeetingListLabel } from '@/utils/teamMeetingLabel'
 
 const toast = useToast()
@@ -218,6 +227,7 @@ const teamMeetingSaving = ref(false)
 const selectedTeamMeetingId = ref<number | null>(null)
 const meetingEditStart = ref('')
 const meetingEditEnd = ref('')
+const meetingEndManuallyEdited = ref(false)
 const meetingParticipantIds = ref<number[]>([])
 const meetingKindForCreate = ref<TeamMeetingKind>('kt')
 const meetingDateForCreate = ref('')
@@ -298,13 +308,15 @@ function syncMeetingFormFromSelection() {
   if (!m) {
     meetingEditStart.value = ''
     meetingEditEnd.value = ''
+    meetingEndManuallyEdited.value = false
     meetingEditLabel.value = ''
     meetingEditDate.value = ''
     meetingParticipantIds.value = []
     return
   }
   meetingEditStart.value = m.time_start
-  meetingEditEnd.value = m.time_end
+  meetingEndManuallyEdited.value = false
+  meetingEditEnd.value = m.time_end || (plusOneHourHHMM(meetingEditStart.value) ?? '')
   meetingEditLabel.value = m.label ?? ''
   meetingEditDate.value = m.meeting_date
   meetingParticipantIds.value = [...(m.user_ids ?? [])]
@@ -318,7 +330,8 @@ watch(teamMeetingDialogVisible, (v) => {
   if (teamMeetingDialogMode.value === 'create') {
     selectedTeamMeetingId.value = null
     meetingEditStart.value = '09:00'
-    meetingEditEnd.value = '10:00'
+    meetingEndManuallyEdited.value = false
+    meetingEditEnd.value = plusOneHourHHMM(meetingEditStart.value) ?? '10:00'
     meetingParticipantIds.value = []
     meetingKindForCreate.value = 'kt'
     meetingLabelForCreate.value = ''
@@ -329,6 +342,7 @@ watch(teamMeetingDialogVisible, (v) => {
     selectedTeamMeetingId.value = null
     meetingEditStart.value = ''
     meetingEditEnd.value = ''
+    meetingEndManuallyEdited.value = false
     meetingParticipantIds.value = []
     return
   }
@@ -377,7 +391,17 @@ function addMeetingParticipantsFromSection(employees: Employee[]) {
 }
 
 function timeFieldOk(s: string): boolean {
-  return /^\d{1,2}:\d{2}$/.test(s.trim())
+  return parseTimeHHMM(s) != null
+}
+
+watch(meetingEditStart, (next) => {
+  if (!teamMeetingDialogVisible.value || meetingEndManuallyEdited.value) return
+  const auto = plusOneHourHHMM(next)
+  if (auto) meetingEditEnd.value = auto
+})
+
+function onMeetingEndInput() {
+  meetingEndManuallyEdited.value = true
 }
 
 function defaultMeetingDateForCreate(): string {
@@ -1385,11 +1409,17 @@ function thisWeek() {
           <div class="tm-row">
             <label class="tm-field">
               <span class="tm-lbl">Beginn</span>
-              <InputText v-model="meetingEditStart" placeholder="HH:MM" class="tm-input" />
+              <input v-model="meetingEditStart" type="time" step="60" class="p-inputtext p-component tm-input" />
             </label>
             <label class="tm-field">
               <span class="tm-lbl">Ende</span>
-              <InputText v-model="meetingEditEnd" placeholder="HH:MM" class="tm-input" />
+              <input
+                v-model="meetingEditEnd"
+                type="time"
+                step="60"
+                class="p-inputtext p-component tm-input"
+                @input="onMeetingEndInput"
+              />
             </label>
           </div>
           <div v-if="scheduleSectionsWithEmployees.length" class="tm-groups">
@@ -1464,11 +1494,17 @@ function thisWeek() {
           <div class="tm-row">
             <label class="tm-field">
               <span class="tm-lbl">Beginn</span>
-              <InputText v-model="meetingEditStart" placeholder="HH:MM" class="tm-input" />
+              <input v-model="meetingEditStart" type="time" step="60" class="p-inputtext p-component tm-input" />
             </label>
             <label class="tm-field">
               <span class="tm-lbl">Ende</span>
-              <InputText v-model="meetingEditEnd" placeholder="HH:MM" class="tm-input" />
+              <input
+                v-model="meetingEditEnd"
+                type="time"
+                step="60"
+                class="p-inputtext p-component tm-input"
+                @input="onMeetingEndInput"
+              />
             </label>
           </div>
           <div v-if="scheduleSectionsWithEmployees.length" class="tm-groups">

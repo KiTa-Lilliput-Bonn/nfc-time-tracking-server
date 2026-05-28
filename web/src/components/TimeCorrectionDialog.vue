@@ -16,6 +16,7 @@ import {
   formatGermanTime,
   isoToTimeInputValue,
   parseTimeHHMM,
+  plusOneHourHHMM,
 } from '@/utils/dates'
 
 const props = defineProps<{
@@ -40,6 +41,7 @@ const toast = useToast()
 const selWpId = ref<number | null>(null)
 const corrIn = ref('')
 const corrOut = ref('')
+const corrOutManuallyEdited = ref(false)
 const corrReason = ref('')
 const saving = ref(false)
 
@@ -73,8 +75,9 @@ function fillFromSelection() {
   }
   const c = corrByWorkPeriod.value.get(p.id)
   corrIn.value = isoToTimeInputValue(c ? c.corrected_in : p.punch_in)
+  corrOutManuallyEdited.value = false
   const outSrc = c ? c.corrected_out : p.punch_out
-  corrOut.value = outSrc ? isoToTimeInputValue(outSrc) : isoToTimeInputValue(p.punch_in)
+  corrOut.value = outSrc ? isoToTimeInputValue(outSrc) : (plusOneHourHHMM(corrIn.value) ?? '09:00')
 }
 
 function syncOpen() {
@@ -98,6 +101,16 @@ watch(selWpId, () => {
   if (!props.visible) return
   fillFromSelection()
 })
+
+watch(corrIn, (next) => {
+  if (!props.visible || corrOutManuallyEdited.value) return
+  const auto = plusOneHourHHMM(next)
+  if (auto) corrOut.value = auto
+})
+
+function onCorrOutInput() {
+  corrOutManuallyEdited.value = true
+}
 
 function close() {
   emit('update:visible', false)
@@ -183,7 +196,7 @@ async function submitCorrect() {
       <label>Kommen (Uhrzeit)</label>
       <input v-model="corrIn" type="time" step="60" class="p-inputtext p-component w" />
       <label>Gehen (Uhrzeit)</label>
-      <input v-model="corrOut" type="time" step="60" class="p-inputtext p-component w" />
+      <input v-model="corrOut" type="time" step="60" class="p-inputtext p-component w" @input="onCorrOutInput" />
       <label>Grund (Pflicht)</label>
       <InputText v-model="corrReason" class="w" />
     </div>

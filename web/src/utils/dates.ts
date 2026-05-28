@@ -62,6 +62,14 @@ export function parseTimeHHMM(s: string): { h: number; m: number } | null {
   return { h, m: mm }
 }
 
+/** HH:mm + 1 Stunde (24h Wrap), z. B. 23:30 -> 00:30. */
+export function plusOneHourHHMM(hhmm: string): string | null {
+  const t = parseTimeHHMM(hhmm)
+  if (!t) return null
+  const h = (t.h + 1) % 24
+  return `${pad2(h)}:${pad2(t.m)}`
+}
+
 /**
  * Kalendertag aus work_date (YYYY-MM-DD oder mit Zeitanteil, z. B. …T00:00:00Z).
  * Wichtig: Nicht per split("-") mappen (liefert bei "…-15T12:00:00" NaN für den Tag).

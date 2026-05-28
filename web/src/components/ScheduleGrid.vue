@@ -1641,23 +1641,33 @@ defineExpose({
   border-radius: 6px;
   border: 1px solid #cbd5e1;
   --dh: var(--day-hours, 14);
-  background:
+  /*
+   * Volle Stunden: dickere Linie am Periodenanfang (keine Überlappung mit Halbstunden).
+   * Halbe Stunden: nur in der Mitte jeder Stunden-Periode — vermeidet Doppel-Layer-Artefakte.
+   * Erstes Bild = oben (Stundenlinien).
+   */
+  --hour-cell: calc(100% / var(--dh));
+  background-image:
     repeating-linear-gradient(
       to right,
-      transparent 0,
-      transparent calc(100% / (var(--dh) * 2) - 0.5px),
-      rgba(148, 163, 184, 0.38) calc(100% / (var(--dh) * 2) - 0.5px),
-      rgba(148, 163, 184, 0.38) calc(100% / (var(--dh) * 2))
+      rgba(148, 163, 184, 0.38) 0,
+      rgba(148, 163, 184, 0.38) 2px,
+      transparent 2px,
+      transparent var(--hour-cell)
     ),
     repeating-linear-gradient(
       to right,
       transparent 0,
-      transparent calc(100% / var(--dh) - 1px),
-      #94a3b8 calc(100% / var(--dh) - 1px),
-      #94a3b8 calc(100% / var(--dh))
+      transparent calc(var(--hour-cell) / 2 - 1px),
+      rgba(148, 163, 184, 0.22) calc(var(--hour-cell) / 2 - 1px),
+      rgba(148, 163, 184, 0.22) calc(var(--hour-cell) / 2 + 1px),
+      transparent calc(var(--hour-cell) / 2 + 1px),
+      transparent var(--hour-cell)
     );
   background-color: #f8fafc;
   pointer-events: none;
+  /* Subpixel-Rundung: weniger „gebrochene“ vertikale Linien beim Skalieren */
+  transform: translateZ(0);
 }
 .day-shift-bar-outer {
   position: absolute;
