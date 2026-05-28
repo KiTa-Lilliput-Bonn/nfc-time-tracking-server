@@ -171,6 +171,42 @@ func TargetHoursMonth(hoursPerWeek float64, year, month int, fnwRows []model.Fix
 	return math.Round(sum*100) / 100
 }
 
+type weeklyHoursForDateStore interface {
+	GetForDate(ctx context.Context, userID int, date string) (*model.WeeklyHours, error)
+}
+
+// TargetHoursMonthByWeekHistory resolves weekly hours per calendar date and sums daily targets
+// for employee workdays in the month (including fixed non-work weekday history).
+func TargetHoursMonthByWeekHistory(
+	ctx context.Context,
+	userID int,
+	year, month int,
+	fnwRows []model.FixedNonWorkWeekdays,
+	whs weeklyHoursForDateStore,
+) (float64, error) {
+	loc := time.Local
+	t := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, loc)
+	var sum float64
+	for t.Month() == time.Month(month) {
+		ds := t.Format("2006-01-02")
+		wh, err := whs.GetForDate(ctx, userID, ds)
+		if err != nil {
+			return 0, err
+		}
+		if wh != nil && wh.HoursPerWeek > 0 {
+			fixed := model.FixedNonWorkWeekdaysForDate(fnwRows, ds)
+			if model.IsEmployeeWorkday(t, fixed) {
+				d := model.DailyHours(wh.HoursPerWeek, fixed)
+				if d > 0 {
+					sum += d
+				}
+			}
+		}
+		t = t.AddDate(0, 0, 1)
+	}
+	return math.Round(sum*100) / 100, nil
+}
+
 // MonthDateRange returns first and last date (YYYY-MM-DD) of the month in UTC labels.
 func MonthDateRange(year, month int) (from, to string) {
 	first := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)

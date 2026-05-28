@@ -126,7 +126,18 @@ func (h *MeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "user query failed")
 		return
 	}
-	mb, err := saldocalc.MonthWithOpening(r.Context(), uid, y, m, u.OpeningHoursBalance, h.FixedNonWorkWeekdays, h.WorkPeriods, h.WeeklyHours, h.Schedules)
+	mb, err := saldocalc.MonthWithOpening(
+		r.Context(),
+		uid,
+		y,
+		m,
+		u.OpeningHoursBalance,
+		h.FixedNonWorkWeekdays,
+		h.WorkPeriods,
+		h.WeeklyHours,
+		h.Holidays,
+		h.Schedules,
+	)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return

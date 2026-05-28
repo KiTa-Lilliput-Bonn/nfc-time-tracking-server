@@ -1,11 +1,24 @@
 package timesummary
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"nfc-time-tracking-server/internal/model"
 )
+
+type stubWeeklyHoursForDateStore struct {
+	byDate map[string]float64
+}
+
+func (s stubWeeklyHoursForDateStore) GetForDate(ctx context.Context, userID int, date string) (*model.WeeklyHours, error) {
+	h, ok := s.byDate[date]
+	if !ok {
+		return nil, nil
+	}
+	return &model.WeeklyHours{UserID: userID, HoursPerWeek: h, ValidFrom: date}, nil
+}
 
 func TestSumWorkedHours(t *testing.T) {
 	t1 := time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC)
@@ -56,6 +69,50 @@ func TestTargetHoursMonth_ChangeMidMonth(t *testing.T) {
 		}
 	}
 	if got := TargetHoursMonth(40, 2026, 3, fnwRows); got != want {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
+func TestTargetHoursMonthByWeekHistory_ChangeMidMonth(t *testing.T) {
+	ctx := context.Background()
+	loc := time.Local
+	wh := stubWeeklyHoursForDateStore{byDate: map[string]float64{}}
+	for d0 := time.Date(2026, 5, 25, 0, 0, 0, 0, loc); d0.Month() == time.May; d0 = d0.AddDate(0, 0, 1) {
+		wh.byDate[d0.Format("2006-01-02")] = 40
+	}
+	got, err := TargetHoursMonthByWeekHistory(ctx, 1, 2026, 5, nil, wh)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var want float64
+	for d0 := time.Date(2026, 5, 25, 0, 0, 0, 0, loc); d0.Month() == time.May; d0 = d0.AddDate(0, 0, 1) {
+		if d0.Weekday() != time.Saturday && d0.Weekday() != time.Sunday {
+			want += 8
+		}
+	}
+	if got != want {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
+func TestTargetHoursMonthByWeekHistory_NoEntryBeforeMonthStart(t *testing.T) {
+	ctx := context.Background()
+	loc := time.Local
+	wh := stubWeeklyHoursForDateStore{byDate: map[string]float64{}}
+	for d0 := time.Date(2026, 5, 20, 0, 0, 0, 0, loc); d0.Month() == time.May; d0 = d0.AddDate(0, 0, 1) {
+		wh.byDate[d0.Format("2006-01-02")] = 30
+	}
+	got, err := TargetHoursMonthByWeekHistory(ctx, 1, 2026, 5, nil, wh)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var want float64
+	for d0 := time.Date(2026, 5, 20, 0, 0, 0, 0, loc); d0.Month() == time.May; d0 = d0.AddDate(0, 0, 1) {
+		if d0.Weekday() != time.Saturday && d0.Weekday() != time.Sunday {
+			want += 6
+		}
+	}
+	if got != want {
 		t.Fatalf("got %v want %v", got, want)
 	}
 }
