@@ -183,6 +183,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Use(apimw.AuthJWT(d.Auth))
 			r.Use(apimw.RequireRole(leitung...))
 			r.Get("/dashboard/team-overview", dh.TeamOverview)
+			r.Get("/dashboard/schedule-gaps", dh.ScheduleGaps)
 			r.Get("/employees", eh.List)
 			r.Post("/employees", eh.Create)
 			r.Patch("/employees/{id}", eh.Patch)

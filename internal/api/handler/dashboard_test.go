@@ -39,9 +39,82 @@ func teamOverviewRouter(t *testing.T, db *sqlite.DB, auth *authsvc.Service) http
 			r.Use(apimw.AuthJWT(auth))
 			r.Use(apimw.RequireRole(leitung...))
 			r.Get("/dashboard/team-overview", dh.TeamOverview)
+			r.Get("/dashboard/schedule-gaps", dh.ScheduleGaps)
 		})
 	})
 	return r
+}
+
+func TestScheduleGaps_ResponseShape(t *testing.T) {
+	db, err := sqlite.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	auth := authsvc.New("test-secret-key-for-jwt-schedule-gaps", 1)
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	users := sqlite.NewUserStore(db)
+	schedules := sqlite.NewScheduleStore(db)
+	ctx := context.Background()
+	if err := users.Create(ctx, &model.User{
+		Username: "lead", PasswordHash: hash, DisplayName: "Lead",
+		Role: model.RoleLeitung, Active: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	emp := &model.User{Username: "emp", PasswordHash: hash, DisplayName: "Employee", Role: model.RoleUser, Active: true}
+	if err := users.Create(ctx, emp); err != nil {
+		t.Fatal(err)
+	}
+	emp, err = users.GetByUsername(ctx, "emp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schedules.Set(ctx, &model.Schedule{
+		UserID: emp.ID, ScheduleDate: "2026-03-11", ShiftStart: "08:00", ShiftEnd: "16:00",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lead, err := users.GetByUsername(ctx, "lead")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := auth.IssueToken(lead.ID, lead.Username, string(lead.Role))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	router := teamOverviewRouter(t, db, auth)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/schedule-gaps", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var envelope struct {
+		From    string                   `json:"from"`
+		Through string                   `json:"through"`
+		Count   int                      `json:"count"`
+		Items   []map[string]interface{} `json:"items"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Count < 1 || len(envelope.Items) < 1 {
+		t.Fatalf("want at least one gap item, count=%d items=%d", envelope.Count, len(envelope.Items))
+	}
+	item := envelope.Items[0]
+	for _, k := range []string{"user_id", "display_name", "schedule_date", "shift_start", "shift_end", "iso_week_year", "iso_week"} {
+		if _, ok := item[k]; !ok {
+			t.Fatalf("item missing key %q", k)
+		}
+	}
 }
 
 func TestTeamOverview_RequiresLeitung(t *testing.T) {

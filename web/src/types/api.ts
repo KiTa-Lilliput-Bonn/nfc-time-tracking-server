@@ -388,6 +388,23 @@ export interface BreakRule {
   break_minutes: number
 }
 
+export interface ScheduleGapItem {
+  user_id: number
+  display_name: string
+  schedule_date: string
+  shift_start: string
+  shift_end: string
+  iso_week_year: number
+  iso_week: number
+}
+
+export interface ScheduleGapsResponse {
+  from: string
+  through: string
+  count: number
+  items: ScheduleGapItem[]
+}
+
 export interface TeamOverviewRow {
   id: number
   display_name: string

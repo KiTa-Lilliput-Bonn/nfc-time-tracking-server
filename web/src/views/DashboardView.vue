@@ -11,11 +11,19 @@ import InputSwitch from 'primevue/inputswitch'
 import Select from 'primevue/select'
 import { useToast } from 'primevue/usetoast'
 
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
+import Message from 'primevue/message'
 import { useAuthStore } from '@/stores/auth'
 import { fetchEmployees } from '@/api/employees'
 import { fetchGroups } from '@/api/groups'
-import { createEmployeeAbsence, fetchClosureDays, fetchFixedNonWorkWeekdays, fetchTeamOverview, fetchHolidays } from '@/api/management'
+import {
+  createEmployeeAbsence,
+  fetchClosureDays,
+  fetchFixedNonWorkWeekdays,
+  fetchScheduleGaps,
+  fetchTeamOverview,
+  fetchHolidays,
+} from '@/api/management'
 import VacationBalanceBar from '@/components/VacationBalanceBar.vue'
 import { fetchMeBalance, fetchMeSchedule, fetchMeTimes, fetchMeVacation } from '@/api/me'
 import { addDays, formatGermanDate, toISODateLocal } from '@/utils/dates'
@@ -70,6 +78,15 @@ const teamOverviewNameFilter = ref('')
 const teamOverviewVacationYear = computed(() => new Date().getFullYear())
 /** Frühester Auswertungsbeginn Stundensaldo im Team (ISO), vom Server. */
 const teamOverviewHoursFromISO = ref('')
+const scheduleGapsCount = ref(0)
+const scheduleGapsErr = ref('')
+const scheduleGapsBannerText = computed(() => {
+  const n = scheduleGapsCount.value
+  if (n === 1) {
+    return 'Für 1 Tag ist im Dienstplan eine Schicht geplant, aber weder Arbeitszeit noch Abwesenheit hinterlegt.'
+  }
+  return `Für ${n} Tage sind im Dienstplan Schichten geplant, aber weder Arbeitszeit noch Abwesenheit hinterlegt.`
+})
 const yesterdayDisplayISO = computed(() => {
   const d = new Date()
   d.setDate(d.getDate() - 1)
@@ -215,6 +232,18 @@ async function loadTeamOverview() {
   }
 }
 
+async function loadScheduleGaps() {
+  if (!isLeitung.value) return
+  scheduleGapsErr.value = ''
+  try {
+    const data = await fetchScheduleGaps()
+    scheduleGapsCount.value = data.count
+  } catch {
+    scheduleGapsCount.value = 0
+    scheduleGapsErr.value = 'Hinweis zu offenen Dienstplan-Tagen konnte nicht geladen werden.'
+  }
+}
+
 async function load() {
   loading.value = true
   err.value = ''
@@ -279,7 +308,7 @@ async function load() {
 
   // Unabhängig von Fehlern oben (z. B. /me/vacation, /me/balance): Team-Übersicht immer laden
   if (isLeitung.value) {
-    await loadTeamOverview()
+    await Promise.all([loadTeamOverview(), loadScheduleGaps()])
   }
 }
 
@@ -459,6 +488,19 @@ async function submitQuickSick() {
       <p class="welcome">
         Hallo <strong>{{ auth.user?.display_name }}</strong>
       </p>
+      <Message
+        v-if="isLeitung && scheduleGapsCount > 0"
+        severity="warn"
+        :closable="false"
+        class="schedule-gaps-warn"
+        data-testid="dashboard-schedule-gaps-warn"
+      >
+        {{ scheduleGapsBannerText }}
+        <RouterLink class="schedule-gaps-warn-link" :to="{ name: 'schedule-gaps' }">
+          {{ scheduleGapsCount === 1 ? 'Tag anzeigen' : `${scheduleGapsCount} Tage anzeigen` }}
+        </RouterLink>
+      </Message>
+      <p v-else-if="isLeitung && scheduleGapsErr" class="schedule-gaps-err">{{ scheduleGapsErr }}</p>
       <div class="cards">
         <Card v-if="isLeitung">
           <template #title>Krankmeldung</template>
@@ -818,11 +860,18 @@ async function submitQuickSick() {
   font-size: 0.85rem;
   color: #94a3b8;
 }
-.team-overview-warn {
-  margin: 0 0 0.5rem;
+.schedule-gaps-warn {
+  margin: 0 0 1rem;
 }
-.team-overview-warn {
-  color: #b45309;
+.schedule-gaps-warn-link {
+  margin-left: 0.35rem;
+  font-weight: 600;
+  color: inherit;
+}
+.schedule-gaps-err {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: #94a3b8;
 }
 /* Hit-Bereich = nur die Zahl (inline-block schrumpft auf Inhalt, kein volle Zelle). */
 .rest-gesamt-cell {

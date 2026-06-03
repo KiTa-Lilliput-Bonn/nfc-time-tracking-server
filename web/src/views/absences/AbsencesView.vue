@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Card from 'primevue/card'
 import Column from 'primevue/column'
@@ -36,6 +37,10 @@ import {
   normalizeISODate,
   vacationDisplayGapOnlySkippable,
 } from '@/utils/workdays'
+import { clearRouteQueryKeys, queryISODate, queryPositiveInt } from '@/utils/leitungDeepLink'
+
+const route = useRoute()
+const router = useRouter()
 
 function germanWeekdayLong(d: Date): string {
   return new Intl.DateTimeFormat('de-DE', { weekday: 'long' }).format(d)
@@ -311,6 +316,23 @@ async function load() {
   } finally {
     loading.value = false
   }
+  tryOpenAddFromQuery()
+}
+
+function tryOpenAddFromQuery() {
+  if (route.query.open !== 'add') return
+  const emp = queryPositiveInt(route.query.employeeId)
+  if (emp != null && employees.value.some((e) => e.id === emp)) {
+    addEmpId.value = emp
+  }
+  const d = queryISODate(route.query.date)
+  if (d) {
+    addDateFrom.value = d
+    addDateTo.value = d
+  }
+  showAdd.value = true
+  setTimeout(() => openSelectDropdown(addEmpSelect.value), 50)
+  clearRouteQueryKeys(router, ['open', 'employeeId', 'date'])
 }
 
 onMounted(load)

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Card from 'primevue/card'
 import Column from 'primevue/column'
@@ -32,8 +33,11 @@ import {
   startOfISOWeek,
   toISODateLocal,
 } from '@/utils/dates'
+import { clearRouteQueryKeys, queryISODate, queryPositiveInt, queryString } from '@/utils/leitungDeepLink'
 
 const toast = useToast()
+const route = useRoute()
+const router = useRouter()
 
 const employees = ref<Employee[]>([])
 const employeeId = ref<number | null>(null)
@@ -90,10 +94,33 @@ async function load() {
   }
 }
 
+function tryOpenManualFromQuery() {
+  if (route.query.open !== 'manual') return
+  const emp = queryPositiveInt(route.query.employeeId)
+  if (emp != null && employees.value.some((e) => e.id === emp)) {
+    employeeId.value = emp
+  }
+  const d = queryISODate(route.query.date)
+  if (d) {
+    manDate.value = d
+    manualDateMax.value = endOfLocalToday()
+  }
+  const shiftStart = queryString(route.query.shiftStart)
+  const shiftEnd = queryString(route.query.shiftEnd)
+  if (shiftStart) {
+    manIn.value = shiftStart
+    manOutManuallyEdited.value = Boolean(shiftEnd)
+    manOut.value = shiftEnd || plusOneHourHHMM(shiftStart) || manOut.value
+  }
+  showManual.value = true
+  clearRouteQueryKeys(router, ['open', 'employeeId', 'date', 'shiftStart', 'shiftEnd'])
+}
+
 onMounted(async () => {
   employees.value = await fetchEmployees()
   employeeId.value = employees.value[0]?.id ?? null
   await load()
+  tryOpenManualFromQuery()
 })
 
 watch([employeeId, from, to], load)

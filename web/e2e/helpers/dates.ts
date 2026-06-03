@@ -43,6 +43,10 @@ const { year: isoYear, week: isoWeek } = isoWeekAndYear(anchor)
 export const E2E_YEAR = anchor.getFullYear()
 export const E2E_MONTH = anchor.getMonth() + 1
 export const E2E_WORK_DATE = toIsoDateLocal(anchor)
+const gapAnchor = new Date(anchor)
+gapAnchor.setDate(gapAnchor.getDate() - 1)
+/** Gestern (UTC): für Dienstplan-Lücken (nur Tage vor heute). */
+export const E2E_GAP_DATE = toIsoDateLocal(gapAnchor)
 export const E2E_ABSENCE_DATE = E2E_WORK_DATE
 export const E2E_SCHEDULE_DATE = E2E_WORK_DATE
 export const E2E_WEEK_YEAR = isoYear

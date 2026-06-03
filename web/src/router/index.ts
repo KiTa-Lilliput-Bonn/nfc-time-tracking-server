@@ -127,6 +127,12 @@ const router = createRouter({
           meta: { title: 'Importstatus', roles: ['leitung', 'superadmin'] },
         },
         {
+          path: 'schedule-gaps',
+          name: 'schedule-gaps',
+          component: () => import('@/views/leitung/ScheduleGapsView.vue'),
+          meta: { title: 'Offene Dienstplan-Tage', roles: ['leitung', 'superadmin'] },
+        },
+        {
           path: 'admin/users',
           name: 'admin-users',
           component: () => import('@/views/admin/UsersView.vue'),

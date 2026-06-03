@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"nfc-time-tracking-server/internal/api/response"
+	"nfc-time-tracking-server/internal/service/schedulegaps"
 	"nfc-time-tracking-server/internal/service/teamoverview"
 	"nfc-time-tracking-server/internal/store"
 )
@@ -77,6 +78,23 @@ func (h *DashboardHandler) TeamOverview(w http.ResponseWriter, r *http.Request) 
 		"vacation_year": resolvedVY,
 		"rows":          rows,
 	})
+}
+
+// ScheduleGaps returns days with planned shifts through yesterday without work or blocking absence.
+func (h *DashboardHandler) ScheduleGaps(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	res, err := schedulegaps.Build(ctx, schedulegaps.Deps{
+		Users:       h.Users,
+		Schedules:   h.Schedules,
+		WorkPeriods: h.WorkPeriods,
+		Absences:    h.Absences,
+		WeeklyHours: h.WeeklyHours,
+	}, time.Now())
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.JSON(w, http.StatusOK, res)
 }
 
 func parseVacationYearParam(q interface{ Get(string) string }) (int, error) {

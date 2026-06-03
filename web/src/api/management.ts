@@ -16,6 +16,7 @@ import type {
   ScheduleExcelImportReport,
   ScheduleExcelPastPreview,
   TeamMeeting,
+  ScheduleGapsResponse,
   TeamOverviewRow,
   TimeCorrection,
   VacationBalance,
@@ -433,6 +434,16 @@ export async function fetchTeamOverview(year: number) {
     as_of: data.as_of,
     vacation_year: data.vacation_year,
     rows: data.rows ?? [],
+  }
+}
+
+export async function fetchScheduleGaps(): Promise<ScheduleGapsResponse> {
+  const { data } = await api.get<ScheduleGapsResponse>('/dashboard/schedule-gaps')
+  return {
+    from: data.from,
+    through: data.through,
+    count: data.count,
+    items: data.items ?? [],
   }
 }
 

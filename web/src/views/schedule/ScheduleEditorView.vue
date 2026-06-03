@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CSSProperties } from 'vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, unref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Card from 'primevue/card'
 import Checkbox from 'primevue/checkbox'
@@ -45,8 +46,11 @@ import {
   toISODateLocal,
 } from '@/utils/dates'
 import { teamMeetingListLabel } from '@/utils/teamMeetingLabel'
+import { clearRouteQueryKeys, queryPositiveInt } from '@/utils/leitungDeepLink'
 
 const toast = useToast()
+const route = useRoute()
+const router = useRouter()
 
 const now = isoWeekAndYear(new Date())
 const weekYear = ref(now.year)
@@ -973,7 +977,20 @@ watch(weekNotes, () => {
   }, NOTES_DEBOUNCE_MS)
 })
 
+function applyScheduleWeekFromQuery() {
+  const y = queryPositiveInt(route.query.year)
+  const w = queryPositiveInt(route.query.week)
+  if (y != null && w != null && w >= 1 && w <= 53) {
+    weekYear.value = y
+    week.value = w
+  }
+  if (route.query.year != null || route.query.week != null) {
+    clearRouteQueryKeys(router, ['year', 'week'])
+  }
+}
+
 onMounted(async () => {
+  applyScheduleWeekFromQuery()
   window.addEventListener('dragend', onWindowDragEnd)
   bindNotesFabVisualViewportListeners()
   syncNotesLayoutWidth()
