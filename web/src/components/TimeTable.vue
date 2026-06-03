@@ -4,7 +4,15 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import TimeCorrectionDialog from '@/components/TimeCorrectionDialog.vue'
 import { useToast } from 'primevue/usetoast'
-import type { Absence, BreakRule, FixedNonWorkWeekdays, TimeCorrection, WeeklyHours, WorkPeriod } from '@/types/api'
+import type {
+  Absence,
+  BreakRule,
+  FixedNonWorkWeekdays,
+  ScheduleBoundSetting,
+  TimeCorrection,
+  WeeklyHours,
+  WorkPeriod,
+} from '@/types/api'
 import type { HolidayCredit } from '@/types/api'
 import { absenceByDate, buildTimeTableRows, holidayByDate, type TimeTableRow } from '@/utils/timeTableModel'
 import { formatGermanDate, formatGermanTime } from '@/utils/dates'
@@ -21,6 +29,7 @@ const props = defineProps<{
   weeklyHours?: WeeklyHours[]
   fixedNonWorkWeekdays?: number[]
   fixedNonWorkWeekdaysHistory?: FixedNonWorkWeekdays[]
+  scheduleBoundHistory?: ScheduleBoundSetting[]
   loading?: boolean
   rowCorrection?: { mode: 'self' } | { mode: 'employee'; employeeId: number }
 }>()
@@ -47,6 +56,7 @@ const rows = computed<TimeTableRow[]>(() =>
     weeklyHours: props.weeklyHours,
     fixedNonWorkWeekdays: props.fixedNonWorkWeekdays,
     fixedNonWorkWeekdaysHistory: props.fixedNonWorkWeekdaysHistory,
+    scheduleBoundHistory: props.scheduleBoundHistory,
   }),
 )
 

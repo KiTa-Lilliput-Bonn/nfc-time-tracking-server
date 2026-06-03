@@ -2,6 +2,7 @@ import type {
   Absence,
   BreakRule,
   FixedNonWorkWeekdays,
+  ScheduleBoundSetting,
   HolidayCredit,
   TeamMeeting,
   TimeCorrection,
@@ -9,7 +10,7 @@ import type {
   WorkPeriod,
 } from '@/types/api'
 import { localInstantISOFromDateAndClock, maxInstantISO } from '@/utils/dates'
-import { fixedNonWorkWeekdaysForDate } from '@/utils/workdays'
+import { fixedNonWorkWeekdaysForDate, normalizeISODate } from '@/utils/workdays'
 
 export interface TimeTableRow {
   /** Eindeutiger Schlüssel für Tabellenzeilen (z. B. Tag + Perioden-ID). */
@@ -46,7 +47,7 @@ const DEFAULT_BREAK_RULES: BreakRule[] = [
 export function absenceByDate(absences?: Absence[]): Record<string, Absence> {
   const m: Record<string, Absence> = {}
   for (const a of absences ?? []) {
-    m[a.absence_date] = a
+    m[calendarDayKey(a.absence_date)] = a
   }
   return m
 }
@@ -54,7 +55,7 @@ export function absenceByDate(absences?: Absence[]): Record<string, Absence> {
 export function holidayByDate(holidays?: HolidayCredit[]): Record<string, HolidayCredit> {
   const m: Record<string, HolidayCredit> = {}
   for (const h of holidays ?? []) {
-    m[h.holiday_date] = h
+    m[calendarDayKey(h.holiday_date)] = h
   }
   return m
 }
@@ -129,6 +130,27 @@ function weeklyHoursForDate(workDate: string, rows: WeeklyHours[] | undefined): 
   return best
 }
 
+/** Default true: ohne Historie ist jeder Tag an den Dienstplan gebunden. */
+export function scheduleBoundForDate(
+  rows: ScheduleBoundSetting[] | undefined,
+  workDate: string,
+): boolean {
+  if (!rows?.length) return true
+  const day = normalizeISODate(workDate)
+  let best: ScheduleBoundSetting | null = null
+  for (const r of rows) {
+    const vf = normalizeISODate(r.valid_from)
+    if (vf <= day) {
+      if (!best || vf > normalizeISODate(best.valid_from)) best = r
+    }
+  }
+  return best ? best.schedule_bound : true
+}
+
+function calendarDayKey(s: string): string {
+  return normalizeISODate(s) || s
+}
+
 function absenceCreditHours(abs: Absence | undefined, dailyHours: number): number {
   if (!abs) return 0
   const daily = dailyHours > 0 ? dailyHours : 8
@@ -154,6 +176,7 @@ export function buildTimeTableRows(opts: {
   weeklyHours?: WeeklyHours[]
   fixedNonWorkWeekdays?: number[]
   fixedNonWorkWeekdaysHistory?: FixedNonWorkWeekdays[]
+  scheduleBoundHistory?: ScheduleBoundSetting[]
 }): TimeTableRow[] {
   const rules: BreakRule[] =
     opts.breakRules && opts.breakRules.length ? opts.breakRules : DEFAULT_BREAK_RULES
@@ -164,15 +187,18 @@ export function buildTimeTableRows(opts: {
 
   const byDate = new Map<string, WorkPeriod[]>()
   for (const p of opts.periods) {
-    const arr = byDate.get(p.work_date) ?? []
+    const key = calendarDayKey(p.work_date)
+    const arr = byDate.get(key) ?? []
     arr.push(p)
-    byDate.set(p.work_date, arr)
+    byDate.set(key, arr)
   }
   for (const a of opts.absences ?? []) {
-    if (!byDate.has(a.absence_date)) byDate.set(a.absence_date, [])
+    const key = calendarDayKey(a.absence_date)
+    if (!byDate.has(key)) byDate.set(key, [])
   }
   for (const h of opts.holidays ?? []) {
-    if (!byDate.has(h.holiday_date)) byDate.set(h.holiday_date, [])
+    const key = calendarDayKey(h.holiday_date)
+    if (!byDate.has(key)) byDate.set(key, [])
   }
 
   const dates = [...byDate.keys()].sort((a, b) => a.localeCompare(b))
@@ -260,7 +286,10 @@ export function buildTimeTableRows(opts: {
       const rawIn = corr ? corr.corrected_in : p.punch_in
       let effectiveIn = rawIn
       const effectiveOut = corr ? corr.corrected_out : p.punch_out
-      if (schDay?.shift_start?.trim()) {
+      if (
+        scheduleBoundForDate(opts.scheduleBoundHistory, workDate) &&
+        schDay?.shift_start?.trim()
+      ) {
         const shiftIso = localInstantISOFromDateAndClock(workDate, schDay.shift_start.trim())
         if (shiftIso) effectiveIn = maxInstantISO(effectiveIn, shiftIso)
       }
@@ -323,6 +352,7 @@ export type BuildCalendarSegmentsOptions = {
   applyShiftClamp?: boolean
   /** Nur mit applyShiftClamp: Schnittmengen Schichtfenster ∪ Sitzungsfenster wie Backend daycalc. */
   teamMeetings?: TeamMeeting[]
+  scheduleBoundHistory?: ScheduleBoundSetting[]
 }
 
 function mergeIntervalsMs(parts: [number, number][]): [number, number][] {
@@ -396,7 +426,10 @@ export function buildCalendarSegmentsForDay(
   scheduleByDate?: Record<string, { shift_start: string; shift_end: string }>,
   options?: BuildCalendarSegmentsOptions,
 ): CalendarSegment[] {
-  const applyShiftClamp = options?.applyShiftClamp !== false
+  let applyShiftClamp = options?.applyShiftClamp !== false
+  if (applyShiftClamp) {
+    applyShiftClamp = scheduleBoundForDate(options?.scheduleBoundHistory, workDate)
+  }
   const schDay = scheduleByDate?.[workDate]
   const meetings = options?.teamMeetings ?? []
   const sorted = [...dayPeriods].sort((a, b) => a.punch_in.localeCompare(b.punch_in))

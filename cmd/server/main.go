@@ -146,6 +146,7 @@ func main() {
 	closures := sqlite.NewClosureDayStore(db)
 	weeklyHours := sqlite.NewWeeklyHoursStore(db)
 	fixedNonWorkWeekdays := sqlite.NewFixedNonWorkWeekdaysStore(db)
+	scheduleBound := sqlite.NewScheduleBoundStore(db)
 	settings := sqlite.NewSettingsStore(db)
 	punches := sqlite.NewPunchStore(db)
 	nfcTags := sqlite.NewNFCTagStore(db)
@@ -221,6 +222,7 @@ func main() {
 		CompensationDayClaims: compensationDayClaims,
 		WeeklyHours:           weeklyHours,
 		FixedNonWorkWeekdays:  fixedNonWorkWeekdays,
+		ScheduleBound:         scheduleBound,
 		VacationEnt:           sqlite.NewVacationEntitlementStore(db),
 		NFCTags:               nfcTags,
 		Schedules:             schedules,
@@ -240,7 +242,8 @@ func main() {
 			Closures:    closures,
 			WeeklyHours: weeklyHours,
 			FixedNonWorkWeekdays: fixedNonWorkWeekdays,
-			Settings:    settings,
+			ScheduleBound:        scheduleBound,
+			Settings:             settings,
 			Users:       users,
 		},
 	})

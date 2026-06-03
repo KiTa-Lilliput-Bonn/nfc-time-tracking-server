@@ -28,6 +28,7 @@ type Deps struct {
 	WeeklyHours store.WeeklyHoursStore
 	Settings              store.SettingsStore
 	FixedNonWorkWeekdays  store.FixedNonWorkWeekdaysStore
+	ScheduleBound         store.ScheduleBoundStore
 	VacationEnt           store.VacationEntitlementStore
 	CompensationDayClaims store.CompensationDayClaimStore
 	Schedules             store.ScheduleStore
@@ -118,10 +119,11 @@ func Build(ctx context.Context, d Deps, vacationYear int, now time.Time) ([]Row,
 	const plannedVacationHorizon = "2099-12-31" // alle geplanten Urlaubstage strikt nach heute
 
 	type userPrep struct {
-		u         model.User
-		whRows    []model.WeeklyHours
-		fnwRows   []model.FixedNonWorkWeekdays
-		startDay  time.Time
+		u                 model.User
+		whRows            []model.WeeklyHours
+		fnwRows           []model.FixedNonWorkWeekdays
+		scheduleBoundRows []model.ScheduleBoundSetting
+		startDay          time.Time
 	}
 	prep := make([]userPrep, 0, len(filtered))
 	for _, u := range filtered {
@@ -136,8 +138,18 @@ func Build(ctx context.Context, d Deps, vacationYear int, now time.Time) ([]Row,
 				return nil, "", err
 			}
 		}
+		var scheduleBoundRows []model.ScheduleBoundSetting
+		if d.ScheduleBound != nil {
+			scheduleBoundRows, err = d.ScheduleBound.ListByUser(ctx, u.ID)
+			if err != nil {
+				return nil, "", err
+			}
+		}
 		startDay := userHoursRangeStart(whRows, yesterday, loc)
-		prep = append(prep, userPrep{u: u, whRows: whRows, fnwRows: fnwRows, startDay: startDay})
+		prep = append(prep, userPrep{
+			u: u, whRows: whRows, fnwRows: fnwRows,
+			scheduleBoundRows: scheduleBoundRows, startDay: startDay,
+		})
 	}
 
 	hasTeamRange := false
@@ -221,7 +233,8 @@ func Build(ctx context.Context, d Deps, vacationYear int, now time.Time) ([]Row,
 				var shiftBounds *daycalc.ShiftBounds
 				if schByDate != nil {
 					if sch := schByDate[ds]; sch != nil {
-						shiftBounds = daycalc.ShiftBoundsFromSchedule(sch)
+						bound := model.ScheduleBoundForDate(p.scheduleBoundRows, ds)
+						shiftBounds = daycalc.ShiftBoundsIfBound(sch, bound)
 					}
 				}
 				net := daycalc.NetHours(dayWps, breakRules, roundMin, shiftBounds)

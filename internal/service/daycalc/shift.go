@@ -15,6 +15,14 @@ type ShiftBounds struct {
 	End   string
 }
 
+// ShiftBoundsIfBound returns schedule shift bounds only when the user is bound to the schedule that day.
+func ShiftBoundsIfBound(sch *model.Schedule, bound bool) *ShiftBounds {
+	if !bound {
+		return nil
+	}
+	return ShiftBoundsFromSchedule(sch)
+}
+
 // ShiftBoundsFromSchedule returns bounds for NetHours/SumWorkedHours, or nil if no planned shift start.
 func ShiftBoundsFromSchedule(sch *model.Schedule) *ShiftBounds {
 	if sch == nil {

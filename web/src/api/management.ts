@@ -21,6 +21,7 @@ import type {
   VacationBalance,
   VacationEntitlement,
   FixedNonWorkWeekdays,
+  ScheduleBoundSetting,
   WeeklyHours,
   WorkPeriod,
 } from '@/types/api'
@@ -212,6 +213,25 @@ export async function putFixedNonWorkWeekdays(
 
 export async function deleteFixedNonWorkWeekdays(employeeId: number, rowId: number) {
   await api.delete(`/employees/${employeeId}/fixed-non-work-weekdays/${rowId}`)
+}
+
+export async function fetchScheduleBound(employeeId: number) {
+  const { data } = await api.get<{ schedule_bound: ScheduleBoundSetting[] | null }>(
+    `/employees/${employeeId}/schedule-bound`,
+  )
+  return data.schedule_bound ?? []
+}
+
+export async function putScheduleBound(
+  employeeId: number,
+  body: { schedule_bound: boolean; valid_from: string },
+) {
+  const { data } = await api.put<ScheduleBoundSetting>(`/employees/${employeeId}/schedule-bound`, body)
+  return data
+}
+
+export async function deleteScheduleBound(employeeId: number, rowId: number) {
+  await api.delete(`/employees/${employeeId}/schedule-bound/${rowId}`)
 }
 
 export async function fetchVacationEntitlements(employeeId: number) {

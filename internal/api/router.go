@@ -38,6 +38,7 @@ type Deps struct {
 	CompensationDayClaims store.CompensationDayClaimStore
 	WeeklyHours           store.WeeklyHoursStore
 	FixedNonWorkWeekdays  store.FixedNonWorkWeekdaysStore
+	ScheduleBound         store.ScheduleBoundStore
 	VacationEnt           store.VacationEntitlementStore
 	NFCTags               store.NFCTagStore
 	Schedules             store.ScheduleStore
@@ -118,6 +119,7 @@ func NewRouter(d Deps) http.Handler {
 		me := &handler.MeHandler{
 			Users: d.UserStore, WorkPeriods: d.WorkPeriods, WeeklyHours: d.WeeklyHours,
 			FixedNonWorkWeekdays: d.FixedNonWorkWeekdays,
+			ScheduleBound:        d.ScheduleBound,
 			VacationEnt: d.VacationEnt, Absences: d.Absences, CompensationDayClaims: d.CompensationDayClaims,
 			Schedules: d.Schedules, TeamMeetings: d.TeamMeetings, Corrections: d.Corrections, Holidays: d.Holidays,
 			Audit: d.Audit,
@@ -133,6 +135,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Get("/me/balance", me.Balance)
 			r.Get("/me/vacation", me.Vacation)
 			r.Get("/me/profile", me.Profile)
+			r.Get("/me/schedule-bound", me.GetScheduleBound)
 			r.Get("/me/schedule", me.Schedule)
 			r.Get("/me/absences", me.ListAbsences)
 			r.Get("/me/corrections", me.ListCorrections)
@@ -148,6 +151,7 @@ func NewRouter(d Deps) http.Handler {
 			ClosureDays: d.ClosureDays,
 			WeeklyHours: d.WeeklyHours, VacationEnt: d.VacationEnt, NFCTags: d.NFCTags,
 			FixedNonWorkWeekdays: d.FixedNonWorkWeekdays,
+			ScheduleBound:        d.ScheduleBound,
 			Schedules: d.Schedules, TeamMeetings: d.TeamMeetings, Audit: d.Audit,
 		}
 		sh := &handler.ScheduleHandler{
@@ -169,7 +173,8 @@ func NewRouter(d Deps) http.Handler {
 			Holidays: d.Holidays, Closures: d.ClosureDays,
 			WeeklyHours: d.WeeklyHours, Settings: d.Settings, VacationEnt: d.VacationEnt,
 			FixedNonWorkWeekdays: d.FixedNonWorkWeekdays,
-			Schedules: d.Schedules,
+			ScheduleBound:        d.ScheduleBound,
+			Schedules:            d.Schedules,
 		}
 		hh := &handler.HolidayHandler{Holidays: d.Holidays, Audit: d.Audit}
 		gh := &handler.GroupHandler{Groups: d.GroupStore, Audit: d.Audit}
@@ -209,6 +214,9 @@ func NewRouter(d Deps) http.Handler {
 			r.Put("/employees/{id}/fixed-non-work-weekdays", eh.PutFixedNonWorkWeekdays)
 			r.Get("/employees/{id}/fixed-non-work-weekdays", eh.GetFixedNonWorkWeekdays)
 			r.Delete("/employees/{id}/fixed-non-work-weekdays/{fnwId}", eh.DeleteFixedNonWorkWeekdays)
+			r.Put("/employees/{id}/schedule-bound", eh.PutScheduleBound)
+			r.Get("/employees/{id}/schedule-bound", eh.GetScheduleBound)
+			r.Delete("/employees/{id}/schedule-bound/{sbId}", eh.DeleteScheduleBound)
 			r.Post("/employees/{id}/nfc-tags", eh.PostNFCTag)
 			r.Get("/employees/{id}/nfc-tags", eh.ListNFCTags)
 

@@ -22,6 +22,7 @@ import {
   fetchEmployeeTimes,
   fetchEmployeeVacation,
   fetchFixedNonWorkWeekdays,
+  fetchScheduleBound,
   fetchWeeklyHours,
 } from '@/api/management'
 import { fetchEmployees } from '@/api/employees'
@@ -33,6 +34,7 @@ import type {
   ClosureDay,
   Employee,
   FixedNonWorkWeekdays,
+  ScheduleBoundSetting,
   HolidayCredit,
   MonthBalance,
   Schedule,
@@ -66,6 +68,7 @@ const canManageEmployee = computed(() =>
 const employee = ref<Employee | null>(null)
 const weeklyHoursList = ref<WeeklyHours[]>([])
 const fnwList = ref<FixedNonWorkWeekdays[]>([])
+const scheduleBoundList = ref<ScheduleBoundSetting[]>([])
 const tab = ref<'times' | 'balance' | 'absences' | 'corrections' | 'settings'>('times')
 
 const from = ref<Date>(startOfISOWeek(new Date()))
@@ -111,7 +114,7 @@ async function loadTimesBlock() {
   try {
     const f = toISODateLocal(from.value)
     const t = toISODateLocal(to.value)
-    const [tRes, aRes, cRes, schRes, cls, wh, fnw] = await Promise.all([
+    const [tRes, aRes, cRes, schRes, cls, wh, fnw, sb] = await Promise.all([
       fetchEmployeeTimes(employee.value.id, f, t),
       fetchEmployeeAbsences(employee.value.id, f, t),
       fetchEmployeeCorrections(employee.value.id, f, t),
@@ -119,6 +122,7 @@ async function loadTimesBlock() {
       fetchClosureDays().catch((): ClosureDay[] => []),
       fetchWeeklyHours(employee.value.id).catch((): WeeklyHours[] => []),
       fetchFixedNonWorkWeekdays(employee.value.id).catch((): FixedNonWorkWeekdays[] => []),
+      fetchScheduleBound(employee.value.id).catch((): ScheduleBoundSetting[] => []),
     ])
     periods.value = tRes.work_periods
     holidays.value = tRes.holidays ?? []
@@ -128,6 +132,7 @@ async function loadTimesBlock() {
     closures.value = cls
     weeklyHoursList.value = wh
     fnwList.value = fnw
+    scheduleBoundList.value = sb
   } finally {
     timesLoading.value = false
   }
@@ -428,6 +433,7 @@ async function submitVacationEdit() {
         :schedule-by-date="scheduleByDate"
         :weekly-hours="weeklyHoursList"
         :fixed-non-work-weekdays-history="fnwList"
+        :schedule-bound-history="scheduleBoundList"
         :loading="timesLoading"
         :row-correction="
           canManageEmployee ? { mode: 'employee', employeeId: employee.id } : undefined

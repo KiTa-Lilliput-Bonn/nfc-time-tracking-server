@@ -84,6 +84,7 @@ func TestMonthWithOpening_UsesPartialMonthWeeklyHours(t *testing.T) {
 		stubWeeklyHoursStore{validFrom: "2026-05-25", hours: 40},
 		stubHolidayStore{},
 		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -121,6 +122,7 @@ func TestMonthWithOpening_IncludesHolidayCreditInWorked(t *testing.T) {
 		stubWorkPeriodStore{},
 		stubWeeklyHoursStore{validFrom: "2026-05-01", hours: 40},
 		stubHolidayStore{holidays: map[string]bool{"2026-05-25": true}},
+		nil,
 		nil,
 	)
 	if err != nil {

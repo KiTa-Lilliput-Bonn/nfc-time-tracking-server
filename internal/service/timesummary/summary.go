@@ -31,9 +31,18 @@ func SumWorkedHoursWithMap(periods []model.WorkPeriod, shiftByDate map[string]*d
 }
 
 // BuildShiftBoundsMap loads schedules for every calendar day present in periods (unique dates).
-func BuildShiftBoundsMap(ctx context.Context, userID int, periods []model.WorkPeriod, schedules store.ScheduleStore) (map[string]*daycalc.ShiftBounds, error) {
+// Shift clipping applies only when schedule_bound is true for that day (default true).
+func BuildShiftBoundsMap(ctx context.Context, userID int, periods []model.WorkPeriod, schedules store.ScheduleStore, scheduleBound store.ScheduleBoundStore) (map[string]*daycalc.ShiftBounds, error) {
 	if schedules == nil {
 		return nil, nil
+	}
+	var boundRows []model.ScheduleBoundSetting
+	if scheduleBound != nil {
+		var err error
+		boundRows, err = scheduleBound.ListByUser(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	loc := time.Local
 	seen := make(map[string]struct{})
@@ -49,7 +58,8 @@ func BuildShiftBoundsMap(ctx context.Context, userID int, periods []model.WorkPe
 		if err != nil {
 			return nil, err
 		}
-		out[ds] = daycalc.ShiftBoundsFromSchedule(sch)
+		bound := model.ScheduleBoundForDate(boundRows, ds)
+		out[ds] = daycalc.ShiftBoundsIfBound(sch, bound)
 	}
 	return out, nil
 }
@@ -103,11 +113,11 @@ func BuildMeetingBoundsByDate(ctx context.Context, userID int, periods []model.W
 
 // SumWorkedHoursFromStore loads shift bounds per day and sums worked hours (same clipping as NetHours).
 // teamMeetings optional: bei gesetzter Store werden Montags-Teamsitzungen für die Aufteilung berücksichtigt.
-func SumWorkedHoursFromStore(ctx context.Context, userID int, periods []model.WorkPeriod, schedules store.ScheduleStore, teamMeetings store.TeamMeetingStore) (float64, error) {
+func SumWorkedHoursFromStore(ctx context.Context, userID int, periods []model.WorkPeriod, schedules store.ScheduleStore, teamMeetings store.TeamMeetingStore, scheduleBound store.ScheduleBoundStore) (float64, error) {
 	if schedules == nil {
 		return SumWorkedHoursWithMap(periods, nil), nil
 	}
-	m, err := BuildShiftBoundsMap(ctx, userID, periods, schedules)
+	m, err := BuildShiftBoundsMap(ctx, userID, periods, schedules, scheduleBound)
 	if err != nil {
 		return 0, err
 	}

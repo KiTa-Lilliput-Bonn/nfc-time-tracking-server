@@ -86,6 +86,13 @@ type FixedNonWorkWeekdaysStore interface {
 	ListByUser(ctx context.Context, userID int) ([]model.FixedNonWorkWeekdays, error)
 }
 
+type ScheduleBoundStore interface {
+	Set(ctx context.Context, row *model.ScheduleBoundSetting) error
+	Delete(ctx context.Context, userID int, id int) error
+	GetByID(ctx context.Context, userID int, id int) (*model.ScheduleBoundSetting, error)
+	ListByUser(ctx context.Context, userID int) ([]model.ScheduleBoundSetting, error)
+}
+
 type ScheduleStore interface {
 	Set(ctx context.Context, s *model.Schedule) error
 	GetByID(ctx context.Context, id int) (*model.Schedule, error)

@@ -7,6 +7,7 @@ import type {
   Schedule,
   TeamMeeting,
   TimeCorrection,
+  ScheduleBoundSetting,
   VacationBalance,
   WorkPeriod,
 } from '@/types/api'
@@ -60,6 +61,11 @@ export async function fetchMeVacation() {
 export async function fetchMeProfile() {
   const { data } = await api.get<{ fixed_non_work_weekdays?: number[] }>('/me/profile')
   return data
+}
+
+export async function fetchMeScheduleBound() {
+  const { data } = await api.get<{ schedule_bound: ScheduleBoundSetting[] | null }>('/me/schedule-bound')
+  return data.schedule_bound ?? []
 }
 
 /** Schließtage (GET erlaubt für alle eingeloggten Nutzer). */

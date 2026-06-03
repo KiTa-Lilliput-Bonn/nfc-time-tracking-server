@@ -3,9 +3,23 @@ import { computed, onMounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
 
 import WeekWorkTimeCalendar from '@/components/WeekWorkTimeCalendar.vue'
-import { fetchMeAbsences, fetchMeCorrections, fetchMeSchedule, fetchMeTimes } from '@/api/me'
+import {
+  fetchMeAbsences,
+  fetchMeCorrections,
+  fetchMeSchedule,
+  fetchMeScheduleBound,
+  fetchMeTimes,
+} from '@/api/me'
 import { addDays, formatGermanDate, isoWeekAndYear, startOfISOWeek, toISODateLocal } from '@/utils/dates'
-import type { Absence, HolidayCredit, Schedule, TeamMeeting, TimeCorrection, WorkPeriod } from '@/types/api'
+import type {
+  Absence,
+  HolidayCredit,
+  Schedule,
+  ScheduleBoundSetting,
+  TeamMeeting,
+  TimeCorrection,
+  WorkPeriod,
+} from '@/types/api'
 
 const weekStart = ref(startOfISOWeek(new Date()))
 const periods = ref<WorkPeriod[]>([])
@@ -14,6 +28,7 @@ const corrections = ref<TimeCorrection[]>([])
 const schedules = ref<Schedule[]>([])
 const holidays = ref<HolidayCredit[]>([])
 const teamMeetings = ref<TeamMeeting[]>([])
+const scheduleBoundList = ref<ScheduleBoundSetting[]>([])
 const loading = ref(false)
 const err = ref('')
 
@@ -32,11 +47,12 @@ async function load() {
   const f = toISODateLocal(weekStart.value)
   const t = toISODateLocal(weekEndFriday.value)
   try {
-    const [times, abs, corr, sch] = await Promise.all([
+    const [times, abs, corr, sch, sb] = await Promise.all([
       fetchMeTimes(f, t),
       fetchMeAbsences(f, t),
       fetchMeCorrections(f, t),
       fetchMeSchedule(f, t),
+      fetchMeScheduleBound().catch((): ScheduleBoundSetting[] => []),
     ])
     periods.value = times.work_periods
     holidays.value = times.holidays ?? []
@@ -44,6 +60,7 @@ async function load() {
     corrections.value = corr.corrections
     schedules.value = sch.schedules
     teamMeetings.value = sch.team_meetings ?? []
+    scheduleBoundList.value = sb
   } catch {
     err.value = 'Daten konnten nicht geladen werden.'
     periods.value = []
@@ -52,6 +69,7 @@ async function load() {
     corrections.value = []
     schedules.value = []
     teamMeetings.value = []
+    scheduleBoundList.value = []
   } finally {
     loading.value = false
   }
@@ -101,6 +119,7 @@ const scheduleByDate = computed(() => {
       :holidays="holidays"
       :schedule-by-date="scheduleByDate"
       :team-meetings="teamMeetings"
+      :schedule-bound-history="scheduleBoundList"
       :loading="loading"
       :dual-track="true"
     />

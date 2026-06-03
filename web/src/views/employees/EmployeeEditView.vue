@@ -17,8 +17,10 @@ import { useToast } from 'primevue/usetoast'
 import {
   assignNFCTag,
   deleteFixedNonWorkWeekdays,
+  deleteScheduleBound,
   deleteVacationEntitlement,
   fetchFixedNonWorkWeekdays,
+  fetchScheduleBound,
   fetchNFCTags,
   fetchVacationEntitlements,
   deleteWeeklyHours,
@@ -26,15 +28,25 @@ import {
   patchEmployee,
   postEmployeeResetPassword,
   putFixedNonWorkWeekdays,
+  putScheduleBound,
   putVacationEntitlement,
   putWeeklyHours,
 } from '@/api/management'
 import { fetchEmployees } from '@/api/employees'
 import { fetchGroups } from '@/api/groups'
-import type { Employee, FixedNonWorkWeekdays, NFCTag, UserGroup, VacationEntitlement, WeeklyHours } from '@/types/api'
+import type {
+  Employee,
+  FixedNonWorkWeekdays,
+  NFCTag,
+  ScheduleBoundSetting,
+  UserGroup,
+  VacationEntitlement,
+  WeeklyHours,
+} from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { toastDetailAfterPasswordClipboard } from '@/utils/clipboard'
 import { formatGermanDate, toISODateLocal } from '@/utils/dates'
+import { scheduleBoundForDate } from '@/utils/timeTableModel'
 import { canDeleteEntitlementEntry } from '@/utils/entryLock'
 import { canManageEmployeeByRole } from '@/utils/roles'
 import { useAuthStore } from '@/stores/auth'
@@ -60,6 +72,9 @@ const groupOptions = computed(() => [
 
 const weeklyList = ref<WeeklyHours[]>([])
 const fnwList = ref<FixedNonWorkWeekdays[]>([])
+const scheduleBoundList = ref<ScheduleBoundSetting[]>([])
+const scheduleBoundDraft = ref(true)
+const scheduleBoundValidFrom = ref<Date>(new Date())
 const vacationList = ref<VacationEntitlement[]>([])
 const nfcTags = ref<NFCTag[]>([])
 
@@ -206,16 +221,20 @@ async function load() {
   groupDraft.value = employee.value.group_id ?? null
   openHours.value = employee.value.opening_hours_balance ?? 0
   openVac.value = employee.value.opening_vacation_days ?? 0
-  const [wh, fnw, vac, tags] = await Promise.all([
+  const [wh, fnw, sb, vac, tags] = await Promise.all([
     fetchWeeklyHours(employee.value.id),
     fetchFixedNonWorkWeekdays(employee.value.id),
+    fetchScheduleBound(employee.value.id),
     fetchVacationEntitlements(employee.value.id),
     fetchNFCTags(employee.value.id),
   ])
   weeklyList.value = wh
   fnwList.value = fnw
+  scheduleBoundList.value = sb
   vacationList.value = vac
   nfcTags.value = tags
+  const today = toISODateLocal(new Date())
+  scheduleBoundDraft.value = scheduleBoundForDate(sb, today)
 }
 
 onMounted(load)
@@ -327,6 +346,50 @@ async function removeWeekly(row: WeeklyHours) {
     saving.value = false
   }
 }
+
+async function saveScheduleBound() {
+  if (!employee.value) return
+  saving.value = true
+  try {
+    await putScheduleBound(employee.value.id, {
+      schedule_bound: scheduleBoundDraft.value,
+      valid_from: toISODateLocal(scheduleBoundValidFrom.value),
+    })
+    scheduleBoundList.value = await fetchScheduleBound(employee.value.id)
+    toast.add({ severity: 'success', summary: 'Dienstplan-Bindung gespeichert', life: 10000 })
+  } catch {
+    toast.add({ severity: 'error', summary: 'Speichern fehlgeschlagen', life: 10000 })
+  } finally {
+    saving.value = false
+  }
+}
+
+function canDeleteScheduleBoundRow(row: ScheduleBoundSetting) {
+  return canDeleteEntitlementEntry(auth.role, row)
+}
+
+async function removeScheduleBound(row: ScheduleBoundSetting) {
+  if (!employee.value || !canDeleteScheduleBoundRow(row)) return
+  saving.value = true
+  try {
+    await deleteScheduleBound(employee.value.id, row.id)
+    scheduleBoundList.value = await fetchScheduleBound(employee.value.id)
+    const today = toISODateLocal(new Date())
+    scheduleBoundDraft.value = scheduleBoundForDate(scheduleBoundList.value, today)
+    toast.add({ severity: 'success', summary: 'Eintrag gelöscht', life: 10000 })
+  } catch {
+    toast.add({ severity: 'error', summary: 'Löschen fehlgeschlagen', life: 10000 })
+  } finally {
+    saving.value = false
+  }
+}
+
+function scheduleBoundLabel(bound: boolean): string {
+  return bound ? 'Ja' : 'Nein'
+}
+
+const scheduleBoundHelpText =
+  'Wenn aktiviert, zählen erfasste Zeiten erst ab dem geplanten Schichtbeginn. Ein neuer Eintrag gilt ab dem gewählten Kalendertag und ersetzt den vorherigen Stand. Einträge können 24 Stunden nach Anlage nur noch vom Superadmin gelöscht werden.'
 
 async function saveFixedNonWorkWeekdays() {
   if (!employee.value) return
@@ -467,6 +530,53 @@ function onTagUidEnter() {
             <span>Nimmt standardmäßig an Teamsitzungen teil</span>
             <InputSwitch v-model="defaultTeamMeetingParticipant" />
           </label>
+          <div class="schedule-bound-block">
+            <label class="row">
+              <span class="schedule-bound-label">
+                An Dienstplan gebunden
+                <i
+                  class="pi pi-question-circle sb-help-icon"
+                  tabindex="0"
+                  aria-label="Hilfe: An Dienstplan gebunden"
+                  v-tooltip.bottom="{ value: scheduleBoundHelpText, class: 'schedule-bound-help-tooltip' }"
+                />
+              </span>
+              <InputSwitch v-model="scheduleBoundDraft" />
+            </label>
+            <div class="row2 mt">
+              <div class="field">
+                <label>Gültig ab</label>
+                <DatePicker v-model="scheduleBoundValidFrom" date-format="dd.mm.yy" show-icon />
+              </div>
+              <div class="field field--action">
+                <Button label="Speichern" :loading="saving" @click="saveScheduleBound" />
+              </div>
+            </div>
+            <div v-if="scheduleBoundList.length" class="table-scroll mt">
+              <DataTable :value="scheduleBoundList" data-key="id" size="small" striped-rows>
+                <Column header="Gebunden">
+                  <template #body="{ data }">{{ scheduleBoundLabel(data.schedule_bound) }}</template>
+                </Column>
+                <Column field="valid_from" header="Gültig ab">
+                  <template #body="{ data }">{{ formatGermanDate(data.valid_from) }}</template>
+                </Column>
+                <Column header="" :exportable="false" style="width: 3.25rem; min-width: 3.25rem">
+                  <template #body="{ data }">
+                    <Button
+                      v-if="canDeleteScheduleBoundRow(data)"
+                      icon="pi pi-trash"
+                      severity="danger"
+                      text
+                      rounded
+                      :disabled="saving"
+                      aria-label="Dienstplan-Bindung löschen"
+                      @click="removeScheduleBound(data)"
+                    />
+                  </template>
+                </Column>
+              </DataTable>
+            </div>
+          </div>
           <template v-if="auth.role === 'superadmin'">
             <label>Rolle (nur Superadmin)</label>
             <select v-model="roleDraft" class="sel">
@@ -830,6 +940,33 @@ function onTagUidEnter() {
   border: 1px solid #cbd5e1;
   max-width: 360px;
 }
+.schedule-bound-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--p-content-border-color, #dee2e6);
+}
+
+.schedule-bound-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.sb-help-icon {
+  font-size: 0.95rem;
+  color: #64748b;
+  cursor: help;
+}
+
+:global(.schedule-bound-help-tooltip) {
+  max-width: 22rem;
+  white-space: normal;
+  line-height: 1.4;
+}
+
 .muted {
   font-size: 0.85rem;
   color: #64748b;

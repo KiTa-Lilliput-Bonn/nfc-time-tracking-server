@@ -23,7 +23,8 @@ type MeHandler struct {
 	WorkPeriods store.WorkPeriodStore
 	WeeklyHours store.WeeklyHoursStore
 	FixedNonWorkWeekdays store.FixedNonWorkWeekdaysStore
-	VacationEnt store.VacationEntitlementStore
+	ScheduleBound        store.ScheduleBoundStore
+	VacationEnt          store.VacationEntitlementStore
 	Absences              store.AbsenceStore
 	CompensationDayClaims store.CompensationDayClaimStore
 	Schedules             store.ScheduleStore
@@ -52,7 +53,7 @@ func (h *MeHandler) Times(w http.ResponseWriter, r *http.Request) {
 	if periods == nil {
 		periods = []model.WorkPeriod{}
 	}
-	worked, err := timesummary.SumWorkedHoursFromStore(r.Context(), uid, periods, h.Schedules, h.TeamMeetings)
+	worked, err := timesummary.SumWorkedHoursFromStore(r.Context(), uid, periods, h.Schedules, h.TeamMeetings, h.ScheduleBound)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return
@@ -137,12 +138,33 @@ func (h *MeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		h.WeeklyHours,
 		h.Holidays,
 		h.Schedules,
+		h.ScheduleBound,
 	)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	response.JSON(w, http.StatusOK, mb)
+}
+
+func (h *MeHandler) GetScheduleBound(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.UserID(r)
+	if uid == 0 {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if h.ScheduleBound == nil {
+		response.JSON(w, http.StatusOK, map[string]interface{}{"schedule_bound": []scheduleBoundResponse{}})
+		return
+	}
+	list, err := h.ScheduleBound.ListByUser(r.Context(), uid)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]interface{}{
+		"schedule_bound": scheduleBoundResponses(list),
+	})
 }
 
 func (h *MeHandler) Vacation(w http.ResponseWriter, r *http.Request) {

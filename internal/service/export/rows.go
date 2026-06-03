@@ -35,8 +35,9 @@ type Data struct {
 	Closures    store.ClosureDayStore
 	WeeklyHours store.WeeklyHoursStore
 	FixedNonWorkWeekdays store.FixedNonWorkWeekdaysStore
-	Settings    store.SettingsStore
-	Users       store.UserStore
+	ScheduleBound        store.ScheduleBoundStore
+	Settings             store.SettingsStore
+	Users                store.UserStore
 }
 
 var weekdayDE = map[time.Weekday]string{
@@ -67,6 +68,10 @@ func BuildDayRows(ctx context.Context, d Data, userID int, from, to string) ([]D
 	if d.FixedNonWorkWeekdays != nil {
 		fnwRows, _ = d.FixedNonWorkWeekdays.ListByUser(ctx, userID)
 	}
+	var scheduleBoundRows []model.ScheduleBoundSetting
+	if d.ScheduleBound != nil {
+		scheduleBoundRows, _ = d.ScheduleBound.ListByUser(ctx, userID)
+	}
 
 	roundMin := 15
 	if v, err := d.Settings.Get(ctx, "rounding_minutes"); err == nil {
@@ -92,7 +97,8 @@ func BuildDayRows(ctx context.Context, d Data, userID int, from, to string) ([]D
 		}
 
 		sch, _ := d.Schedules.GetForUserDate(ctx, userID, ds)
-		shiftBounds := daycalc.ShiftBoundsFromSchedule(sch)
+		bound := model.ScheduleBoundForDate(scheduleBoundRows, ds)
+		shiftBounds := daycalc.ShiftBoundsIfBound(sch, bound)
 		shiftStart, shiftEnd := "", ""
 		if sch != nil {
 			shiftStart, shiftEnd = sch.ShiftStart, sch.ShiftEnd

@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, withDefaults } from 'vue'
-import type { Absence, HolidayCredit, TeamMeeting, TimeCorrection, WorkPeriod } from '@/types/api'
+import type {
+  Absence,
+  HolidayCredit,
+  ScheduleBoundSetting,
+  TeamMeeting,
+  TimeCorrection,
+  WorkPeriod,
+} from '@/types/api'
 import TimeCorrectionDialog from '@/components/TimeCorrectionDialog.vue'
 import { addDays, formatGermanDate, formatGermanTime, toISODateLocal } from '@/utils/dates'
 import {
@@ -29,6 +36,7 @@ const props = withDefaults(
     scheduleByDate?: Record<string, { shift_start: string; shift_end: string }>
     /** Geplante Teamsitzungen (Montag = meeting_date), gefiltert auf den Kalender-Nutzer */
     teamMeetings?: TeamMeeting[]
+    scheduleBoundHistory?: ScheduleBoundSetting[]
     loading?: boolean
     rowCorrection?: { mode: 'self' } | { mode: 'employee'; employeeId: number }
     /** schedule: nur Schicht/Abwesenheit/Feiertag; times: Stempelblöcke (optional dualTrack) */
@@ -193,6 +201,7 @@ function segmentsForDay(iso: string): CalendarSegment[] {
   }
   return buildCalendarSegmentsForDay(iso, list, corrMap.value, props.scheduleByDate, {
     teamMeetings: dayMeetings,
+    scheduleBoundHistory: props.scheduleBoundHistory,
   })
 }
 

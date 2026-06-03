@@ -21,6 +21,7 @@ func MonthWithOpening(
 	whs store.WeeklyHoursStore,
 	holidays store.HolidayStore,
 	schedules store.ScheduleStore,
+	scheduleBound store.ScheduleBoundStore,
 ) (model.MonthBalance, error) {
 	if month < 1 || month > 12 {
 		return model.MonthBalance{}, fmt.Errorf("invalid month")
@@ -34,7 +35,7 @@ func MonthWithOpening(
 	if err != nil {
 		return model.MonthBalance{}, err
 	}
-	worked, err := timesummary.SumWorkedHoursFromStore(ctx, userID, periods, schedules, nil)
+	worked, err := timesummary.SumWorkedHoursFromStore(ctx, userID, periods, schedules, nil, scheduleBound)
 	if err != nil {
 		return model.MonthBalance{}, err
 	}
@@ -55,7 +56,7 @@ func MonthWithOpening(
 	if err != nil {
 		return model.MonthBalance{}, err
 	}
-	ytdWorked, err := timesummary.SumWorkedHoursFromStore(ctx, userID, ytdP, schedules, nil)
+	ytdWorked, err := timesummary.SumWorkedHoursFromStore(ctx, userID, ytdP, schedules, nil, scheduleBound)
 	if err != nil {
 		return model.MonthBalance{}, err
 	}

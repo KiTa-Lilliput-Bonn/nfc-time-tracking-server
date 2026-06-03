@@ -40,7 +40,8 @@ type EmployeeHandler struct {
 	ClosureDays            store.ClosureDayStore
 	WeeklyHours            store.WeeklyHoursStore
 	FixedNonWorkWeekdays   store.FixedNonWorkWeekdaysStore
-	VacationEnt store.VacationEntitlementStore
+	ScheduleBound          store.ScheduleBoundStore
+	VacationEnt            store.VacationEntitlementStore
 	NFCTags     store.NFCTagStore
 	Schedules   store.ScheduleStore
 	TeamMeetings store.TeamMeetingStore
@@ -237,7 +238,7 @@ func (h *EmployeeHandler) Times(w http.ResponseWriter, r *http.Request) {
 	if periods == nil {
 		periods = []model.WorkPeriod{}
 	}
-	worked, err := timesummary.SumWorkedHoursFromStore(r.Context(), uid, periods, h.Schedules, h.TeamMeetings)
+	worked, err := timesummary.SumWorkedHoursFromStore(r.Context(), uid, periods, h.Schedules, h.TeamMeetings, h.ScheduleBound)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return
@@ -314,6 +315,7 @@ func (h *EmployeeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		h.WeeklyHours,
 		h.Holidays,
 		h.Schedules,
+		h.ScheduleBound,
 	)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")

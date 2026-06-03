@@ -193,6 +193,15 @@ export interface FixedNonWorkWeekdays {
   mutable?: boolean
 }
 
+export interface ScheduleBoundSetting {
+  id: number
+  user_id: number
+  schedule_bound: boolean
+  valid_from: string
+  created_at: string
+  mutable?: boolean
+}
+
 export interface NFCTag {
   id: number
   tag_uid: string
