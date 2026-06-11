@@ -95,6 +95,40 @@ func TestTargetHoursMonthByWeekHistory_ChangeMidMonth(t *testing.T) {
 	}
 }
 
+func TestTargetHoursMonthByWeekHistory_FourDayWeekTimestampValidFrom(t *testing.T) {
+	ctx := context.Background()
+	loc := time.Local
+	wh := stubWeeklyHoursForDateStore{byDate: map[string]float64{}}
+	for d0 := time.Date(2026, 5, 27, 0, 0, 0, 0, loc); d0.Month() == time.May; d0 = d0.AddDate(0, 0, 1) {
+		wh.byDate[d0.Format("2006-01-02")] = 24
+	}
+	fnwRows := []model.FixedNonWorkWeekdays{{
+		Weekdays: []int{int(time.Friday)}, ValidFrom: "2026-05-27T00:00:00Z",
+	}}
+	got, err := TargetHoursMonthByWeekHistory(ctx, 1, 2026, 5, fnwRows, wh)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	fixed := []int{int(time.Friday)}
+	var want float64
+	for d0 := time.Date(2026, 5, 27, 0, 0, 0, 0, loc); d0.Month() == time.May; d0 = d0.AddDate(0, 0, 1) {
+		ds := d0.Format("2006-01-02")
+		if _, ok := wh.byDate[ds]; !ok {
+			continue
+		}
+		f := model.FixedNonWorkWeekdaysForDate(fnwRows, ds)
+		if model.IsEmployeeWorkday(d0, f) {
+			want += model.DailyHours(24, fixed)
+		}
+	}
+	if got != want {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	if got != 12 {
+		t.Fatalf("got %v want 12 (Wed+Thu at 6h each)", got)
+	}
+}
+
 func TestTargetHoursMonthByWeekHistory_NoEntryBeforeMonthStart(t *testing.T) {
 	ctx := context.Background()
 	loc := time.Local

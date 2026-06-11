@@ -156,10 +156,14 @@ function dailyHoursFromWeekly(hoursPerWeek: number, fixed: number[] | undefined)
 
 function weeklyHoursForDate(workDate: string, rows: WeeklyHours[] | undefined): WeeklyHours | null {
   if (!rows?.length) return null
+  const day = normalizeISODate(workDate)
   let best: WeeklyHours | null = null
   for (const r of rows) {
-    if (r.valid_from <= workDate) {
-      if (!best || r.valid_from > best.valid_from) best = r
+    const vf = normalizeISODate(r.valid_from)
+    if (vf <= day) {
+      if (!best || vf > normalizeISODate(best.valid_from) || (vf === normalizeISODate(best.valid_from) && r.id > best.id)) {
+        best = r
+      }
     }
   }
   return best

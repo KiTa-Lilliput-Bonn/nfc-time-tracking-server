@@ -6,10 +6,14 @@ export function fixedNonWorkWeekdaysForDate(
   rows: FixedNonWorkWeekdays[] | undefined,
 ): number[] {
   if (!rows?.length) return []
+  const day = normalizeISODate(workDate)
   let best: FixedNonWorkWeekdays | null = null
   for (const r of rows) {
-    if (r.valid_from <= workDate) {
-      if (!best || r.valid_from > best.valid_from) best = r
+    const vf = normalizeISODate(r.valid_from)
+    if (vf <= day) {
+      if (!best || vf > normalizeISODate(best.valid_from) || (vf === normalizeISODate(best.valid_from) && r.id > best.id)) {
+        best = r
+      }
     }
   }
   return best?.weekdays ?? []

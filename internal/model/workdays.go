@@ -75,13 +75,16 @@ func FixedNonWorkWeekdaysForDate(rows []FixedNonWorkWeekdays, date string) []int
 	if len(rows) == 0 {
 		return nil
 	}
+	date = NormCalendarDate(date)
 	var best *FixedNonWorkWeekdays
 	for i := range rows {
 		row := &rows[i]
-		if row.ValidFrom > date {
+		vf := NormCalendarDate(row.ValidFrom)
+		if vf > date {
 			continue
 		}
-		if best == nil || row.ValidFrom > best.ValidFrom {
+		if best == nil || vf > NormCalendarDate(best.ValidFrom) ||
+			(vf == NormCalendarDate(best.ValidFrom) && row.ID > best.ID) {
 			best = row
 		}
 	}

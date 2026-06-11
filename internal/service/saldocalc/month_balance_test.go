@@ -22,6 +22,22 @@ func (s stubFNWStore) ListByUser(ctx context.Context, userID int) ([]model.Fixed
 	return []model.FixedNonWorkWeekdays{{UserID: userID, ValidFrom: "2000-01-01", Weekdays: nil}}, nil
 }
 
+type stubFNWRowsStore struct {
+	rows []model.FixedNonWorkWeekdays
+}
+
+func (s stubFNWRowsStore) Set(ctx context.Context, row *model.FixedNonWorkWeekdays) error { return nil }
+func (s stubFNWRowsStore) Delete(ctx context.Context, userID int, id int) error            { return nil }
+func (s stubFNWRowsStore) GetByID(ctx context.Context, userID int, id int) (*model.FixedNonWorkWeekdays, error) {
+	return nil, nil
+}
+func (s stubFNWRowsStore) GetForDate(ctx context.Context, userID int, date string) (*model.FixedNonWorkWeekdays, error) {
+	return nil, nil
+}
+func (s stubFNWRowsStore) ListByUser(ctx context.Context, userID int) ([]model.FixedNonWorkWeekdays, error) {
+	return s.rows, nil
+}
+
 type stubWorkPeriodStore struct{}
 
 func (s stubWorkPeriodStore) ReplaceForUserDate(ctx context.Context, userID int, date string, periods []model.WorkPeriod) error {
@@ -147,6 +163,33 @@ func TestMonthWithOpening_UsesPartialMonthWeeklyHours(t *testing.T) {
 	}
 	if mb.Carryover != 0 {
 		t.Fatalf("carryover got %v want 0", mb.Carryover)
+	}
+}
+
+func TestMonthWithOpening_FourDayWeekTimestampValidFrom(t *testing.T) {
+	ctx := context.Background()
+	fnwRows := []model.FixedNonWorkWeekdays{{
+		UserID: 1, Weekdays: []int{int(time.Friday)}, ValidFrom: "2026-05-27T00:00:00Z",
+	}}
+	mb, err := MonthWithOpening(
+		ctx,
+		1,
+		2026,
+		5,
+		0,
+		stubFNWRowsStore{rows: fnwRows},
+		stubWorkPeriodStore{},
+		stubWeeklyHoursStore{validFrom: "2026-05-27", hours: 24},
+		stubHolidayStore{},
+		stubAbsenceStore{},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mb.TargetHours != 12 {
+		t.Fatalf("target got %v want 12 (Wed+Thu at 6h)", mb.TargetHours)
 	}
 }
 
