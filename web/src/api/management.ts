@@ -1,6 +1,7 @@
 import { api } from '@/api/client'
 import type {
   Absence,
+  AbsenceCredit,
   AndroidLanHealthStatus,
   AndroidLanSyncStampsRangeBody,
   AndroidLanSyncStampsRangeResult,
@@ -77,6 +78,7 @@ export async function fetchEmployeeTimes(employeeId: number, from: string, to: s
     work_periods: WorkPeriod[] | null
     worked_hours: number
     holidays?: HolidayCredit[] | null
+    absence_credits?: AbsenceCredit[] | null
   }>(
     `/employees/${employeeId}/times`,
     { params: { from, to } },
@@ -87,6 +89,7 @@ export async function fetchEmployeeTimes(employeeId: number, from: string, to: s
     work_periods: data.work_periods ?? [],
     worked_hours: data.worked_hours ?? 0,
     holidays: data.holidays ?? [],
+    absence_credits: data.absence_credits ?? [],
   }
 }
 

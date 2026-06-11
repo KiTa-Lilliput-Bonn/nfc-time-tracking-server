@@ -35,6 +35,7 @@ import type {
   Employee,
   FixedNonWorkWeekdays,
   ScheduleBoundSetting,
+  AbsenceCredit,
   HolidayCredit,
   MonthBalance,
   Schedule,
@@ -78,6 +79,7 @@ const absences = ref<Absence[]>([])
 const corrections = ref<TimeCorrection[]>([])
 const schedules = ref<Schedule[]>([])
 const holidays = ref<HolidayCredit[]>([])
+const absenceCredits = ref<AbsenceCredit[]>([])
 const closures = ref<ClosureDay[]>([])
 const timesLoading = ref(false)
 
@@ -126,6 +128,7 @@ async function loadTimesBlock() {
     ])
     periods.value = tRes.work_periods
     holidays.value = tRes.holidays ?? []
+    absenceCredits.value = tRes.absence_credits ?? []
     absences.value = aRes
     corrections.value = cRes
     schedules.value = schRes.schedules
@@ -430,6 +433,7 @@ async function submitVacationEdit() {
         :absences="absences"
         :corrections="corrections"
         :holidays="holidays"
+        :absence-credits="absenceCredits"
         :schedule-by-date="scheduleByDate"
         :weekly-hours="weeklyHoursList"
         :fixed-non-work-weekdays-history="fnwList"

@@ -1,6 +1,7 @@
 import { api } from '@/api/client'
 import type {
   Absence,
+  AbsenceCredit,
   ClosureDay,
   HolidayCredit,
   MonthBalance,
@@ -18,6 +19,7 @@ export interface MeTimesResponse {
   work_periods: WorkPeriod[] | null
   worked_hours: number
   holidays?: HolidayCredit[] | null
+  absence_credits?: AbsenceCredit[] | null
 }
 
 export interface MeScheduleResponse {
@@ -45,6 +47,7 @@ export async function fetchMeTimes(from: string, to: string) {
     ...data,
     work_periods: data.work_periods ?? [],
     holidays: data.holidays ?? [],
+    absence_credits: data.absence_credits ?? [],
   }
 }
 

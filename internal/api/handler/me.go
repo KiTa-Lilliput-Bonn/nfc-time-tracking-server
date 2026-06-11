@@ -11,6 +11,7 @@ import (
 	"nfc-time-tracking-server/internal/audit"
 	"nfc-time-tracking-server/internal/model"
 	"nfc-time-tracking-server/internal/service/compensationday"
+	"nfc-time-tracking-server/internal/service/daycalc"
 	"nfc-time-tracking-server/internal/service/fixednonwork"
 	"nfc-time-tracking-server/internal/service/saldocalc"
 	"nfc-time-tracking-server/internal/service/timesummary"
@@ -59,12 +60,14 @@ func (h *MeHandler) Times(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	holCredits := buildHolidayCredits(r.Context(), uid, from, to, h.FixedNonWorkWeekdays, h.WeeklyHours, h.Holidays)
+	absCredits := buildAbsenceCredits(r.Context(), uid, from, to, h.FixedNonWorkWeekdays, h.WeeklyHours, h.Holidays, h.Absences)
 	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"from":         from,
-		"to":           to,
-		"work_periods": periods,
-		"worked_hours": worked,
-		"holidays":     holCredits,
+		"from":             from,
+		"to":               to,
+		"work_periods":     periods,
+		"worked_hours":     worked,
+		"holidays":         holCredits,
+		"absence_credits":  absCredits,
 	})
 }
 
@@ -111,6 +114,58 @@ func buildHolidayCredits(ctx context.Context, userID int, from, to string, fnw s
 	return out
 }
 
+type absenceCredit struct {
+	AbsenceDate string  `json:"absence_date"`
+	AbsenceType string  `json:"absence_type"`
+	CreditHours float64 `json:"credit_hours"`
+	HalfDay     bool    `json:"half_day"`
+}
+
+func buildAbsenceCredits(ctx context.Context, userID int, from, to string, fnw store.FixedNonWorkWeekdaysStore, weekly store.WeeklyHoursStore, holidays store.HolidayStore, absences store.AbsenceStore) []absenceCredit {
+	if weekly == nil || absences == nil {
+		return []absenceCredit{}
+	}
+	fnwRows, _ := fnw.ListByUser(ctx, userID)
+	list, err := absences.ListByUserDateRange(ctx, userID, from, to)
+	if err != nil {
+		return []absenceCredit{}
+	}
+	loc := time.Local
+	out := make([]absenceCredit, 0, len(list))
+	for i := range list {
+		abs := &list[i]
+		ds := abs.AbsenceDate
+		if len(ds) >= 10 {
+			ds = ds[:10]
+		}
+		d, err := time.ParseInLocation("2006-01-02", ds, loc)
+		if err != nil {
+			continue
+		}
+		fixedNonWork := fixednonwork.WeekdaysFromRows(fnwRows, ds)
+		var daily float64
+		wh, err := weekly.GetForDate(ctx, userID, ds)
+		if err == nil && wh != nil && wh.HoursPerWeek > 0 {
+			daily = model.DailyHours(wh.HoursPerWeek, fixedNonWork)
+		}
+		var hol *model.Holiday
+		if holidays != nil {
+			h, err := holidays.GetForDate(ctx, ds)
+			if err == nil && h != nil && h.ID != 0 {
+				hol = h
+			}
+		}
+		credit := daycalc.AbsenceCreditHours(d, daily, fixedNonWork, hol, abs, nil)
+		out = append(out, absenceCredit{
+			AbsenceDate: ds,
+			AbsenceType: string(abs.AbsenceType),
+			CreditHours: credit,
+			HalfDay:     abs.HalfDay,
+		})
+	}
+	return out
+}
+
 func (h *MeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r)
 	if uid == 0 {
@@ -137,6 +192,7 @@ func (h *MeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		h.WorkPeriods,
 		h.WeeklyHours,
 		h.Holidays,
+		h.Absences,
 		h.Schedules,
 		h.ScheduleBound,
 	)

@@ -231,6 +231,14 @@ export interface HolidayCredit {
   credit_hours: number
 }
 
+/** Abwesenheit für Stundenübersichten inkl. gutgeschriebener Stunden (h). */
+export interface AbsenceCredit {
+  absence_date: string
+  absence_type: string
+  credit_hours: number
+  half_day: boolean
+}
+
 export interface Setting {
   key: string
   value: string

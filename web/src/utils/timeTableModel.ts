@@ -1,5 +1,6 @@
 import type {
   Absence,
+  AbsenceCredit,
   BreakRule,
   FixedNonWorkWeekdays,
   ScheduleBoundSetting,
@@ -82,6 +83,14 @@ export function holidayByDate(holidays?: HolidayCredit[]): Record<string, Holida
   const m: Record<string, HolidayCredit> = {}
   for (const h of holidays ?? []) {
     m[calendarDayKey(h.holiday_date)] = h
+  }
+  return m
+}
+
+export function absenceCreditByDate(credits?: AbsenceCredit[]): Record<string, AbsenceCredit> {
+  const m: Record<string, AbsenceCredit> = {}
+  for (const c of credits ?? []) {
+    m[calendarDayKey(c.absence_date)] = c
   }
   return m
 }
@@ -177,11 +186,10 @@ function calendarDayKey(s: string): string {
   return normalizeISODate(s) || s
 }
 
-function absenceCreditHours(abs: Absence | undefined, dailyHours: number): number {
-  if (!abs) return 0
-  const daily = dailyHours > 0 ? dailyHours : 8
+function absenceCreditHoursFallback(abs: Absence | undefined, dailyHours: number): number {
+  if (!abs || dailyHours <= 0) return 0
   if (abs.absence_type === 'vacation' || abs.absence_type === 'sick' || abs.absence_type === 'other') {
-    return abs.half_day ? daily / 2 : daily
+    return abs.half_day ? dailyHours / 2 : dailyHours
   }
   return 0
 }
@@ -196,6 +204,7 @@ export function buildTimeTableRows(opts: {
   absences?: Absence[]
   corrections?: TimeCorrection[]
   holidays?: HolidayCredit[]
+  absenceCredits?: AbsenceCredit[]
   scheduleByDate?: Record<string, { shift_start: string; shift_end: string }>
   breakRules?: BreakRule[]
   roundingMinutes?: number
@@ -209,6 +218,7 @@ export function buildTimeTableRows(opts: {
   const roundMin = opts.roundingMinutes ?? 15
   const absMap = absenceByDate(opts.absences)
   const holMap = holidayByDate(opts.holidays)
+  const absCreditMap = absenceCreditByDate(opts.absenceCredits)
   const corrMap = correctionByWorkPeriod(opts.corrections ?? [])
 
   const byDate = new Map<string, WorkPeriod[]>()
@@ -261,8 +271,13 @@ export function buildTimeTableRows(opts: {
       opts.fixedNonWorkWeekdaysHistory != null
         ? fixedNonWorkWeekdaysForDate(workDate, opts.fixedNonWorkWeekdaysHistory)
         : opts.fixedNonWorkWeekdays
-    const dailyAbs = hpw > 0 ? dailyHoursFromWeekly(hpw, fnw) : 8
-    const credit = holCredit + absenceCreditHours(abs, dailyAbs)
+    const dailyAbs = hpw > 0 ? dailyHoursFromWeekly(hpw, fnw) : 0
+    const absCred = absCreditMap[workDate]
+    const absCredit =
+      absCred && Number.isFinite(absCred.credit_hours)
+        ? absCred.credit_hours
+        : absenceCreditHoursFallback(abs, dailyAbs)
+    const credit = holCredit + absCredit
 
     let notesFirst = ''
     if (hasManual) notesFirst = 'manuell'

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"nfc-time-tracking-server/internal/model"
+	"nfc-time-tracking-server/internal/service/daycalc"
 	"nfc-time-tracking-server/internal/service/timesummary"
 	"nfc-time-tracking-server/internal/store"
 )
@@ -20,6 +21,7 @@ func MonthWithOpening(
 	wps store.WorkPeriodStore,
 	whs store.WeeklyHoursStore,
 	holidays store.HolidayStore,
+	absences store.AbsenceStore,
 	schedules store.ScheduleStore,
 	scheduleBound store.ScheduleBoundStore,
 ) (model.MonthBalance, error) {
@@ -44,6 +46,11 @@ func MonthWithOpening(
 		return model.MonthBalance{}, err
 	}
 	worked += holMonth
+	absMonth, err := absenceCreditsSumInRange(ctx, userID, from, to, fnwRows, whs, holidays, absences)
+	if err != nil {
+		return model.MonthBalance{}, err
+	}
+	worked += absMonth
 	target, err := timesummary.TargetHoursMonthByWeekHistory(ctx, userID, year, month, fnwRows, whs)
 	if err != nil {
 		return model.MonthBalance{}, err
@@ -65,6 +72,11 @@ func MonthWithOpening(
 		return model.MonthBalance{}, err
 	}
 	ytdWorked += holYTD
+	absYTD, err := absenceCreditsSumInRange(ctx, userID, yearFrom, yTo, fnwRows, whs, holidays, absences)
+	if err != nil {
+		return model.MonthBalance{}, err
+	}
+	ytdWorked += absYTD
 	var ytdTarget float64
 	for mm := 1; mm <= month; mm++ {
 		mt, err := timesummary.TargetHoursMonthByWeekHistory(ctx, userID, year, mm, fnwRows, whs)
@@ -128,6 +140,75 @@ func holidayCreditsSumInRange(
 			continue
 		}
 		sum += model.DailyHours(wh.HoursPerWeek, fixed)
+	}
+	return sum, nil
+}
+
+func absenceCreditsSumInRange(
+	ctx context.Context,
+	userID int,
+	from, to string,
+	fnwRows []model.FixedNonWorkWeekdays,
+	whs store.WeeklyHoursStore,
+	holidays store.HolidayStore,
+	absences store.AbsenceStore,
+) (float64, error) {
+	if whs == nil || absences == nil {
+		return 0, nil
+	}
+	loc := time.Local
+	a, err := time.ParseInLocation("2006-01-02", from, loc)
+	if err != nil {
+		return 0, err
+	}
+	b, err := time.ParseInLocation("2006-01-02", to, loc)
+	if err != nil {
+		return 0, err
+	}
+	a = time.Date(a.Year(), a.Month(), a.Day(), 0, 0, 0, 0, loc)
+	b = time.Date(b.Year(), b.Month(), b.Day(), 0, 0, 0, 0, loc)
+	absList, err := absences.ListByUserDateRange(ctx, userID, from, to)
+	if err != nil {
+		return 0, err
+	}
+	absByDate := make(map[string]*model.Absence, len(absList))
+	for i := range absList {
+		abs := &absList[i]
+		ds := abs.AbsenceDate
+		if len(ds) >= 10 {
+			ds = ds[:10]
+		}
+		if _, ok := absByDate[ds]; !ok {
+			absByDate[ds] = abs
+		}
+	}
+	var sum float64
+	for d := a; !d.After(b); d = d.AddDate(0, 0, 1) {
+		ds := d.Format("2006-01-02")
+		abs := absByDate[ds]
+		if abs == nil {
+			continue
+		}
+		fixed := model.FixedNonWorkWeekdaysForDate(fnwRows, ds)
+		var daily float64
+		wh, err := whs.GetForDate(ctx, userID, ds)
+		if err != nil {
+			return 0, err
+		}
+		if wh != nil && wh.HoursPerWeek > 0 {
+			daily = model.DailyHours(wh.HoursPerWeek, fixed)
+		}
+		var hol *model.Holiday
+		if holidays != nil {
+			hol, err = holidays.GetForDate(ctx, ds)
+			if err != nil {
+				return 0, err
+			}
+			if hol != nil && hol.ID == 0 {
+				hol = nil
+			}
+		}
+		sum += daycalc.AbsenceCreditHours(d, daily, fixed, hol, abs, nil)
 	}
 	return sum, nil
 }

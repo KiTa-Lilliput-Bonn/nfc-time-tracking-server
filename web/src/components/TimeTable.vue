@@ -13,8 +13,13 @@ import type {
   WeeklyHours,
   WorkPeriod,
 } from '@/types/api'
-import type { HolidayCredit } from '@/types/api'
-import { absenceByDate, buildTimeTableRows, holidayByDate, type TimeTableRow } from '@/utils/timeTableModel'
+import type { AbsenceCredit, HolidayCredit } from '@/types/api'
+import {
+  absenceByDate,
+  buildTimeTableRows,
+  holidayByDate,
+  type TimeTableRow,
+} from '@/utils/timeTableModel'
 import { formatGermanDate, formatGermanTime } from '@/utils/dates'
 
 const props = defineProps<{
@@ -22,6 +27,7 @@ const props = defineProps<{
   absences?: Absence[]
   corrections?: TimeCorrection[]
   holidays?: HolidayCredit[]
+  absenceCredits?: AbsenceCredit[]
   /** Pro Kalendertag (YYYY-MM-DD): Schicht aus dem Dienstplan — für effektiven Beginn max(Stempel, Schichtbeginn). */
   scheduleByDate?: Record<string, { shift_start: string; shift_end: string }>
   breakRules?: BreakRule[]
@@ -50,6 +56,7 @@ const rows = computed<TimeTableRow[]>(() =>
     absences: props.absences,
     corrections: props.corrections,
     holidays: props.holidays,
+    absenceCredits: props.absenceCredits,
     scheduleByDate: props.scheduleByDate,
     breakRules: props.breakRules,
     roundingMinutes: props.roundingMinutes,

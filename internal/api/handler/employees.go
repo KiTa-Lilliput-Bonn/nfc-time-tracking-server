@@ -244,10 +244,12 @@ func (h *EmployeeHandler) Times(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	holCredits := buildHolidayCredits(r.Context(), uid, from, to, h.FixedNonWorkWeekdays, h.WeeklyHours, h.Holidays)
+	absCredits := buildAbsenceCredits(r.Context(), uid, from, to, h.FixedNonWorkWeekdays, h.WeeklyHours, h.Holidays, h.Absences)
 	response.JSON(w, http.StatusOK, map[string]interface{}{
 		"from": from, "to": to, "work_periods": periods,
-		"worked_hours": worked,
-		"holidays":     holCredits,
+		"worked_hours":    worked,
+		"holidays":        holCredits,
+		"absence_credits": absCredits,
 	})
 }
 
@@ -314,6 +316,7 @@ func (h *EmployeeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		h.WorkPeriods,
 		h.WeeklyHours,
 		h.Holidays,
+		h.Absences,
 		h.Schedules,
 		h.ScheduleBound,
 	)
@@ -948,8 +951,12 @@ func (h *EmployeeHandler) PutWeeklyHours(w http.ResponseWriter, r *http.Request)
 		response.Error(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if body.ValidFrom == "" || body.HoursPerWeek <= 0 {
-		response.Error(w, http.StatusBadRequest, "valid_from and hours_per_week required")
+	if body.ValidFrom == "" {
+		response.Error(w, http.StatusBadRequest, "valid_from required")
+		return
+	}
+	if body.HoursPerWeek < 0 {
+		response.Error(w, http.StatusBadRequest, "hours_per_week must not be negative")
 		return
 	}
 	wh := &model.WeeklyHours{UserID: uid, HoursPerWeek: body.HoursPerWeek, ValidFrom: body.ValidFrom}
