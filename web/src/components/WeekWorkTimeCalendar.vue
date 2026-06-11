@@ -420,6 +420,7 @@ function onWorkBlockClick(iso: string, workPeriodId: number) {
                         <div class="wc-block">
                           <span class="wc-time-row wc-time-start">{{ formatGermanTime(seg.effectiveIn) }}</span>
                           <span class="wc-block-kind">{{ seg.isBreak ? 'Pause' : 'Arbeit' }}</span>
+                          <span v-if="seg.preShiftHint" class="wc-pre-shift-hint">{{ seg.preShiftHint }}</span>
                           <span class="wc-time-row wc-time-end">{{ blockEndTimeLabel(seg) }}</span>
                         </div>
                       </div>
@@ -463,6 +464,7 @@ function onWorkBlockClick(iso: string, workPeriodId: number) {
                       <div class="wc-block">
                         <span class="wc-time-row wc-time-start">{{ formatGermanTime(seg.effectiveIn) }}</span>
                         <span class="wc-block-kind">{{ seg.isBreak ? 'Pause' : 'Arbeit' }}</span>
+                        <span v-if="seg.preShiftHint" class="wc-pre-shift-hint">{{ seg.preShiftHint }}</span>
                         <span class="wc-time-row wc-time-end">{{ blockEndTimeLabel(seg) }}</span>
                       </div>
                     </div>
@@ -858,6 +860,15 @@ function onWorkBlockClick(iso: string, workPeriodId: number) {
   text-shadow: 0 1px 2px rgba(15, 23, 42, 0.45);
   opacity: 1;
   -webkit-text-fill-color: #f8fafc;
+}
+.wc-block-wrap.work .wc-pre-shift-hint {
+  font-size: 8px;
+  font-weight: 500;
+  line-height: 1.1;
+  text-align: center;
+  color: #e2e8f0;
+  text-shadow: 0 1px 2px rgba(15, 23, 42, 0.45);
+  padding: 0 2px;
 }
 .wc-block-wrap.break .wc-block {
   border-style: solid;

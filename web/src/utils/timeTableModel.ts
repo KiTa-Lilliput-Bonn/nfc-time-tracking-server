@@ -25,6 +25,8 @@ export interface TimeTableRow {
   gross: number
   net: number
   notes: string
+  /** Dynamisch: manuelle Zeit vor Dienstplanbeginn (nicht in Korrektur-Grund gespeichert). */
+  rowHint: string | null
   /** Für Korrektur-Dialog: typischerweise eine Periode pro Zeile. */
   candidates: WorkPeriod[]
 }
@@ -37,6 +39,30 @@ export interface CalendarSegment {
   isBreak: boolean
   /** Unterscheidet mehrere Anzeige-Segmente einer Periode (Schicht + Sitzung). */
   segmentSuffix?: string
+  /** Dynamisch: manuelle Zeit vor Dienstplanbeginn wird gezählt. */
+  preShiftHint?: string | null
+}
+
+export const MANUAL_PRE_SHIFT_HINT = 'Zeit vor Dienstplanbeginn wird gezählt'
+
+/** Hinweis nur wenn manuelle Periode vor aktuellem Schichtbeginn liegt (zur Laufzeit berechnet). */
+export function manualPreShiftCountedHint(
+  period: WorkPeriod,
+  rawIn: string,
+  workDate: string,
+  scheduleByDate?: Record<string, { shift_start: string; shift_end: string }>,
+  scheduleBoundHistory?: ScheduleBoundSetting[],
+): string | null {
+  if (period.source !== 'manual') return null
+  if (!scheduleBoundForDate(scheduleBoundHistory, workDate)) return null
+  const shiftStart = scheduleByDate?.[workDate]?.shift_start?.trim()
+  if (!shiftStart) return null
+  const shiftIso = localInstantISOFromDateAndClock(workDate, shiftStart)
+  if (!shiftIso) return null
+  if (new Date(rawIn).getTime() < new Date(shiftIso).getTime()) {
+    return MANUAL_PRE_SHIFT_HINT
+  }
+  return null
 }
 
 const DEFAULT_BREAK_RULES: BreakRule[] = [
@@ -275,6 +301,7 @@ export function buildTimeTableRows(opts: {
         gross: round2(credit),
         net: round2(credit),
         notes: notesFirst,
+        rowHint: null,
         candidates: [],
       })
       continue
@@ -286,7 +313,15 @@ export function buildTimeTableRows(opts: {
       const rawIn = corr ? corr.corrected_in : p.punch_in
       let effectiveIn = rawIn
       const effectiveOut = corr ? corr.corrected_out : p.punch_out
+      const rowHint = manualPreShiftCountedHint(
+        p,
+        rawIn,
+        workDate,
+        opts.scheduleByDate,
+        opts.scheduleBoundHistory,
+      )
       if (
+        p.source !== 'manual' &&
         scheduleBoundForDate(opts.scheduleBoundHistory, workDate) &&
         schDay?.shift_start?.trim()
       ) {
@@ -305,6 +340,7 @@ export function buildTimeTableRows(opts: {
           gross: 0,
           net: 0,
           notes: '',
+          rowHint,
           candidates: [p],
         })
         continue
@@ -327,6 +363,7 @@ export function buildTimeTableRows(opts: {
         gross: round2(blockMin / 60),
         net: round2(netMin / 60),
         notes: '',
+        rowHint,
         candidates: [p],
       })
     }
@@ -438,6 +475,13 @@ export function buildCalendarSegmentsForDay(
     const corr = corrByWp.get(p.id)
     const rawIn = corr ? corr.corrected_in : p.punch_in
     const effectiveOut = corr ? corr.corrected_out : p.punch_out
+    const preShiftHint = manualPreShiftCountedHint(
+      p,
+      rawIn,
+      workDate,
+      scheduleByDate,
+      options?.scheduleBoundHistory,
+    )
     if (p.is_break || !effectiveOut) {
       out.push({
         workPeriodId: p.id,
@@ -445,10 +489,11 @@ export function buildCalendarSegmentsForDay(
         effectiveIn: rawIn,
         effectiveOut,
         isBreak: p.is_break,
+        preShiftHint,
       })
       continue
     }
-    if (applyShiftClamp && meetings.length > 0) {
+    if (applyShiftClamp && meetings.length > 0 && p.source !== 'manual') {
       const intervals = workedDisplayIntervalsMs(workDate, rawIn, effectiveOut, schDay, meetings)
       if (intervals.length > 0) {
         intervals.forEach(([a, b], idx) => {
@@ -459,13 +504,14 @@ export function buildCalendarSegmentsForDay(
             effectiveOut: new Date(b).toISOString(),
             isBreak: false,
             segmentSuffix: intervals.length > 1 ? `-p${idx}` : '',
+            preShiftHint: idx === 0 ? preShiftHint : null,
           })
         })
         continue
       }
     }
     let effectiveIn = rawIn
-    if (applyShiftClamp && schDay?.shift_start?.trim()) {
+    if (applyShiftClamp && p.source !== 'manual' && schDay?.shift_start?.trim()) {
       const shiftIso = localInstantISOFromDateAndClock(workDate, schDay.shift_start.trim())
       if (shiftIso) effectiveIn = maxInstantISO(effectiveIn, shiftIso)
     }
@@ -475,6 +521,7 @@ export function buildCalendarSegmentsForDay(
       effectiveIn,
       effectiveOut,
       isBreak: p.is_break,
+      preShiftHint,
     })
   }
   return out

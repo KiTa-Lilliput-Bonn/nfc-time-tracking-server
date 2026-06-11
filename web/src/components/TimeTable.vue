@@ -149,7 +149,12 @@ function onRowClick(e: { data: TimeTableRow }) {
       </Column>
       <Column field="gross" header="Brutto (h)" />
       <Column field="net" header="Netto (h)" />
-      <Column field="notes" header="Hinweise" />
+      <Column header="Hinweise">
+        <template #body="{ data }: { data: TimeTableRow }">
+          <span v-if="data.notes">{{ data.notes }}</span>
+          <span v-if="data.rowHint" class="tt-row-hint">{{ data.rowHint }}</span>
+        </template>
+      </Column>
     </DataTable>
 
     <TimeCorrectionDialog
@@ -199,5 +204,12 @@ function onRowClick(e: { data: TimeTableRow }) {
   font-size: 0.72rem;
   color: #64748b;
   font-weight: 400;
+}
+.tt-row-hint {
+  display: block;
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 400;
+  margin-top: 0.15rem;
 }
 </style>

@@ -103,7 +103,7 @@ func effectiveWorkDuration(wp model.WorkPeriod, shift *ShiftBounds, loc *time.Lo
 		}
 		return pout.Sub(pin), true
 	}
-	if pin.Before(st) {
+	if wp.Source != "manual" && pin.Before(st) {
 		pin = st
 	}
 	if !pin.Before(pout) {

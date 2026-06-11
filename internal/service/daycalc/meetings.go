@@ -35,7 +35,7 @@ func effectiveWorkDurationWithMeetings(wp model.WorkPeriod, shift *ShiftBounds, 
 	}
 	var total time.Duration
 	s := pin
-	if s.Before(ss) {
+	if wp.Source != "manual" && s.Before(ss) {
 		s = ss
 	}
 	endCap := se

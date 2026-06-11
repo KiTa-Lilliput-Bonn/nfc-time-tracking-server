@@ -109,6 +109,21 @@ func ptr(tt time.Time) *time.Time {
 	return &tt
 }
 
+func TestNetHours_ShiftStartDoesNotClipManual(t *testing.T) {
+	loc := time.Local
+	day := "2026-03-10"
+	pin := time.Date(2026, 3, 10, 7, 30, 0, 0, loc)
+	pout := time.Date(2026, 3, 10, 12, 0, 0, 0, loc)
+	wps := []model.WorkPeriod{
+		{WorkDate: day, PunchIn: pin, PunchOut: &pout, IsBreak: false, Source: "manual"},
+	}
+	shift := &daycalc.ShiftBounds{Start: "08:00"}
+	got := daycalc.NetHours(wps, nil, 15, shift)
+	if got != 4.5 {
+		t.Fatalf("manual before shift start: expected 4.5h, got %v", got)
+	}
+}
+
 func TestNetHours_ShiftStartClipsEarlyPunch(t *testing.T) {
 	loc := time.Local
 	day := "2026-03-10"
