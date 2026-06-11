@@ -927,7 +927,8 @@ func vacationEntitlementResponses(list []model.VacationEntitlement) []vacationEn
 }
 
 func (h *EmployeeHandler) enforceMutableEntry(w http.ResponseWriter, r *http.Request, createdAt time.Time) bool {
-	if middleware.Role(r) == string(model.RoleSuperadmin) {
+	role := middleware.Role(r)
+	if role == string(model.RoleSuperadmin) || role == string(model.RoleLeitung) {
 		return true
 	}
 	if entrylock.IsMutable(createdAt, time.Now().UTC()) {

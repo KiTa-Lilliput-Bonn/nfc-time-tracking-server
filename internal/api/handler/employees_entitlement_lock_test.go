@@ -68,7 +68,7 @@ func seedActorAndTarget(t *testing.T, db *sqlite.DB, auth *authsvc.Service, acto
 	return token, target.ID
 }
 
-func TestDeleteWeeklyHours_LeitungLockedAfter24h(t *testing.T) {
+func TestDeleteWeeklyHours_LeitungAfter24h(t *testing.T) {
 	db, err := sqlite.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -94,8 +94,8 @@ func TestDeleteWeeklyHours_LeitungLockedAfter24h(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
-	if rr.Code != http.StatusForbidden {
-		t.Fatalf("want 403, got %d: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

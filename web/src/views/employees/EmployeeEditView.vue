@@ -339,7 +339,6 @@ async function removeWeekly(row: WeeklyHours) {
     toast.add({
       severity: 'error',
       summary: 'Löschen fehlgeschlagen',
-      detail: 'Einträge sind 24 Stunden nach Anlage nicht mehr löschbar.',
       life: 10000,
     })
   } finally {
@@ -389,7 +388,7 @@ function scheduleBoundLabel(bound: boolean): string {
 }
 
 const scheduleBoundHelpText =
-  'Wenn aktiviert, zählen erfasste Zeiten erst ab dem geplanten Schichtbeginn. Ein neuer Eintrag gilt ab dem gewählten Kalendertag und ersetzt den vorherigen Stand. Einträge können 24 Stunden nach Anlage nur noch vom Superadmin gelöscht werden.'
+  'Wenn aktiviert, zählen erfasste Zeiten erst ab dem geplanten Schichtbeginn. Ein neuer Eintrag gilt ab dem gewählten Kalendertag und ersetzt den vorherigen Stand.'
 
 async function saveFixedNonWorkWeekdays() {
   if (!employee.value) return
@@ -425,7 +424,6 @@ async function removeFnw(row: FixedNonWorkWeekdays) {
     toast.add({
       severity: 'error',
       summary: 'Löschen fehlgeschlagen',
-      detail: 'Einträge sind 24 Stunden nach Anlage nicht mehr löschbar.',
       life: 10000,
     })
   } finally {
@@ -472,7 +470,6 @@ async function removeVacation(row: VacationEntitlement) {
     toast.add({
       severity: 'error',
       summary: 'Löschen fehlgeschlagen',
-      detail: 'Einträge sind 24 Stunden nach Anlage nicht mehr löschbar.',
       life: 10000,
     })
   } finally {
@@ -685,8 +682,7 @@ function onTagUidEnter() {
       <template #title>Wochenstunden</template>
       <template #content>
         <p class="muted">
-          Ein neuer Eintrag gilt ab dem gewählten Kalendertag und beendet den vorherigen Block automatisch. Einträge
-          können 24 Stunden nach Anlage nur noch vom Superadmin gelöscht werden.
+          Ein neuer Eintrag gilt ab dem gewählten Kalendertag und beendet den vorherigen Block automatisch.
         </p>
         <div class="row2">
           <div class="field">
@@ -731,8 +727,7 @@ function onTagUidEnter() {
       <template #content>
         <p class="muted">
           Reguläre freie Wochentage (Mo–Fr) ohne Schichtplanung und ohne Urlaubsabzug an Schließtagen. Ein neuer
-          Eintrag gilt ab dem gewählten Kalendertag. Einträge können 24 Stunden nach Anlage nur noch vom Superadmin
-          gelöscht werden.
+          Eintrag gilt ab dem gewählten Kalendertag.
         </p>
         <div class="fnw-days">
           <label v-for="opt in FNW_WEEKDAY_OPTIONS" :key="opt.value" class="fnw-day">
@@ -786,7 +781,7 @@ function onTagUidEnter() {
         <p class="muted">
           Ein neuer Eintrag gilt ab dem gewählten Kalendertag und beendet den vorherigen Block automatisch. Der
           Jahresanspruch wird anteilig nach Restmonaten und Resttagen im Monat (je Zwölftel) berechnet und auf halbe
-          Urlaubstage aufgerundet. Einträge können 24 Stunden nach Anlage nur noch vom Superadmin gelöscht werden.
+          Urlaubstage aufgerundet.
         </p>
         <div class="row2">
           <div class="field">

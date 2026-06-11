@@ -19,8 +19,8 @@ describe('entryLock', () => {
     expect(canDeleteEntitlementEntry('superadmin', { mutable: false })).toBe(true)
   })
 
-  it('leitung respects mutable flag', () => {
+  it('leitung can always delete', () => {
     expect(canDeleteEntitlementEntry('leitung', { mutable: true })).toBe(true)
-    expect(canDeleteEntitlementEntry('leitung', { mutable: false })).toBe(false)
+    expect(canDeleteEntitlementEntry('leitung', { mutable: false })).toBe(true)
   })
 })
