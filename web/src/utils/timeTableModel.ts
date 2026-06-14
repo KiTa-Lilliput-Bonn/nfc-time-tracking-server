@@ -124,7 +124,7 @@ function calcBreakDeductionMinutes(grossWorkMinutes: number, stampedBreakMinutes
   let required = 0
   let bestThreshold = 0
   for (const r of rules) {
-    if (grossH + 1e-9 >= r.min_work_hours && r.min_work_hours >= bestThreshold) {
+    if (grossH > r.min_work_hours && r.min_work_hours >= bestThreshold) {
       bestThreshold = r.min_work_hours
       required = r.break_minutes
     }

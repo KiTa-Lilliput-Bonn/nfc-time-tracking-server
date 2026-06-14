@@ -44,6 +44,31 @@ func TestCalcBreakDeduction_SufficientStampedBreak(t *testing.T) {
 	}
 }
 
+func TestCalcBreakDeduction_Exactly6h(t *testing.T) {
+	rules := []model.BreakRule{
+		{MinWorkHours: 6.0, BreakMinutes: 30},
+	}
+	gross := 6 * time.Hour
+	stamped := time.Duration(0)
+	deduction := CalcBreakDeduction(gross, stamped, rules)
+	if deduction != 0 {
+		t.Errorf("expected 0 deduction for exactly 6h, got %v", deduction)
+	}
+}
+
+func TestCalcBreakDeduction_Exactly9h(t *testing.T) {
+	rules := []model.BreakRule{
+		{MinWorkHours: 6.0, BreakMinutes: 30},
+		{MinWorkHours: 9.0, BreakMinutes: 45},
+	}
+	gross := 9 * time.Hour
+	stamped := time.Duration(0)
+	deduction := CalcBreakDeduction(gross, stamped, rules)
+	if deduction != 30*time.Minute {
+		t.Errorf("expected 30m deduction for exactly 9h (6h rule), got %v", deduction)
+	}
+}
+
 func TestCalcBreakDeduction_Under6h(t *testing.T) {
 	rules := []model.BreakRule{
 		{MinWorkHours: 6.0, BreakMinutes: 30},

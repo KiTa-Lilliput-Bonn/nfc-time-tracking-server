@@ -653,7 +653,7 @@ func TestOverview_LoadsBreakRulesLikeExport(t *testing.T) {
 	whs := sqlite.NewWeeklyHoursStore(db)
 	ss := sqlite.NewSettingsStore(db)
 
-	// 6h+ work → require 30 min break; gross 6h, stamped break 0 → deduction applies
+	// 6h work → no break deduction at exactly 6h; gross 6h → net 6h
 	rules := []model.BreakRule{{MinWorkHours: 6, BreakMinutes: 30}}
 	b, _ := json.Marshal(rules)
 	if err := ss.Set(ctx, "break_rules", string(b)); err != nil {
@@ -699,10 +699,10 @@ func TestOverview_LoadsBreakRulesLikeExport(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatal(len(rows))
 	}
-	// Net ≈ 5.5h after 30 min deduction, rounded down to 15 min → 5.5h; target 8 → balance -2.5
+	// Net 6h (no deduction at exactly 6h); target 8 → balance -2.0
 	hb := rows[0].HoursBalance
-	if hb != -2.5 {
-		t.Fatalf("hours_balance want -2.5, got %v", hb)
+	if hb != -2.0 {
+		t.Fatalf("hours_balance want -2.0, got %v", hb)
 	}
 }
 

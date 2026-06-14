@@ -16,7 +16,7 @@ func CalcBreakDeduction(grossWork, stampedBreaks time.Duration, rules []model.Br
 	var required int
 	var bestThreshold float64
 	for _, r := range rules {
-		if grossH+1e-9 >= r.MinWorkHours && r.MinWorkHours >= bestThreshold {
+		if grossH > r.MinWorkHours && r.MinWorkHours >= bestThreshold {
 			bestThreshold = r.MinWorkHours
 			required = r.BreakMinutes
 		}

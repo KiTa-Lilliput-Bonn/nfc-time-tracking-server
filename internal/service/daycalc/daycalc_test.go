@@ -76,8 +76,8 @@ func TestNetHours_PerBlockBreak_LongGapDoesNotWaiveFirstBlock(t *testing.T) {
 	}
 	breakRules := []model.BreakRule{{MinWorkHours: 6, BreakMinutes: 30}}
 	got := daycalc.NetHours(wps, breakRules, 15, nil)
-	if got != 6.5 {
-		t.Fatalf("expected 6.5h net (6h−30m + 1h), got %v", got)
+	if got != 7.0 {
+		t.Fatalf("expected 7.0h net (6h + 1h), got %v", got)
 	}
 }
 
@@ -95,8 +95,8 @@ func TestNetHours_LegacyBreakRowBetweenBlocksSameAsImplicitGap(t *testing.T) {
 	}
 	breakRules := []model.BreakRule{{MinWorkHours: 6, BreakMinutes: 30}}
 	got := daycalc.NetHours(wps, breakRules, 15, nil)
-	if got != 6.5 {
-		t.Fatalf("expected 6.5h net ignoring legacy pause row, got %v", got)
+	if got != 7.0 {
+		t.Fatalf("expected 7.0h net ignoring legacy pause row, got %v", got)
 	}
 }
 
