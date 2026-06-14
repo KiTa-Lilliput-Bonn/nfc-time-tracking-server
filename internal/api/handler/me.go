@@ -32,6 +32,8 @@ type MeHandler struct {
 	TeamMeetings          store.TeamMeetingStore
 	Corrections           store.CorrectionStore
 	Holidays              store.HolidayStore
+	ClosureDays           store.ClosureDayStore
+	Settings              store.SettingsStore
 	Audit                 *audit.Logger
 }
 
@@ -196,6 +198,8 @@ func (h *MeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		h.Absences,
 		h.Schedules,
 		h.ScheduleBound,
+		h.ClosureDays,
+		h.Settings,
 	)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")

@@ -123,6 +123,7 @@ func NewRouter(d Deps) http.Handler {
 			ScheduleBound:        d.ScheduleBound,
 			VacationEnt: d.VacationEnt, Absences: d.Absences, CompensationDayClaims: d.CompensationDayClaims,
 			Schedules: d.Schedules, TeamMeetings: d.TeamMeetings, Corrections: d.Corrections, Holidays: d.Holidays,
+			ClosureDays: d.ClosureDays, Settings: d.Settings,
 			Audit: d.Audit,
 		}
 		ch := &handler.ClosureHandler{
@@ -153,7 +154,7 @@ func NewRouter(d Deps) http.Handler {
 			WeeklyHours: d.WeeklyHours, VacationEnt: d.VacationEnt, NFCTags: d.NFCTags,
 			FixedNonWorkWeekdays: d.FixedNonWorkWeekdays,
 			ScheduleBound:        d.ScheduleBound,
-			Schedules: d.Schedules, TeamMeetings: d.TeamMeetings, Audit: d.Audit,
+			Schedules: d.Schedules, TeamMeetings: d.TeamMeetings, Settings: d.Settings, Audit: d.Audit,
 		}
 		sh := &handler.ScheduleHandler{
 			Schedules:             d.Schedules,

@@ -2,16 +2,14 @@ package teamoverview
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"nfc-time-tracking-server/internal/model"
-	"nfc-time-tracking-server/internal/service/daycalc"
+	"nfc-time-tracking-server/internal/service/saldocalc"
 	"nfc-time-tracking-server/internal/service/timesummary"
 	"nfc-time-tracking-server/internal/service/vacationentitlement"
 	"nfc-time-tracking-server/internal/store"
@@ -97,8 +95,6 @@ func Build(ctx context.Context, d Deps, vacationYear int, now time.Time) ([]Row,
 		vacationYear = y
 	}
 
-	roundMin, breakRules := loadExportSettings(ctx, d.Settings)
-
 	users, err := d.Users.List(ctx, true)
 	if err != nil {
 		return nil, "", err
@@ -166,24 +162,8 @@ func Build(ctx context.Context, d Deps, vacationYear int, now time.Time) ([]Row,
 	toStr := yesterday.Format("2006-01-02")
 	skipTeamHours := !hasTeamRange || teamFrom.After(yesterday)
 	periodStartISO := toStr
-	fromStr := toStr
 	if hasTeamRange {
 		periodStartISO = teamFrom.Format("2006-01-02")
-		fromStr = periodStartISO
-	}
-
-	var holidayByDate map[string]*model.Holiday
-	var closureByDate map[string]*model.ClosureDay
-	if !skipTeamHours {
-		var err error
-		holidayByDate, err = loadHolidayMap(ctx, d.Holidays, fromStr, toStr)
-		if err != nil {
-			return nil, "", err
-		}
-		closureByDate, err = loadClosureMap(ctx, d.Closures, fromStr, toStr)
-		if err != nil {
-			return nil, "", err
-		}
 	}
 
 	yearFrom := fmt.Sprintf("%d-01-01", vacationYear)
@@ -197,60 +177,23 @@ func Build(ctx context.Context, d Deps, vacationYear int, now time.Time) ([]Row,
 		var hoursBal float64
 		skipUser := skipTeamHours || userStart.After(yesterday)
 		if !skipUser {
-			wps, err := d.WorkPeriods.ListByUserDateRange(ctx, u.ID, fromStr, toStr)
+			userFrom := userStart.Format("2006-01-02")
+			totals, err := saldocalc.SumRange(ctx, saldocalc.Deps{
+				WorkPeriods:          d.WorkPeriods,
+				Corrections:          d.Corrections,
+				Absences:             d.Absences,
+				Holidays:             d.Holidays,
+				Closures:             d.Closures,
+				WeeklyHours:          d.WeeklyHours,
+				FixedNonWorkWeekdays: d.FixedNonWorkWeekdays,
+				ScheduleBound:        d.ScheduleBound,
+				Schedules:            d.Schedules,
+				Settings:             d.Settings,
+			}, u.ID, userFrom, toStr)
 			if err != nil {
 				return nil, "", err
 			}
-			corrs, err := d.Corrections.ListByUser(ctx, u.ID, fromStr, toStr)
-			if err != nil {
-				return nil, "", err
-			}
-			corrected := timesummary.ApplyLatestCorrections(wps, corrs)
-			byDate := groupWorkPeriodsByDate(corrected)
-
-			hoursAbsences, err := d.Absences.ListByUserDateRange(ctx, u.ID, fromStr, toStr)
-			if err != nil {
-				return nil, "", err
-			}
-			hoursAbsByDate := indexFirstAbsenceByDate(hoursAbsences)
-
-			whRows := p.whRows
-			fnwRows := p.fnwRows
-
-			var schByDate map[string]*model.Schedule
-			if d.Schedules != nil {
-				schRows, err := d.Schedules.ListByUserDateRange(ctx, u.ID, fromStr, toStr)
-				if err != nil {
-					return nil, "", err
-				}
-				schByDate = indexSchedulesByDate(schRows)
-			}
-
-			for dday := userStart; !dday.After(yesterday); dday = dday.AddDate(0, 0, 1) {
-				ds := dday.Format("2006-01-02")
-				dayWps := byDate[ds]
-				var shiftBounds *daycalc.ShiftBounds
-				if schByDate != nil {
-					if sch := schByDate[ds]; sch != nil {
-						bound := model.ScheduleBoundForDate(p.scheduleBoundRows, ds)
-						shiftBounds = daycalc.ShiftBoundsIfBound(sch, bound)
-					}
-				}
-				net := daycalc.NetHours(dayWps, breakRules, roundMin, shiftBounds)
-
-				fixed := model.FixedNonWorkWeekdaysForDate(fnwRows, ds)
-				var daily float64
-				if wh := weeklyHoursForDate(whRows, ds); wh != nil {
-					daily = model.DailyHours(wh.HoursPerWeek, fixed)
-				}
-				hol := holidayByDate[ds]
-				abs := hoursAbsByDate[ds]
-				clo := closureByDate[ds]
-				localD := dday
-				target := daycalc.DailyTarget(localD, daily, fixed, hol, abs, clo)
-				credit := daycalc.AbsenceCreditHours(localD, daily, fixed, hol, abs, clo)
-				hoursBal += (net + credit) - target
-			}
+			hoursBal = totals.BalanceHours
 		}
 		if includeOpening {
 			hoursBal += u.OpeningHoursBalance
@@ -406,28 +349,6 @@ func openingDateInRange(createdAt time.Time, asOfDay, yesterday time.Time, loc *
 	return !openingDay.Before(asOfDay) && !openingDay.After(yesterday)
 }
 
-func loadExportSettings(ctx context.Context, s store.SettingsStore) (roundMin int, breakRules []model.BreakRule) {
-	roundMin = 15
-	if v, err := s.Get(ctx, "rounding_minutes"); err == nil {
-		if n, e := strconv.Atoi(v); e == nil && n > 0 {
-			roundMin = n
-		}
-	}
-	if v, err := s.Get(ctx, "break_rules"); err == nil {
-		_ = json.Unmarshal([]byte(v), &breakRules)
-	}
-	return roundMin, breakRules
-}
-
-func groupWorkPeriodsByDate(wps []model.WorkPeriod) map[string][]model.WorkPeriod {
-	m := make(map[string][]model.WorkPeriod)
-	for _, wp := range wps {
-		ds := normDate(wp.WorkDate)
-		m[ds] = append(m[ds], wp)
-	}
-	return m
-}
-
 // normDate returns YYYY-MM-DD. SQLite may return DATE columns as full RFC3339 timestamps.
 func normDate(s string) string {
 	s = strings.TrimSpace(s)
@@ -435,89 +356,6 @@ func normDate(s string) string {
 		return s[:10]
 	}
 	return s
-}
-
-func loadHolidayMap(ctx context.Context, hs store.HolidayStore, fromStr, toStr string) (map[string]*model.Holiday, error) {
-	fromDay, err := time.ParseInLocation("2006-01-02", fromStr, time.Local)
-	if err != nil {
-		return nil, fmt.Errorf("holiday map from: %w", err)
-	}
-	toDay, err := time.ParseInLocation("2006-01-02", toStr, time.Local)
-	if err != nil {
-		return nil, fmt.Errorf("holiday map to: %w", err)
-	}
-	m := make(map[string]*model.Holiday)
-	for y := fromDay.Year(); y <= toDay.Year(); y++ {
-		list, err := hs.ListByYear(ctx, y)
-		if err != nil {
-			return nil, err
-		}
-		for i := range list {
-			ds := normDate(list[i].HolidayDate)
-			if ds < fromStr || ds > toStr {
-				continue
-			}
-			h := &list[i]
-			m[ds] = h
-		}
-	}
-	return m, nil
-}
-
-func loadClosureMap(ctx context.Context, cs store.ClosureDayStore, fromStr, toStr string) (map[string]*model.ClosureDay, error) {
-	all, err := cs.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-	m := make(map[string]*model.ClosureDay)
-	for i := range all {
-		ds := normDate(all[i].ClosureDate)
-		if ds < fromStr || ds > toStr {
-			continue
-		}
-		c := &all[i]
-		m[ds] = c
-	}
-	return m, nil
-}
-
-// weeklyHoursForDate matches WeeklyHoursStore.GetForDate: greatest valid_from with valid_from ≤ date.
-func weeklyHoursForDate(rows []model.WeeklyHours, date string) *model.WeeklyHours {
-	date = normDate(date)
-	var best *model.WeeklyHours
-	for i := range rows {
-		wh := &rows[i]
-		vf := normDate(wh.ValidFrom)
-		if vf > date {
-			continue
-		}
-		if best == nil || vf > normDate(best.ValidFrom) {
-			best = wh
-		}
-	}
-	return best
-}
-
-func indexFirstAbsenceByDate(abs []model.Absence) map[string]*model.Absence {
-	m := make(map[string]*model.Absence)
-	for i := range abs {
-		ds := normDate(abs[i].AbsenceDate)
-		if _, ok := m[ds]; ok {
-			continue
-		}
-		a := &abs[i]
-		m[ds] = a
-	}
-	return m
-}
-
-func indexSchedulesByDate(rows []model.Schedule) map[string]*model.Schedule {
-	m := make(map[string]*model.Schedule)
-	for i := range rows {
-		s := &rows[i]
-		m[normDate(s.ScheduleDate)] = s
-	}
-	return m
 }
 
 func round2(x float64) float64 {

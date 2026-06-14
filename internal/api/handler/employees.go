@@ -45,6 +45,7 @@ type EmployeeHandler struct {
 	NFCTags     store.NFCTagStore
 	Schedules   store.ScheduleStore
 	TeamMeetings store.TeamMeetingStore
+	Settings    store.SettingsStore
 	Audit       *audit.Logger
 }
 
@@ -320,6 +321,8 @@ func (h *EmployeeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		h.Absences,
 		h.Schedules,
 		h.ScheduleBound,
+		h.ClosureDays,
+		h.Settings,
 	)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")

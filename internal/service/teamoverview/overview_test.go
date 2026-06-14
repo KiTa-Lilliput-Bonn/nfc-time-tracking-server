@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"nfc-time-tracking-server/internal/model"
+	"nfc-time-tracking-server/internal/service/saldocalc"
 	"nfc-time-tracking-server/internal/store/sqlite"
 )
 
@@ -817,6 +818,75 @@ func TestOverview_IncludesOpenCompensationDayClaims(t *testing.T) {
 	}
 	if rows[0].CompensationDayClaimsOpen != 2 {
 		t.Fatalf("open compensation day claims want 2, got %d", rows[0].CompensationDayClaimsOpen)
+	}
+}
+
+func TestBuild_HoursBalanceMatchesSaldoCalcSumRange(t *testing.T) {
+	db, err := sqlite.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+
+	us := sqlite.NewUserStore(db)
+	ws := sqlite.NewWorkPeriodStore(db)
+	whs := sqlite.NewWeeklyHoursStore(db)
+	ss := sqlite.NewSettingsStore(db)
+	cs := sqlite.NewCorrectionStore(db)
+	fnw := sqlite.NewFixedNonWorkWeekdaysStore(db)
+
+	u := &model.User{Username: "match", PasswordHash: "x", DisplayName: "Match", Role: model.RoleUser, Active: true}
+	if err := us.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if err := whs.Set(ctx, &model.WeeklyHours{UserID: u.ID, HoursPerWeek: 40, ValidFrom: "2026-03-10"}); err != nil {
+		t.Fatal(err)
+	}
+
+	d1 := "2026-03-10"
+	tIn := time.Date(2026, 3, 10, 8, 0, 0, 0, time.UTC)
+	tOut := time.Date(2026, 3, 10, 16, 0, 0, 0, time.UTC)
+	if err := ws.ReplaceForUserDate(ctx, u.ID, d1, []model.WorkPeriod{{PunchIn: tIn, PunchOut: &tOut, IsBreak: false}}); err != nil {
+		t.Fatal(err)
+	}
+
+	sumDeps := saldocalc.Deps{
+		WorkPeriods:          ws,
+		Corrections:          cs,
+		Absences:             sqlite.NewAbsenceStore(db),
+		Holidays:             sqlite.NewHolidayStore(db),
+		Closures:             sqlite.NewClosureDayStore(db),
+		WeeklyHours:          whs,
+		FixedNonWorkWeekdays: fnw,
+		Settings:             ss,
+	}
+	sumTotals, err := saldocalc.SumRange(ctx, sumDeps, u.ID, d1, d1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 3, 11, 9, 0, 0, 0, time.Local)
+	rows, _, err := Build(ctx, Deps{
+		Users:                us,
+		WorkPeriods:          ws,
+		Corrections:          cs,
+		Absences:             sumDeps.Absences,
+		Holidays:             sumDeps.Holidays,
+		Closures:             sumDeps.Closures,
+		WeeklyHours:          whs,
+		Settings:             ss,
+		VacationEnt:          sqlite.NewVacationEntitlementStore(db),
+		FixedNonWorkWeekdays: fnw,
+	}, 2026, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].HoursBalance != sumTotals.BalanceHours {
+		t.Fatalf("dashboard %v != SumRange %v", rows[0].HoursBalance, sumTotals.BalanceHours)
 	}
 }
 

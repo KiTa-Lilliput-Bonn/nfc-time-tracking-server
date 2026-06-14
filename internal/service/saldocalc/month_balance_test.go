@@ -67,7 +67,12 @@ func (s stubWeeklyHoursStore) GetForDate(ctx context.Context, userID int, date s
 	return &model.WeeklyHours{UserID: userID, HoursPerWeek: s.hours, ValidFrom: s.validFrom}, nil
 }
 func (s stubWeeklyHoursStore) ListByUser(ctx context.Context, userID int) ([]model.WeeklyHours, error) {
-	return []model.WeeklyHours{}, nil
+	if s.validFrom == "" {
+		return []model.WeeklyHours{}, nil
+	}
+	return []model.WeeklyHours{{
+		UserID: userID, HoursPerWeek: s.hours, ValidFrom: s.validFrom,
+	}}, nil
 }
 
 type stubHolidayStore struct {
@@ -142,6 +147,8 @@ func TestMonthWithOpening_UsesPartialMonthWeeklyHours(t *testing.T) {
 		stubAbsenceStore{},
 		nil,
 		nil,
+		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -186,6 +193,8 @@ func TestMonthWithOpening_FourDayWeekTimestampValidFrom(t *testing.T) {
 		stubAbsenceStore{},
 		nil,
 		nil,
+		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -195,7 +204,7 @@ func TestMonthWithOpening_FourDayWeekTimestampValidFrom(t *testing.T) {
 	}
 }
 
-func TestMonthWithOpening_IncludesHolidayCreditInWorked(t *testing.T) {
+func TestMonthWithOpening_HolidayWithoutWorkNoAutomaticCredit(t *testing.T) {
 	ctx := context.Background()
 	mb, err := MonthWithOpening(
 		ctx,
@@ -211,21 +220,23 @@ func TestMonthWithOpening_IncludesHolidayCreditInWorked(t *testing.T) {
 		stubAbsenceStore{},
 		nil,
 		nil,
+		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if mb.WorkedHours != 8 {
-		t.Fatalf("worked got %v want 8", mb.WorkedHours)
+	if mb.WorkedHours != 0 {
+		t.Fatalf("worked got %v want 0 (no automatic holiday credit)", mb.WorkedHours)
 	}
 }
 
-func TestMonthWithOpening_IncludesVacationCreditAtDailyTarget(t *testing.T) {
+func TestMonthWithOpening_FullDayVacationOffsetsMissingWork(t *testing.T) {
 	ctx := context.Background()
 	wh := stubWeeklyHoursStore{validFrom: "2026-03-01", hours: 30}
 	mbNoVac, err := MonthWithOpening(
 		ctx, 1, 2026, 3, 0,
-		stubFNWStore{}, stubWorkPeriodStore{}, nil, wh, stubHolidayStore{}, stubAbsenceStore{}, nil, nil,
+		stubFNWStore{}, stubWorkPeriodStore{}, nil, wh, stubHolidayStore{}, stubAbsenceStore{}, nil, nil, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("baseline: %v", err)
@@ -236,7 +247,7 @@ func TestMonthWithOpening_IncludesVacationCreditAtDailyTarget(t *testing.T) {
 		stubAbsenceStore{byRange: []model.Absence{{
 			UserID: 1, AbsenceDate: "2026-03-10", AbsenceType: model.AbsenceVacation,
 		}}},
-		nil, nil,
+		nil, nil, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("vacation: %v", err)
@@ -262,7 +273,7 @@ func TestMonthWithOpening_VacationWithoutWeeklyHoursZeroCredit(t *testing.T) {
 		stubWeeklyHoursStore{validFrom: "2099-01-01", hours: 40},
 		stubHolidayStore{},
 		stubAbsenceStore{},
-		nil, nil,
+		nil, nil, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("baseline: %v", err)
@@ -277,7 +288,7 @@ func TestMonthWithOpening_VacationWithoutWeeklyHoursZeroCredit(t *testing.T) {
 		stubAbsenceStore{byRange: []model.Absence{{
 			UserID: 1, AbsenceDate: "2026-03-10", AbsenceType: model.AbsenceVacation,
 		}}},
-		nil, nil,
+		nil, nil, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("vacation: %v", err)
