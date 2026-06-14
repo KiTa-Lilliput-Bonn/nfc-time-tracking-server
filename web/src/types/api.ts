@@ -164,6 +164,7 @@ export interface TimeCorrection {
   reason: string
   corrected_by: number
   created_at: string
+  disabled?: boolean
 }
 
 export interface WeeklyHours {

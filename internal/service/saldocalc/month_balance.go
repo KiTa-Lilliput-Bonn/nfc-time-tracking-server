@@ -19,6 +19,7 @@ func MonthWithOpening(
 	openingHours float64,
 	fnw store.FixedNonWorkWeekdaysStore,
 	wps store.WorkPeriodStore,
+	corrections store.CorrectionStore,
 	whs store.WeeklyHoursStore,
 	holidays store.HolidayStore,
 	absences store.AbsenceStore,
@@ -36,6 +37,13 @@ func MonthWithOpening(
 	periods, err := wps.ListByUserDateRange(ctx, userID, from, to)
 	if err != nil {
 		return model.MonthBalance{}, err
+	}
+	if corrections != nil {
+		corrs, err := corrections.ListByUser(ctx, userID, from, to)
+		if err != nil {
+			return model.MonthBalance{}, err
+		}
+		periods = timesummary.ApplyLatestCorrections(periods, corrs)
 	}
 	worked, err := timesummary.SumWorkedHoursFromStore(ctx, userID, periods, schedules, nil, scheduleBound)
 	if err != nil {
@@ -62,6 +70,13 @@ func MonthWithOpening(
 	ytdP, err := wps.ListByUserDateRange(ctx, userID, yearFrom, yTo)
 	if err != nil {
 		return model.MonthBalance{}, err
+	}
+	if corrections != nil {
+		corrsYTD, err := corrections.ListByUser(ctx, userID, yearFrom, yTo)
+		if err != nil {
+			return model.MonthBalance{}, err
+		}
+		ytdP = timesummary.ApplyLatestCorrections(ytdP, corrsYTD)
 	}
 	ytdWorked, err := timesummary.SumWorkedHoursFromStore(ctx, userID, ytdP, schedules, nil, scheduleBound)
 	if err != nil {

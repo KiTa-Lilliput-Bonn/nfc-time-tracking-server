@@ -19,6 +19,7 @@ import (
 	"nfc-time-tracking-server/internal/service/apipairing"
 	authsvc "nfc-time-tracking-server/internal/service/auth"
 	"nfc-time-tracking-server/internal/audit"
+	"nfc-time-tracking-server/internal/bootstrap"
 	"nfc-time-tracking-server/internal/service/backup"
 	"nfc-time-tracking-server/internal/service/export"
 	"nfc-time-tracking-server/internal/service/lanemployeesync"
@@ -291,6 +292,15 @@ func NewRouter(d Deps) http.Handler {
 			r.Post("/admin/backup/init-restic", bh.PostInitRestic)
 			r.Post("/admin/backup/run-now", bh.PostRunNow)
 		})
+
+		if bootstrap.TestModeEnabled() {
+			tsh := &handler.TestSeedHandler{WorkPeriods: d.WorkPeriods}
+			r.Group(func(r chi.Router) {
+				r.Use(apimw.AuthJWT(d.Auth))
+				r.Use(apimw.RequireRole(leitung...))
+				r.Post("/test/seed-imported-work-period", tsh.SeedImportedWorkPeriod)
+			})
+		}
 	})
 
 	return r

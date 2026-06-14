@@ -30,6 +30,8 @@ export interface TimeTableRow {
   rowHint: string | null
   /** Für Korrektur-Dialog: typischerweise eine Periode pro Zeile. */
   candidates: WorkPeriod[]
+  /** Aus der Bewertung ausgeschlossen (manuell deaktiviert). */
+  isDisabled: boolean
 }
 
 export interface CalendarSegment {
@@ -42,7 +44,11 @@ export interface CalendarSegment {
   segmentSuffix?: string
   /** Dynamisch: manuelle Zeit vor Dienstplanbeginn wird gezählt. */
   preShiftHint?: string | null
+  /** Aus der Bewertung ausgeschlossen (manuell deaktiviert). */
+  isDisabled: boolean
 }
+
+export const DISABLED_PERIOD_TOOLTIP = 'Erfasste Zeit manuell deaktiviert'
 
 export const MANUAL_PRE_SHIFT_HINT = 'Zeit vor Dienstplanbeginn wird gezählt'
 
@@ -107,6 +113,10 @@ export function correctionByWorkPeriod(corrections?: TimeCorrection[]): Map<numb
     if (!m.has(c.work_period_id)) m.set(c.work_period_id, c)
   }
   return m
+}
+
+export function isPeriodDisabled(corr?: TimeCorrection): boolean {
+  return !!corr?.disabled
 }
 
 function round2(x: number) {
@@ -260,8 +270,8 @@ export function buildTimeTableRows(opts: {
     for (const p of dayPeriods) {
       if (p.source === 'manual') hasManual = true
       const corr = corrMap.get(p.id)
-      if (corr?.reason) corrReasons.push(corr.reason)
-      if (!p.is_break) {
+      if (corr?.reason && !corr.disabled) corrReasons.push(corr.reason)
+      if (!p.is_break && !isPeriodDisabled(corr)) {
         const effOut = corr?.corrected_out ?? p.punch_out
         if (!effOut) hasOpen = true
       }
@@ -322,6 +332,7 @@ export function buildTimeTableRows(opts: {
         notes: notesFirst,
         rowHint: null,
         candidates: [],
+        isDisabled: false,
       })
       continue
     }
@@ -329,17 +340,21 @@ export function buildTimeTableRows(opts: {
     const dayRows: TimeTableRow[] = []
     for (const p of candidates) {
       const corr = corrMap.get(p.id)
-      const rawIn = corr ? corr.corrected_in : p.punch_in
+      const disabled = isPeriodDisabled(corr)
+      const rawIn = disabled ? p.punch_in : corr ? corr.corrected_in : p.punch_in
       let effectiveIn = rawIn
-      const effectiveOut = corr ? corr.corrected_out : p.punch_out
-      const rowHint = manualPreShiftCountedHint(
-        p,
-        rawIn,
-        workDate,
-        opts.scheduleByDate,
-        opts.scheduleBoundHistory,
-      )
+      const effectiveOut = disabled ? p.punch_out : corr ? corr.corrected_out : p.punch_out
+      const rowHint = disabled
+        ? null
+        : manualPreShiftCountedHint(
+            p,
+            rawIn,
+            workDate,
+            opts.scheduleByDate,
+            opts.scheduleBoundHistory,
+          )
       if (
+        !disabled &&
         p.source !== 'manual' &&
         scheduleBoundForDate(opts.scheduleBoundHistory, workDate) &&
         schDay?.shift_start?.trim()
@@ -347,6 +362,8 @@ export function buildTimeTableRows(opts: {
         const shiftIso = localInstantISOFromDateAndClock(workDate, schDay.shift_start.trim())
         if (shiftIso) effectiveIn = maxInstantISO(effectiveIn, shiftIso)
       }
+
+      const disabledNote = disabled && corr?.reason ? `Deaktiviert: ${corr.reason}` : ''
 
       if (!effectiveOut) {
         dayRows.push({
@@ -358,9 +375,28 @@ export function buildTimeTableRows(opts: {
           effectiveOut: null,
           gross: 0,
           net: 0,
-          notes: '',
+          notes: disabledNote,
           rowHint,
           candidates: [p],
+          isDisabled: disabled,
+        })
+        continue
+      }
+
+      if (disabled) {
+        dayRows.push({
+          rowKey: `${workDate}-wp${p.id}`,
+          workDate,
+          primaryPeriodId: p.id,
+          effectiveIn,
+          stampInEarliest: rawIn,
+          effectiveOut,
+          gross: 0,
+          net: 0,
+          notes: disabledNote,
+          rowHint,
+          candidates: [p],
+          isDisabled: true,
         })
         continue
       }
@@ -384,10 +420,11 @@ export function buildTimeTableRows(opts: {
         notes: '',
         rowHint,
         candidates: [p],
+        isDisabled: false,
       })
     }
 
-    const credIdx = dayRows.findIndex((r) => r.effectiveOut)
+    const credIdx = dayRows.findIndex((r) => r.effectiveOut && !r.isDisabled)
     if (credit !== 0 && dayRows.length) {
       const idx = credIdx >= 0 ? credIdx : 0
       dayRows[idx]!.gross = round2(dayRows[idx]!.gross + credit)
@@ -492,15 +529,18 @@ export function buildCalendarSegmentsForDay(
   const out: CalendarSegment[] = []
   for (const p of sorted) {
     const corr = corrByWp.get(p.id)
-    const rawIn = corr ? corr.corrected_in : p.punch_in
-    const effectiveOut = corr ? corr.corrected_out : p.punch_out
-    const preShiftHint = manualPreShiftCountedHint(
-      p,
-      rawIn,
-      workDate,
-      scheduleByDate,
-      options?.scheduleBoundHistory,
-    )
+    const disabled = isPeriodDisabled(corr)
+    const rawIn = disabled ? p.punch_in : corr ? corr.corrected_in : p.punch_in
+    const effectiveOut = disabled ? p.punch_out : corr ? corr.corrected_out : p.punch_out
+    const preShiftHint = disabled
+      ? null
+      : manualPreShiftCountedHint(
+          p,
+          rawIn,
+          workDate,
+          scheduleByDate,
+          options?.scheduleBoundHistory,
+        )
     if (p.is_break || !effectiveOut) {
       out.push({
         workPeriodId: p.id,
@@ -509,10 +549,11 @@ export function buildCalendarSegmentsForDay(
         effectiveOut,
         isBreak: p.is_break,
         preShiftHint,
+        isDisabled: disabled,
       })
       continue
     }
-    if (applyShiftClamp && meetings.length > 0 && p.source !== 'manual') {
+    if (!disabled && applyShiftClamp && meetings.length > 0 && p.source !== 'manual') {
       const intervals = workedDisplayIntervalsMs(workDate, rawIn, effectiveOut, schDay, meetings)
       if (intervals.length > 0) {
         intervals.forEach(([a, b], idx) => {
@@ -524,13 +565,14 @@ export function buildCalendarSegmentsForDay(
             isBreak: false,
             segmentSuffix: intervals.length > 1 ? `-p${idx}` : '',
             preShiftHint: idx === 0 ? preShiftHint : null,
+            isDisabled: false,
           })
         })
         continue
       }
     }
     let effectiveIn = rawIn
-    if (applyShiftClamp && p.source !== 'manual' && schDay?.shift_start?.trim()) {
+    if (!disabled && applyShiftClamp && p.source !== 'manual' && schDay?.shift_start?.trim()) {
       const shiftIso = localInstantISOFromDateAndClock(workDate, schDay.shift_start.trim())
       if (shiftIso) effectiveIn = maxInstantISO(effectiveIn, shiftIso)
     }
@@ -541,6 +583,7 @@ export function buildCalendarSegmentsForDay(
       effectiveOut,
       isBreak: p.is_break,
       preShiftHint,
+      isDisabled: disabled,
     })
   }
   return out

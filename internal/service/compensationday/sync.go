@@ -72,6 +72,9 @@ func dayHasEligibleWork(ctx context.Context, wp store.WorkPeriodStore, corrs sto
 		end := p.PunchOut
 		if corrs != nil {
 			if c, err := corrs.GetLatestForPeriod(ctx, p.ID); err == nil && c != nil {
+				if c.Disabled {
+					continue
+				}
 				start = c.CorrectedIn
 				e := c.CorrectedOut
 				end = &e

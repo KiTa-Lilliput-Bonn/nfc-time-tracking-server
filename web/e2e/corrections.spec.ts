@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 import { apiLogin, loginAsAdmin } from './helpers/auth'
 import { E2E_WORK_DATE, germanDateFromIso } from './helpers/dates'
-import { seedEmployee, seedManualWorkPeriod } from './helpers/seed'
+import { seedEmployee, seedImportedWorkPeriod, seedManualWorkPeriod } from './helpers/seed'
 import { selectPrimeOption, uniqueLabel } from './helpers/ui'
 
 test('manual work period and correction persist after reload', async ({ page, request }) => {
@@ -46,4 +46,67 @@ test('manual work period and correction persist after reload', async ({ page, re
   await selectPrimeOption(page, displayName)
   await expect(page.getByTestId('corrections-table')).toContainText('09:00')
   await expect(page.getByTestId('corrections-table')).toContainText('17:00')
+})
+
+test('imported stamp can be disabled and shows in corrections table', async ({ page, request }) => {
+  const token = await apiLogin(request)
+  const displayName = uniqueLabel('E2E Deaktiv')
+  const emp = await seedEmployee(request, token, {
+    username: `e2e.dis.${Date.now()}`,
+    display_name: displayName,
+  })
+  await seedImportedWorkPeriod(
+    request,
+    token,
+    emp.id,
+    E2E_WORK_DATE,
+    `${E2E_WORK_DATE}T08:00:00.000Z`,
+    `${E2E_WORK_DATE}T16:00:00.000Z`,
+  )
+
+  await loginAsAdmin(page)
+  await page.goto('/corrections')
+
+  await page.getByTestId('corrections-employee-select').click()
+  await selectPrimeOption(page, displayName)
+
+  const dateLabel = germanDateFromIso(E2E_WORK_DATE)
+  await expect(page.getByTestId('corrections-table')).toContainText(dateLabel)
+  await expect(page.getByTestId('corrections-disable-btn')).toBeVisible()
+
+  page.once('dialog', (d) => d.accept('Falscher Stempel'))
+  page.once('dialog', (d) => d.accept())
+  await page.getByTestId('corrections-disable-btn').click()
+
+  await expect(page.getByTestId('corrections-table')).toContainText('Deaktiviert')
+  await expect(page.getByTestId('corrections-table')).toContainText('Falscher Stempel')
+
+  await page.reload()
+  await page.getByTestId('corrections-employee-select').click()
+  await selectPrimeOption(page, displayName)
+  await expect(page.getByTestId('corrections-table')).toContainText('Deaktiviert')
+})
+
+test('manual work period has no deactivate button', async ({ page, request }) => {
+  const token = await apiLogin(request)
+  const displayName = uniqueLabel('E2E Manuell')
+  const emp = await seedEmployee(request, token, {
+    username: `e2e.man.${Date.now()}`,
+    display_name: displayName,
+  })
+  await seedManualWorkPeriod(
+    request,
+    token,
+    emp.id,
+    E2E_WORK_DATE,
+    `${E2E_WORK_DATE}T08:00:00.000Z`,
+    `${E2E_WORK_DATE}T16:00:00.000Z`,
+  )
+
+  await loginAsAdmin(page)
+  await page.goto('/corrections')
+  await page.getByTestId('corrections-employee-select').click()
+  await selectPrimeOption(page, displayName)
+
+  await expect(page.getByTestId('corrections-disable-btn')).toHaveCount(0)
 })

@@ -136,6 +136,7 @@ func TestMonthWithOpening_UsesPartialMonthWeeklyHours(t *testing.T) {
 		0,
 		stubFNWStore{},
 		stubWorkPeriodStore{},
+		nil,
 		stubWeeklyHoursStore{validFrom: "2026-05-25", hours: 40},
 		stubHolidayStore{},
 		stubAbsenceStore{},
@@ -179,6 +180,7 @@ func TestMonthWithOpening_FourDayWeekTimestampValidFrom(t *testing.T) {
 		0,
 		stubFNWRowsStore{rows: fnwRows},
 		stubWorkPeriodStore{},
+		nil,
 		stubWeeklyHoursStore{validFrom: "2026-05-27", hours: 24},
 		stubHolidayStore{},
 		stubAbsenceStore{},
@@ -203,6 +205,7 @@ func TestMonthWithOpening_IncludesHolidayCreditInWorked(t *testing.T) {
 		0,
 		stubFNWStore{},
 		stubWorkPeriodStore{},
+		nil,
 		stubWeeklyHoursStore{validFrom: "2026-05-01", hours: 40},
 		stubHolidayStore{holidays: map[string]bool{"2026-05-25": true}},
 		stubAbsenceStore{},
@@ -222,14 +225,14 @@ func TestMonthWithOpening_IncludesVacationCreditAtDailyTarget(t *testing.T) {
 	wh := stubWeeklyHoursStore{validFrom: "2026-03-01", hours: 30}
 	mbNoVac, err := MonthWithOpening(
 		ctx, 1, 2026, 3, 0,
-		stubFNWStore{}, stubWorkPeriodStore{}, wh, stubHolidayStore{}, stubAbsenceStore{}, nil, nil,
+		stubFNWStore{}, stubWorkPeriodStore{}, nil, wh, stubHolidayStore{}, stubAbsenceStore{}, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("baseline: %v", err)
 	}
 	mbVac, err := MonthWithOpening(
 		ctx, 1, 2026, 3, 0,
-		stubFNWStore{}, stubWorkPeriodStore{}, wh, stubHolidayStore{},
+		stubFNWStore{}, stubWorkPeriodStore{}, nil, wh, stubHolidayStore{},
 		stubAbsenceStore{byRange: []model.Absence{{
 			UserID: 1, AbsenceDate: "2026-03-10", AbsenceType: model.AbsenceVacation,
 		}}},
@@ -255,6 +258,7 @@ func TestMonthWithOpening_VacationWithoutWeeklyHoursZeroCredit(t *testing.T) {
 		ctx, 1, 2026, 3, 0,
 		stubFNWStore{},
 		stubWorkPeriodStore{},
+		nil,
 		stubWeeklyHoursStore{validFrom: "2099-01-01", hours: 40},
 		stubHolidayStore{},
 		stubAbsenceStore{},
@@ -267,6 +271,7 @@ func TestMonthWithOpening_VacationWithoutWeeklyHoursZeroCredit(t *testing.T) {
 		ctx, 1, 2026, 3, 0,
 		stubFNWStore{},
 		stubWorkPeriodStore{},
+		nil,
 		stubWeeklyHoursStore{validFrom: "2099-01-01", hours: 40},
 		stubHolidayStore{},
 		stubAbsenceStore{byRange: []model.Absence{{

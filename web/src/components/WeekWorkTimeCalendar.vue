@@ -15,6 +15,7 @@ import {
   buildCalendarSegmentsForDay,
   correctionByWorkPeriod,
   dayStatusClass,
+  DISABLED_PERIOD_TOOLTIP,
   holidayByDate,
   hasPlannedShift,
   type CalendarSegment,
@@ -411,13 +412,15 @@ function onWorkBlockClick(iso: string, workPeriodId: number) {
                           break: seg.isBreak,
                           work: !seg.isBreak,
                           click: rowCorrection && !seg.isBreak,
+                          disabled: seg.isDisabled,
                         }"
                         :style="segBlockStyle(seg)"
+                        v-tooltip.bottom="seg.isDisabled ? DISABLED_PERIOD_TOOLTIP : undefined"
                         @click="
                           !seg.isBreak && rowCorrection ? onWorkBlockClick(d.iso, seg.workPeriodId) : undefined
                         "
                       >
-                        <div class="wc-block">
+                        <div class="wc-block" :class="{ 'wc-block--disabled': seg.isDisabled }">
                           <span class="wc-time-row wc-time-start">{{ formatGermanTime(seg.effectiveIn) }}</span>
                           <span class="wc-block-kind">{{ seg.isBreak ? 'Pause' : 'Arbeit' }}</span>
                           <span v-if="seg.preShiftHint" class="wc-pre-shift-hint">{{ seg.preShiftHint }}</span>
@@ -455,13 +458,15 @@ function onWorkBlockClick(iso: string, workPeriodId: number) {
                         break: seg.isBreak,
                         work: !seg.isBreak,
                         click: rowCorrection && !seg.isBreak,
+                        disabled: seg.isDisabled,
                       }"
                       :style="segBlockStyle(seg)"
+                      v-tooltip.bottom="seg.isDisabled ? DISABLED_PERIOD_TOOLTIP : undefined"
                       @click="
                         !seg.isBreak && rowCorrection ? onWorkBlockClick(d.iso, seg.workPeriodId) : undefined
                       "
                     >
-                      <div class="wc-block">
+                      <div class="wc-block" :class="{ 'wc-block--disabled': seg.isDisabled }">
                         <span class="wc-time-row wc-time-start">{{ formatGermanTime(seg.effectiveIn) }}</span>
                         <span class="wc-block-kind">{{ seg.isBreak ? 'Pause' : 'Arbeit' }}</span>
                         <span v-if="seg.preShiftHint" class="wc-pre-shift-hint">{{ seg.preShiftHint }}</span>
@@ -811,6 +816,14 @@ function onWorkBlockClick(iso: string, workPeriodId: number) {
 .wc-block-wrap.click {
   pointer-events: auto;
   cursor: pointer;
+}
+.wc-block-wrap.disabled {
+  opacity: 0.55;
+  cursor: help;
+}
+.wc-block--disabled .wc-time-row,
+.wc-block--disabled .wc-block-kind {
+  text-decoration: line-through;
 }
 .wc-block {
   position: absolute;

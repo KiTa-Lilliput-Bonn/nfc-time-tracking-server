@@ -20,4 +20,9 @@ type TimeCorrection struct {
 	Reason       string    `json:"reason"`
 	CorrectedBy  int       `json:"corrected_by"`
 	CreatedAt    time.Time `json:"created_at"`
+	Disabled     bool      `json:"disabled"`
+}
+
+func (c *TimeCorrection) ExcludesFromEvaluation() bool {
+	return c != nil && c.Disabled
 }

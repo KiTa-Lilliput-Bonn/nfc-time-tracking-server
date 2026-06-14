@@ -205,8 +205,7 @@ func Build(ctx context.Context, d Deps, vacationYear int, now time.Time) ([]Row,
 			if err != nil {
 				return nil, "", err
 			}
-			latest := latestCorrectionPerPeriod(corrs)
-			corrected := applyCorrections(wps, latest)
+			corrected := timesummary.ApplyLatestCorrections(wps, corrs)
 			byDate := groupWorkPeriodsByDate(corrected)
 
 			hoursAbsences, err := d.Absences.ListByUserDateRange(ctx, u.ID, fromStr, toStr)
@@ -418,31 +417,6 @@ func loadExportSettings(ctx context.Context, s store.SettingsStore) (roundMin in
 		_ = json.Unmarshal([]byte(v), &breakRules)
 	}
 	return roundMin, breakRules
-}
-
-func latestCorrectionPerPeriod(corrs []model.TimeCorrection) map[int]model.TimeCorrection {
-	// ListByUser orders by created_at DESC — first win per work_period_id is latest.
-	out := make(map[int]model.TimeCorrection)
-	for _, c := range corrs {
-		if _, ok := out[c.WorkPeriodID]; ok {
-			continue
-		}
-		out[c.WorkPeriodID] = c
-	}
-	return out
-}
-
-func applyCorrections(wps []model.WorkPeriod, latest map[int]model.TimeCorrection) []model.WorkPeriod {
-	out := make([]model.WorkPeriod, len(wps))
-	for i, wp := range wps {
-		out[i] = wp
-		if c, ok := latest[wp.ID]; ok {
-			out[i].PunchIn = c.CorrectedIn
-			co := c.CorrectedOut
-			out[i].PunchOut = &co
-		}
-	}
-	return out
 }
 
 func groupWorkPeriodsByDate(wps []model.WorkPeriod) map[string][]model.WorkPeriod {

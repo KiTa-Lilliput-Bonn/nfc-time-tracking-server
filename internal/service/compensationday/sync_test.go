@@ -137,6 +137,53 @@ func TestSyncClaimAfterWorkDayChange_RemovesOpenClaimWhenCorrectionEliminatesEli
 	}
 }
 
+func TestSyncClaimAfterWorkDayChange_RemovesOpenClaimWhenPeriodDisabled(t *testing.T) {
+	db := openCompensationDayTestDB(t)
+	ctx := context.Background()
+	users := sqlite.NewUserStore(db)
+	fnw := sqlite.NewFixedNonWorkWeekdaysStore(db)
+	workPeriods := sqlite.NewWorkPeriodStore(db)
+	corrections := sqlite.NewCorrectionStore(db)
+	claims := sqlite.NewCompensationDayClaimStore(db)
+	user := createCompensationDayTestUser(t, ctx, users, "disabledaway")
+
+	insertImportedPeriod(t, ctx, workPeriods, user.ID, "2026-04-04", 9, 10, false)
+	if err := SyncClaimAfterWorkDayChange(ctx, fnw, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
+		t.Fatal(err)
+	}
+
+	periods, err := workPeriods.ListByUserDateRange(ctx, user.ID, "2026-04-04", "2026-04-04")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(periods) != 1 {
+		t.Fatalf("expected one work period, got %d", len(periods))
+	}
+	tIn := timeForDateHour("2026-04-04", 9)
+	tOut := timeForDateHour("2026-04-04", 10)
+	if err := corrections.Create(ctx, &model.TimeCorrection{
+		WorkPeriodID: periods[0].ID,
+		CorrectedIn:  tIn,
+		CorrectedOut: tOut,
+		Reason:       "Falscher Stempel",
+		CorrectedBy:  user.ID,
+		Disabled:     true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SyncClaimAfterWorkDayChange(ctx, fnw, workPeriods, corrections, claims, user.ID, "2026-04-04"); err != nil {
+		t.Fatal(err)
+	}
+	open, err := claims.CountOpen(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if open != 0 {
+		t.Fatalf("open claims after disable want 0, got %d", open)
+	}
+}
+
 func openCompensationDayTestDB(t *testing.T) *sqlite.DB {
 	t.Helper()
 	db, err := sqlite.Open(":memory:")

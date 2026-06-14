@@ -33,6 +33,7 @@ import {
   startOfISOWeek,
   toISODateLocal,
 } from '@/utils/dates'
+import { correctionByWorkPeriod, isPeriodDisabled } from '@/utils/timeTableModel'
 import { clearRouteQueryKeys, queryISODate, queryPositiveInt, queryString } from '@/utils/leitungDeepLink'
 
 const toast = useToast()
@@ -48,11 +49,7 @@ const periods = ref<WorkPeriod[]>([])
 const corrections = ref<TimeCorrection[]>([])
 const loading = ref(false)
 
-const corrByWp = computed(() => {
-  const m = new Map<number, TimeCorrection>()
-  for (const c of corrections.value) m.set(c.work_period_id, c)
-  return m
-})
+const corrByWp = computed(() => correctionByWorkPeriod(corrections.value))
 
 interface Row {
   rowKey: string
@@ -287,6 +284,41 @@ async function submitManual() {
   }
 }
 
+async function submitDisable(p: WorkPeriod) {
+  if (p.source === 'manual' || employeeId.value == null) return
+  const reason = prompt('Grund für Deaktivierung (Pflicht):')
+  if (reason == null) return
+  if (!reason.trim()) {
+    toast.add({ severity: 'warn', summary: 'Grund erforderlich', life: 10000 })
+    return
+  }
+  if (!confirm('Erfasste Zeit deaktivieren? Sie wird aus der Bewertung entfernt, bleibt aber sichtbar.')) return
+  try {
+    await createCorrection(employeeId.value, {
+      work_period_id: p.id,
+      disabled: true,
+      reason: reason.trim(),
+    })
+    toast.add({ severity: 'success', summary: 'Zeit deaktiviert', life: 10000 })
+    await load()
+  } catch (e) {
+    const detail = getApiErrorMessage(e)
+    toast.add({
+      severity: 'error',
+      summary: 'Deaktivieren fehlgeschlagen',
+      ...(detail ? { detail, life: 10000 } : { life: 10000 }),
+    })
+  }
+}
+
+function canDisablePeriod(p: WorkPeriod, c?: TimeCorrection): boolean {
+  return p.source !== 'manual' && !!p.punch_out && !isPeriodDisabled(c)
+}
+
+function rowClass(data: Row): string {
+  return isPeriodDisabled(data.correction) ? 'row-disabled' : ''
+}
+
 /** Leerer source = regulärer Stempel/Import (kein gespeicherter Vermerk). */
 function periodSourceLabel(source: string): string {
   const s = (source ?? '').trim()
@@ -339,6 +371,7 @@ async function removeManual(p: WorkPeriod) {
           :loading="loading"
           data-key="rowKey"
           striped-rows
+          :row-class="(d: Row) => rowClass(d)"
           data-testid="corrections-table"
         >
           <Column header="Datum">
@@ -353,7 +386,11 @@ async function removeManual(p: WorkPeriod) {
           </Column>
           <Column header="Korrektur">
             <template #body="{ data }">
-              <template v-if="data.correction">
+              <template v-if="data.correction && isPeriodDisabled(data.correction)">
+                <span class="disabled-label">Deaktiviert</span>
+                <span v-if="data.correction.reason" class="disabled-reason"> — {{ data.correction.reason }}</span>
+              </template>
+              <template v-else-if="data.correction">
                 {{ formatGermanTime(data.correction.corrected_in) }} →
                 {{ formatGermanTime(data.correction.corrected_out) }}
               </template>
@@ -370,6 +407,15 @@ async function removeManual(p: WorkPeriod) {
           <Column header="">
             <template #body="{ data }">
               <Button label="Korrigieren" size="small" text @click="openCorrect(data.period)" />
+              <Button
+                v-if="canDisablePeriod(data.period, data.correction)"
+                label="Deaktivieren"
+                size="small"
+                text
+                severity="danger"
+                data-testid="corrections-disable-btn"
+                @click="submitDisable(data.period)"
+              />
               <Button
                 v-if="data.period.source === 'manual'"
                 icon="pi pi-trash"
@@ -450,6 +496,17 @@ async function removeManual(p: WorkPeriod) {
 }
 .muted {
   color: #94a3b8;
+}
+.disabled-label {
+  color: #b45309;
+  font-weight: 600;
+}
+.disabled-reason {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+:deep(.row-disabled > td) {
+  opacity: 0.65;
 }
 .form {
   display: flex;

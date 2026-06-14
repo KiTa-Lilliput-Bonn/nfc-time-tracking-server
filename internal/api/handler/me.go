@@ -190,6 +190,7 @@ func (h *MeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		u.OpeningHoursBalance,
 		h.FixedNonWorkWeekdays,
 		h.WorkPeriods,
+		h.Corrections,
 		h.WeeklyHours,
 		h.Holidays,
 		h.Absences,

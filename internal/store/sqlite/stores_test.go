@@ -814,3 +814,44 @@ func TestCorrectionStore_CreateAndGetLatest(t *testing.T) {
 		t.Fatalf("expected latest second correction, got %q", latest.Reason)
 	}
 }
+
+func TestCorrectionStore_DisabledFlag(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	us := NewUserStore(db)
+	ws := NewWorkPeriodStore(db)
+	cs := NewCorrectionStore(db)
+
+	u := &model.User{Username: "dis", PasswordHash: "x", DisplayName: "D", Role: model.RoleUser, Active: true}
+	if err := us.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	tin := time.Date(2026, 4, 1, 8, 0, 0, 0, time.UTC)
+	tout := time.Date(2026, 4, 1, 16, 0, 0, 0, time.UTC)
+	if err := ws.ReplaceForUserDate(ctx, u.ID, "2026-04-01", []model.WorkPeriod{{PunchIn: tin, PunchOut: &tout, IsBreak: false}}); err != nil {
+		t.Fatal(err)
+	}
+	wps, _ := ws.ListByUserDateRange(ctx, u.ID, "2026-04-01", "2026-04-01")
+	wpID := wps[0].ID
+
+	c1 := &model.TimeCorrection{WorkPeriodID: wpID, CorrectedIn: tin, CorrectedOut: tout, Reason: "disable", CorrectedBy: u.ID, Disabled: true}
+	if err := cs.Create(ctx, c1); err != nil {
+		t.Fatal(err)
+	}
+	latest, err := cs.GetLatestForPeriod(ctx, wpID)
+	if err != nil || latest == nil || !latest.Disabled {
+		t.Fatalf("disabled latest: %v %+v", err, latest)
+	}
+
+	c2 := &model.TimeCorrection{WorkPeriodID: wpID, CorrectedIn: tin, CorrectedOut: time.Date(2026, 4, 1, 17, 0, 0, 0, time.UTC), Reason: "fix", CorrectedBy: u.ID}
+	if err := cs.Create(ctx, c2); err != nil {
+		t.Fatal(err)
+	}
+	latest, err = cs.GetLatestForPeriod(ctx, wpID)
+	if err != nil || latest == nil {
+		t.Fatalf("latest after re-enable: %v %+v", err, latest)
+	}
+	if latest.Disabled || latest.Reason != "fix" {
+		t.Fatalf("expected re-enabled correction, got %+v", latest)
+	}
+}

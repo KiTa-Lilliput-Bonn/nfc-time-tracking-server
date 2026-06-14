@@ -9,7 +9,7 @@ import { createMeCorrection } from '@/api/me'
 import { createCorrection } from '@/api/management'
 import type { TimeCorrection, WorkPeriod } from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
-import { correctionByWorkPeriod, pickPrimaryWorkPeriod } from '@/utils/timeTableModel'
+import { correctionByWorkPeriod, isPeriodDisabled, pickPrimaryWorkPeriod } from '@/utils/timeTableModel'
 import {
   buildCorrectionTimeInstants,
   formatGermanDate,
@@ -47,6 +47,28 @@ const saving = ref(false)
 
 const corrByWorkPeriod = computed(() => correctionByWorkPeriod(props.corrections))
 
+const selectedPeriod = computed(() =>
+  selWpId.value == null ? undefined : props.periods.find((x) => x.id === selWpId.value),
+)
+
+const canDisable = computed(() => {
+  if (props.rowCorrection.mode !== 'employee') return false
+  const p = selectedPeriod.value
+  if (!p || p.source === 'manual' || !p.punch_out) return false
+  const c = corrByWorkPeriod.value.get(p.id)
+  return !isPeriodDisabled(c)
+})
+
+function workPeriodLabel(p: WorkPeriod, c?: TimeCorrection) {
+  if (isPeriodDisabled(c)) {
+    const b = p.punch_out
+    return `${formatGermanTime(p.punch_in)} → ${b ? formatGermanTime(b) : '—'} (deaktiviert)`
+  }
+  const a = c ? c.corrected_in : p.punch_in
+  const b = c ? c.corrected_out : p.punch_out
+  return `${formatGermanTime(a)} → ${b ? formatGermanTime(b) : '—'}`
+}
+
 const wpOptions = computed(() => {
   if (selWpId.value == null) return [] as { label: string; value: number }[]
   return props.candidates.map((p) => ({
@@ -54,12 +76,6 @@ const wpOptions = computed(() => {
     label: workPeriodLabel(p, corrByWorkPeriod.value.get(p.id)),
   }))
 })
-
-function workPeriodLabel(p: WorkPeriod, c?: TimeCorrection) {
-  const a = c ? c.corrected_in : p.punch_in
-  const b = c ? c.corrected_out : p.punch_out
-  return `${formatGermanTime(a)} → ${b ? formatGermanTime(b) : '—'}`
-}
 
 function fillFromSelection() {
   if (selWpId.value == null) {
@@ -74,6 +90,12 @@ function fillFromSelection() {
     return
   }
   const c = corrByWorkPeriod.value.get(p.id)
+  if (isPeriodDisabled(c)) {
+    corrIn.value = isoToTimeInputValue(p.punch_in)
+    corrOutManuallyEdited.value = false
+    corrOut.value = p.punch_out ? isoToTimeInputValue(p.punch_out) : ''
+    return
+  }
   corrIn.value = isoToTimeInputValue(c ? c.corrected_in : p.punch_in)
   corrOutManuallyEdited.value = false
   const outSrc = c ? c.corrected_out : p.punch_out
@@ -171,6 +193,35 @@ async function submitCorrect() {
     saving.value = false
   }
 }
+
+async function submitDisable() {
+  if (selWpId.value == null || props.rowCorrection.mode !== 'employee') return
+  if (!corrReason.value.trim()) {
+    toast.add({ severity: 'warn', summary: 'Grund erforderlich', life: 10000 })
+    return
+  }
+  if (!confirm('Erfasste Zeit deaktivieren? Sie wird aus der Bewertung entfernt, bleibt aber sichtbar.')) return
+  saving.value = true
+  try {
+    await createCorrection(props.rowCorrection.employeeId, {
+      work_period_id: selWpId.value,
+      disabled: true,
+      reason: corrReason.value.trim(),
+    })
+    toast.add({ severity: 'success', summary: 'Zeit deaktiviert', life: 10000 })
+    close()
+    emit('saved')
+  } catch (e) {
+    const detail = getApiErrorMessage(e)
+    toast.add({
+      severity: 'error',
+      summary: 'Deaktivieren fehlgeschlagen',
+      ...(detail ? { detail, life: 10000 } : { life: 10000 }),
+    })
+  } finally {
+    saving.value = false
+  }
+}
 </script>
 
 <template>
@@ -201,6 +252,16 @@ async function submitCorrect() {
       <InputText v-model="corrReason" class="w" />
     </div>
     <template #footer>
+      <Button
+        v-if="canDisable"
+        label="Deaktivieren"
+        severity="danger"
+        text
+        :loading="saving"
+        :disabled="selWpId == null"
+        data-testid="correction-disable-btn"
+        @click="submitDisable"
+      />
       <Button label="Abbrechen" severity="secondary" text @click="close" />
       <Button label="Speichern" :loading="saving" :disabled="selWpId == null" @click="submitCorrect" />
     </template>

@@ -84,7 +84,7 @@ func intervalsOverlap(aStart time.Time, aEnd *time.Time, bStart time.Time, bEnd 
 
 func (s *WorkPeriodStore) listEffectiveIntervalsForUserDate(ctx context.Context, userID int, workDate string) ([]effectiveWorkPeriodInterval, error) {
 	// Effective interval = latest correction (if any) else original punches.
-	// We use MAX(id) as "latest" because corrections are inserted monotonically.
+	// Periods whose latest correction is disabled are excluded from overlap checks.
 	rows, err := s.db.DB.QueryContext(ctx, `
 SELECT
   wp.id,
@@ -92,7 +92,7 @@ SELECT
   COALESCE(tc.corrected_out, wp.punch_out) AS effective_out
 FROM work_periods wp
 LEFT JOIN (
-  SELECT t1.work_period_id, t1.corrected_in, t1.corrected_out
+  SELECT t1.work_period_id, t1.corrected_in, t1.corrected_out, t1.disabled
   FROM time_corrections t1
   INNER JOIN (
     SELECT work_period_id, MAX(id) AS max_id
@@ -101,6 +101,7 @@ LEFT JOIN (
   ) tmax ON tmax.work_period_id = t1.work_period_id AND tmax.max_id = t1.id
 ) tc ON tc.work_period_id = wp.id
 WHERE wp.user_id = ? AND wp.work_date = ?
+  AND (tc.disabled IS NULL OR tc.disabled = 0)
 ORDER BY effective_in
 `, userID, workDate)
 	if err != nil {

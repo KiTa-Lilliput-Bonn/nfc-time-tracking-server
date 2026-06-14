@@ -314,6 +314,7 @@ func (h *EmployeeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		u.OpeningHoursBalance,
 		h.FixedNonWorkWeekdays,
 		h.WorkPeriods,
+		h.Corrections,
 		h.WeeklyHours,
 		h.Holidays,
 		h.Absences,
@@ -447,6 +448,7 @@ type correctionBody struct {
 	CorrectedIn  time.Time `json:"corrected_in"`
 	CorrectedOut time.Time `json:"corrected_out"`
 	Reason       string    `json:"reason"`
+	Disabled     bool      `json:"disabled"`
 }
 
 func (h *EmployeeHandler) CreateCorrection(w http.ResponseWriter, r *http.Request) {
@@ -463,15 +465,6 @@ func (h *EmployeeHandler) CreateCorrection(w http.ResponseWriter, r *http.Reques
 		response.Error(w, http.StatusBadRequest, "reason required")
 		return
 	}
-	if !body.CorrectedOut.After(body.CorrectedIn) {
-		response.Error(w, http.StatusBadRequest, "corrected_out must be after corrected_in")
-		return
-	}
-	by := middleware.UserID(r)
-	c := &model.TimeCorrection{
-		WorkPeriodID: body.WorkPeriodID, CorrectedIn: body.CorrectedIn, CorrectedOut: body.CorrectedOut,
-		Reason: body.Reason, CorrectedBy: by,
-	}
 	target, err := h.WorkPeriods.GetByID(r.Context(), body.WorkPeriodID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")
@@ -482,6 +475,56 @@ func (h *EmployeeHandler) CreateCorrection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	day := target.WorkDate
+	by := middleware.UserID(r)
+
+	if body.Disabled {
+		if target.Source == "manual" {
+			response.Error(w, http.StatusBadRequest, "manuelle Zeiteinträge können nicht deaktiviert werden")
+			return
+		}
+		correctedIn := target.PunchIn
+		correctedOut := target.PunchOut
+		if latest, err := h.Corrections.GetLatestForPeriod(r.Context(), body.WorkPeriodID); err == nil && latest != nil && !latest.Disabled {
+			correctedIn = latest.CorrectedIn
+			correctedOut = &latest.CorrectedOut
+		}
+		if correctedOut == nil {
+			response.Error(w, http.StatusBadRequest, "offene Arbeitsperiode kann nicht deaktiviert werden")
+			return
+		}
+		c := &model.TimeCorrection{
+			WorkPeriodID: body.WorkPeriodID,
+			CorrectedIn:  correctedIn,
+			CorrectedOut: *correctedOut,
+			Reason:       body.Reason,
+			CorrectedBy:  by,
+			Disabled:     true,
+		}
+		if err := h.Corrections.Create(r.Context(), c); err != nil {
+			response.Error(w, http.StatusInternalServerError, "create failed")
+			return
+		}
+		if err := compensationday.SyncClaimAfterWorkDayChange(r.Context(), h.FixedNonWorkWeekdays, h.WorkPeriods, h.Corrections, h.CompensationDayClaims, uid, day); err != nil {
+			response.Error(w, http.StatusInternalServerError, "Ausgleichstag-Anspruch konnte nicht aktualisiert werden")
+			return
+		}
+		logAudit(h.Audit, r.Context(), audit.Entry{
+			Action: audit.ActionCreate, EntityType: audit.EntityTimeCorrection, EntityID: auditID(c.ID),
+			TargetUserID: auditTarget(uid),
+			Summary:      audit.JSONSummary(map[string]any{"work_period_id": body.WorkPeriodID, "work_date": day, "disabled": true}),
+		})
+		response.JSON(w, http.StatusCreated, c)
+		return
+	}
+
+	if !body.CorrectedOut.After(body.CorrectedIn) {
+		response.Error(w, http.StatusBadRequest, "corrected_out must be after corrected_in")
+		return
+	}
+	c := &model.TimeCorrection{
+		WorkPeriodID: body.WorkPeriodID, CorrectedIn: body.CorrectedIn, CorrectedOut: body.CorrectedOut,
+		Reason: body.Reason, CorrectedBy: by,
+	}
 
 	// Prevent corrections from creating overlapping work periods on the same day.
 	// We compare the *effective* intervals (latest correction if present) of all periods on that work_date.
@@ -499,6 +542,9 @@ func (h *EmployeeHandler) CreateCorrection(w http.ResponseWriter, r *http.Reques
 		start := p.PunchIn.UTC()
 		end := p.PunchOut
 		if corr, err := h.Corrections.GetLatestForPeriod(r.Context(), p.ID); err == nil && corr != nil {
+			if corr.Disabled {
+				continue
+			}
 			start = corr.CorrectedIn.UTC()
 			cend := corr.CorrectedOut.UTC()
 			end = &cend

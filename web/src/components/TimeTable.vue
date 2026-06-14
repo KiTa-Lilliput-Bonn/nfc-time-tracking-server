@@ -17,6 +17,7 @@ import type { AbsenceCredit, HolidayCredit } from '@/types/api'
 import {
   absenceByDate,
   buildTimeTableRows,
+  DISABLED_PERIOD_TOOLTIP,
   holidayByDate,
   type TimeTableRow,
 } from '@/utils/timeTableModel'
@@ -132,10 +133,15 @@ function onRowClick(e: { data: TimeTableRow }) {
       <Column header="Beginn">
         <template #body="{ data }: { data: TimeTableRow }">
           <template v-if="data.effectiveIn">
-            <span class="tt-begin-wrap">
+            <span
+              class="tt-begin-wrap"
+              :class="{ 'tt-disabled': data.isDisabled }"
+              v-tooltip.bottom="data.isDisabled ? DISABLED_PERIOD_TOOLTIP : undefined"
+            >
               <span class="tt-begin-main">{{ formatGermanTime(data.effectiveIn) }}</span>
               <span
                 v-if="
+                  !data.isDisabled &&
                   data.stampInEarliest &&
                   new Date(data.stampInEarliest).getTime() !== new Date(data.effectiveIn).getTime()
                 "
@@ -151,11 +157,36 @@ function onRowClick(e: { data: TimeTableRow }) {
       </Column>
       <Column header="Ende">
         <template #body="{ data }: { data: TimeTableRow }">
-          {{ data.effectiveOut ? formatGermanTime(data.effectiveOut) : '—' }}
+          <span
+            v-if="data.effectiveOut"
+            :class="{ 'tt-disabled': data.isDisabled }"
+            v-tooltip.bottom="data.isDisabled ? DISABLED_PERIOD_TOOLTIP : undefined"
+          >
+            {{ formatGermanTime(data.effectiveOut) }}
+          </span>
+          <template v-else>—</template>
         </template>
       </Column>
-      <Column field="gross" header="Brutto (h)" />
-      <Column field="net" header="Netto (h)" />
+      <Column header="Brutto (h)">
+        <template #body="{ data }: { data: TimeTableRow }">
+          <span
+            :class="{ 'tt-disabled': data.isDisabled }"
+            v-tooltip.bottom="data.isDisabled ? DISABLED_PERIOD_TOOLTIP : undefined"
+          >
+            {{ data.gross }}
+          </span>
+        </template>
+      </Column>
+      <Column header="Netto (h)">
+        <template #body="{ data }: { data: TimeTableRow }">
+          <span
+            :class="{ 'tt-disabled': data.isDisabled }"
+            v-tooltip.bottom="data.isDisabled ? DISABLED_PERIOD_TOOLTIP : undefined"
+          >
+            {{ data.net }}
+          </span>
+        </template>
+      </Column>
       <Column header="Hinweise">
         <template #body="{ data }: { data: TimeTableRow }">
           <span v-if="data.notes">{{ data.notes }}</span>
@@ -218,5 +249,10 @@ function onRowClick(e: { data: TimeTableRow }) {
   color: #64748b;
   font-weight: 400;
   margin-top: 0.15rem;
+}
+.tt-disabled {
+  text-decoration: line-through;
+  color: #94a3b8;
+  cursor: help;
 }
 </style>

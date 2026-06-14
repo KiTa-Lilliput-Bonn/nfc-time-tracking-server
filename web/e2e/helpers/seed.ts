@@ -79,6 +79,30 @@ export async function seedManualWorkPeriod(
   return { id: body.id }
 }
 
+export async function seedImportedWorkPeriod(
+  request: APIRequestContext,
+  token: string,
+  employeeId: number,
+  workDate: string,
+  punchIn: string,
+  punchOut: string,
+): Promise<{ id: number }> {
+  const res = await request.post('/api/v1/test/seed-imported-work-period', {
+    headers: authHeaders(token),
+    data: {
+      employee_id: employeeId,
+      work_date: workDate,
+      punch_in: punchIn,
+      punch_out: punchOut,
+    },
+  })
+  if (!res.ok()) {
+    throw new Error(`imported work period failed: ${res.status()} ${await res.text()}`)
+  }
+  const body = (await res.json()) as { id: number }
+  return { id: body.id }
+}
+
 export async function seedScheduleShift(
   request: APIRequestContext,
   token: string,

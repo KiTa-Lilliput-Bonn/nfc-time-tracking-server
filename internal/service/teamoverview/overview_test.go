@@ -555,6 +555,75 @@ func TestOverview_LatestCorrectionReplacesPunches(t *testing.T) {
 	}
 }
 
+func TestOverview_DisabledPeriodExcludedFromBalance(t *testing.T) {
+	db, err := sqlite.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	ctx := context.Background()
+
+	us := sqlite.NewUserStore(db)
+	ws := sqlite.NewWorkPeriodStore(db)
+	whs := sqlite.NewWeeklyHoursStore(db)
+	cs := sqlite.NewCorrectionStore(db)
+	ss := sqlite.NewSettingsStore(db)
+
+	u := &model.User{Username: "dis", PasswordHash: "x", DisplayName: "Dis", Role: model.RoleUser, Active: true}
+	if err := us.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if err := whs.Set(ctx, &model.WeeklyHours{UserID: u.ID, HoursPerWeek: 40, ValidFrom: "2026-03-10"}); err != nil {
+		t.Fatal(err)
+	}
+
+	d1 := "2026-03-10"
+	tIn := time.Date(2026, 3, 10, 8, 0, 0, 0, time.UTC)
+	tOut := time.Date(2026, 3, 10, 16, 0, 0, 0, time.UTC)
+	if err := ws.ReplaceForUserDate(ctx, u.ID, d1, []model.WorkPeriod{{PunchIn: tIn, PunchOut: &tOut, IsBreak: false}}); err != nil {
+		t.Fatal(err)
+	}
+	wps, err := ws.ListByUserDateRange(ctx, u.ID, d1, d1)
+	if err != nil || len(wps) != 1 {
+		t.Fatalf("wps: %v %+v", err, wps)
+	}
+	if err := cs.Create(ctx, &model.TimeCorrection{
+		WorkPeriodID: wps[0].ID,
+		CorrectedIn:  tIn,
+		CorrectedOut: tOut,
+		Reason:       "Falscher Stempel",
+		CorrectedBy:  u.ID,
+		Disabled:     true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 3, 11, 9, 0, 0, 0, time.Local)
+	d := Deps{
+		Users:       us,
+		WorkPeriods: ws,
+		Corrections: cs,
+		Absences:    sqlite.NewAbsenceStore(db),
+		Holidays:    sqlite.NewHolidayStore(db),
+		Closures:    sqlite.NewClosureDayStore(db),
+		WeeklyHours: whs,
+		Settings:    ss,
+		VacationEnt: sqlite.NewVacationEntitlementStore(db),
+	}
+
+	rows, _, err := Build(ctx, d, 2026, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	// Disabled 8h work → 0 net; target 8h → -8
+	if rows[0].HoursBalance != -8 {
+		t.Fatalf("hours_balance want -8 (disabled period), got %v", rows[0].HoursBalance)
+	}
+}
+
 func TestOverview_ExcludesSuperadmin(t *testing.T) {
 	db, err := sqlite.Open(":memory:")
 	if err != nil {

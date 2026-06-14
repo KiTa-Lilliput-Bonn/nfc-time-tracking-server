@@ -110,6 +110,11 @@ async function resolveEmployee() {
   if (!employee.value) router.replace('/employees')
 }
 
+async function onTimesDataChanged() {
+  await loadTimesBlock()
+  await loadBalance()
+}
+
 async function loadTimesBlock() {
   if (!employee.value) return
   timesLoading.value = true
@@ -442,7 +447,7 @@ async function submitVacationEdit() {
         :row-correction="
           canManageEmployee ? { mode: 'employee', employeeId: employee.id } : undefined
         "
-        @data-changed="loadTimesBlock"
+        @data-changed="onTimesDataChanged"
       />
     </div>
 

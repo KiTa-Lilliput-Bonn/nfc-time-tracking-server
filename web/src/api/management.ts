@@ -149,12 +149,19 @@ export async function waiveEmployeeCompensationDayClaim(employeeId: number, clai
 
 export async function createCorrection(
   employeeId: number,
-  body: {
-    work_period_id: number
-    corrected_in: string
-    corrected_out: string
-    reason: string
-  },
+  body:
+    | {
+        work_period_id: number
+        corrected_in: string
+        corrected_out: string
+        reason: string
+        disabled?: false
+      }
+    | {
+        work_period_id: number
+        disabled: true
+        reason: string
+      },
 ) {
   const { data } = await api.post<TimeCorrection>(`/employees/${employeeId}/corrections`, body)
   return data
