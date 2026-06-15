@@ -1,10 +1,10 @@
 # NFC Time Tracking Server — Docker mit persistenten Volumes.
-# Image nach Release: ghcr.io/waynenani/nfc-time-tracking-server:<tag>
+# Image nach Release: ghcr.io/kita-lilliput-bonn/nfc-time-tracking-server:<tag>
 # Lokal bauen: docker compose build
 
 services:
   nfc-time-tracking:
-    image: ghcr.io/waynenani/nfc-time-tracking-server:latest
+    image: ghcr.io/kita-lilliput-bonn/nfc-time-tracking-server:latest
     build: .
     ports:
       - "8080:8080"
