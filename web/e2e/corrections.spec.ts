@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Dialog } from '@playwright/test'
 
 import { apiLogin, loginAsAdmin } from './helpers/auth'
 import { E2E_WORK_DATE, germanDateFromIso } from './helpers/dates'
@@ -74,8 +74,15 @@ test('imported stamp can be disabled and shows in corrections table', async ({ p
   await expect(page.getByTestId('corrections-table')).toContainText(dateLabel)
   await expect(page.getByTestId('corrections-disable-btn')).toBeVisible()
 
-  page.once('dialog', (d) => d.accept('Falscher Stempel'))
-  page.once('dialog', (d) => d.accept())
+  const handleDialog = async (dialog: Dialog) => {
+    if (dialog.type() === 'prompt') {
+      await dialog.accept('Falscher Stempel')
+    } else {
+      await dialog.accept()
+      page.off('dialog', handleDialog)
+    }
+  }
+  page.on('dialog', handleDialog)
   await page.getByTestId('corrections-disable-btn').click()
 
   await expect(page.getByTestId('corrections-table')).toContainText('Deaktiviert')

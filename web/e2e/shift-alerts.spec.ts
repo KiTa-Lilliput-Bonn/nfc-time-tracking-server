@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 import { apiLogin, loginAsAdmin } from './helpers/auth'
 import { E2E_ALERT_DATE, germanDateFromIso } from './helpers/dates'
@@ -10,6 +10,14 @@ function longShiftPunchTimes(workDate: string): { punchIn: string; punchOut: str
     punchIn: `${workDate}T06:00:00.000Z`,
     punchOut: `${workDate}T18:30:00.000Z`,
   }
+}
+
+function shiftAlertRow(page: Page, displayName: string) {
+  return page.getByTestId('shift-alerts-table').locator('tr').filter({ hasText: displayName })
+}
+
+async function expectShiftAlertRowGone(page: Page, displayName: string) {
+  await expect(shiftAlertRow(page, displayName)).toHaveCount(0)
 }
 
 test('dashboard warns and list allows dismiss', async ({ page, request }) => {
@@ -35,11 +43,12 @@ test('dashboard warns and list allows dismiss', async ({ page, request }) => {
   await expect(table).toContainText(displayName)
   await expect(table).toContainText(germanDateFromIso(E2E_ALERT_DATE))
 
-  await page.getByTestId('shift-alert-dismiss-btn').first().click()
-  await expect(page.getByText('Keine auffälligen Arbeitszeiten.')).toBeVisible()
+  const row = shiftAlertRow(page, displayName)
+  await row.getByTestId('shift-alert-dismiss-btn').click()
+  await expectShiftAlertRowGone(page, displayName)
 
-  await page.goto('/dashboard')
-  await expect(page.getByTestId('dashboard-shift-alerts-warn')).toHaveCount(0)
+  await page.reload()
+  await expectShiftAlertRowGone(page, displayName)
 })
 
 test('correction removes shift alert', async ({ page, request }) => {
@@ -59,7 +68,8 @@ test('correction removes shift alert', async ({ page, request }) => {
   const table = page.getByTestId('shift-alerts-table')
   await expect(table).toContainText(displayName)
 
-  await page.getByTestId('shift-alert-correct-btn').first().click()
+  const row = shiftAlertRow(page, displayName)
+  await row.getByTestId('shift-alert-correct-btn').click()
   const dialog = page.getByRole('dialog', { name: 'Zeit korrigieren' })
   await expect(dialog).toBeVisible()
   await dialog.locator('input[type="time"]').nth(1).fill('16:00')
@@ -67,5 +77,5 @@ test('correction removes shift alert', async ({ page, request }) => {
   await dialog.getByRole('button', { name: 'Speichern' }).click()
   await expect(dialog).toBeHidden()
 
-  await expect(page.getByText('Keine auffälligen Arbeitszeiten.')).toBeVisible()
+  await expectShiftAlertRowGone(page, displayName)
 })
