@@ -36,7 +36,7 @@ test('dashboard warns and list allows dismiss', async ({ page, request }) => {
   await expect(table).toContainText(germanDateFromIso(E2E_ALERT_DATE))
 
   await page.getByTestId('shift-alert-dismiss-btn').first().click()
-  await expect(table).not.toContainText(displayName)
+  await expect(page.getByText('Keine auffälligen Arbeitszeiten.')).toBeVisible()
 
   await page.goto('/dashboard')
   await expect(page.getByTestId('dashboard-shift-alerts-warn')).toHaveCount(0)
@@ -63,9 +63,9 @@ test('correction removes shift alert', async ({ page, request }) => {
   const dialog = page.getByRole('dialog', { name: 'Zeit korrigieren' })
   await expect(dialog).toBeVisible()
   await dialog.locator('input[type="time"]').nth(1).fill('16:00')
-  await dialog.getByRole('textbox').fill('Korrektur E2E')
+  await dialog.locator('input[type="text"]').fill('Korrektur E2E')
   await dialog.getByRole('button', { name: 'Speichern' }).click()
   await expect(dialog).toBeHidden()
 
-  await expect(table).not.toContainText(displayName)
+  await expect(page.getByText('Keine auffälligen Arbeitszeiten.')).toBeVisible()
 })
