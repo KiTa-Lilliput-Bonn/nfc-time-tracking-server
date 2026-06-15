@@ -21,6 +21,7 @@ import {
   fetchClosureDays,
   fetchFixedNonWorkWeekdays,
   fetchScheduleGaps,
+  fetchShiftAlerts,
   fetchTeamOverview,
   fetchHolidays,
 } from '@/api/management'
@@ -86,6 +87,15 @@ const scheduleGapsBannerText = computed(() => {
     return 'Für 1 Tag ist im Dienstplan eine Schicht geplant, aber weder Arbeitszeit noch Abwesenheit hinterlegt.'
   }
   return `Für ${n} Tage sind im Dienstplan Schichten geplant, aber weder Arbeitszeit noch Abwesenheit hinterlegt.`
+})
+const shiftAlertsCount = ref(0)
+const shiftAlertsErr = ref('')
+const shiftAlertsBannerText = computed(() => {
+  const n = shiftAlertsCount.value
+  if (n === 1) {
+    return 'Bei 1 Tag liegen ungewöhnlich lange oder späte Arbeitszeiten vor.'
+  }
+  return `Bei ${n} Tagen liegen ungewöhnlich lange oder späte Arbeitszeiten vor.`
 })
 const yesterdayDisplayISO = computed(() => {
   const d = new Date()
@@ -244,6 +254,18 @@ async function loadScheduleGaps() {
   }
 }
 
+async function loadShiftAlerts() {
+  if (!isLeitung.value) return
+  shiftAlertsErr.value = ''
+  try {
+    const data = await fetchShiftAlerts()
+    shiftAlertsCount.value = data.count
+  } catch {
+    shiftAlertsCount.value = 0
+    shiftAlertsErr.value = 'Hinweis zu auffälligen Arbeitszeiten konnte nicht geladen werden.'
+  }
+}
+
 async function load() {
   loading.value = true
   err.value = ''
@@ -308,7 +330,7 @@ async function load() {
 
   // Unabhängig von Fehlern oben (z. B. /me/vacation, /me/balance): Team-Übersicht immer laden
   if (isLeitung.value) {
-    await Promise.all([loadTeamOverview(), loadScheduleGaps()])
+    await Promise.all([loadTeamOverview(), loadScheduleGaps(), loadShiftAlerts()])
   }
 }
 
@@ -501,6 +523,19 @@ async function submitQuickSick() {
         </RouterLink>
       </Message>
       <p v-else-if="isLeitung && scheduleGapsErr" class="schedule-gaps-err">{{ scheduleGapsErr }}</p>
+      <Message
+        v-if="isLeitung && shiftAlertsCount > 0"
+        severity="warn"
+        :closable="false"
+        class="shift-alerts-warn"
+        data-testid="dashboard-shift-alerts-warn"
+      >
+        {{ shiftAlertsBannerText }}
+        <RouterLink class="shift-alerts-warn-link" :to="{ name: 'shift-alerts' }">
+          {{ shiftAlertsCount === 1 ? 'Tag anzeigen' : `${shiftAlertsCount} Tage anzeigen` }}
+        </RouterLink>
+      </Message>
+      <p v-else-if="isLeitung && shiftAlertsErr" class="shift-alerts-err">{{ shiftAlertsErr }}</p>
       <div class="cards">
         <Card v-if="isLeitung">
           <template #title>Krankmeldung</template>
@@ -869,6 +904,19 @@ async function submitQuickSick() {
   color: inherit;
 }
 .schedule-gaps-err {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+.shift-alerts-warn {
+  margin: 0 0 1rem;
+}
+.shift-alerts-warn-link {
+  margin-left: 0.35rem;
+  font-weight: 600;
+  color: inherit;
+}
+.shift-alerts-err {
   margin: 0 0 1rem;
   font-size: 0.85rem;
   color: #94a3b8;

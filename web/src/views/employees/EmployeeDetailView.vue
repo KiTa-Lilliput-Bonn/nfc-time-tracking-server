@@ -48,9 +48,11 @@ import {
   endOfISOWeek,
   formatGermanDate,
   formatGermanDateTime,
+  mondayOfISOWeek,
   startOfISOWeek,
   toISODateLocal,
 } from '@/utils/dates'
+import { clearRouteQueryKeys, queryPositiveInt } from '@/utils/leitungDeepLink'
 import { canManageEmployeeByRole } from '@/utils/roles'
 import { enumerateWorkdayISO, vacationDisplayGapOnlySkippable } from '@/utils/workdays'
 import { useAuthStore } from '@/stores/auth'
@@ -170,7 +172,22 @@ async function loadEmployeeVacation() {
   }
 }
 
+function applyWeekFromQuery() {
+  const y = queryPositiveInt(route.query.year)
+  const w = queryPositiveInt(route.query.week)
+  if (y != null && w != null && w >= 1 && w <= 53) {
+    const mon = mondayOfISOWeek(y, w)
+    from.value = mon
+    to.value = endOfISOWeek(mon)
+    tab.value = 'times'
+  }
+  if (route.query.year != null || route.query.week != null) {
+    clearRouteQueryKeys(router, ['year', 'week'])
+  }
+}
+
 onMounted(async () => {
+  applyWeekFromQuery()
   await resolveEmployee()
   await loadTimesBlock()
   await loadBalance()

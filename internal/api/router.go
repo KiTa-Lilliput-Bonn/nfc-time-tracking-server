@@ -47,6 +47,7 @@ type Deps struct {
 	ClosureDays           store.ClosureDayStore
 	Holidays              store.HolidayStore
 	Settings              store.SettingsStore
+	ShiftAlertDismissals  store.ShiftAlertDismissalStore
 
 	ApiPairedClients   store.ApiPairedClientStore
 	ApiPairingSessions store.ApiPairingSessionStore
@@ -177,7 +178,10 @@ func NewRouter(d Deps) http.Handler {
 			FixedNonWorkWeekdays: d.FixedNonWorkWeekdays,
 			ScheduleBound:        d.ScheduleBound,
 			Schedules:            d.Schedules,
+			ShiftAlertDismissals: d.ShiftAlertDismissals,
+			Audit:                d.Audit,
 		}
+		sah := &handler.ShiftAlertConfigHandler{Settings: d.Settings, Audit: d.Audit}
 		hh := &handler.HolidayHandler{Holidays: d.Holidays, Audit: d.Audit}
 		gh := &handler.GroupHandler{Groups: d.GroupStore, Audit: d.Audit}
 
@@ -186,6 +190,10 @@ func NewRouter(d Deps) http.Handler {
 			r.Use(apimw.RequireRole(leitung...))
 			r.Get("/dashboard/team-overview", dh.TeamOverview)
 			r.Get("/dashboard/schedule-gaps", dh.ScheduleGaps)
+			r.Get("/dashboard/shift-alerts", dh.ShiftAlerts)
+			r.Post("/dashboard/shift-alerts/dismiss", dh.DismissShiftAlert)
+			r.Get("/shift-alert-config", sah.Get)
+			r.Put("/shift-alert-config", sah.Put)
 			r.Get("/employees", eh.List)
 			r.Post("/employees", eh.Create)
 			r.Patch("/employees/{id}", eh.Patch)

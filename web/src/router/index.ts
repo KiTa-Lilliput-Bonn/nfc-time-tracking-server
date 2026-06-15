@@ -133,6 +133,12 @@ const router = createRouter({
           meta: { title: 'Offene Dienstplan-Tage', roles: ['leitung', 'superadmin'] },
         },
         {
+          path: 'shift-alerts',
+          name: 'shift-alerts',
+          component: () => import('@/views/leitung/ShiftAlertsView.vue'),
+          meta: { title: 'Auffällige Arbeitszeiten', roles: ['leitung', 'superadmin'] },
+        },
+        {
           path: 'admin/users',
           name: 'admin-users',
           component: () => import('@/views/admin/UsersView.vue'),

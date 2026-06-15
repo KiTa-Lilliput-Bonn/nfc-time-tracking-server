@@ -161,6 +161,11 @@ type SettingsStore interface {
 	GetAll(ctx context.Context) ([]model.Setting, error)
 }
 
+type ShiftAlertDismissalStore interface {
+	Create(ctx context.Context, userID int, workDate string, dismissedBy int) error
+	ListByDateRange(ctx context.Context, from, to string) ([]model.ShiftAlertDismissal, error)
+}
+
 // ApiPairedClientStore manages bearer secrets for the device/LAN API (superadmin only via JWT handlers).
 type ApiPairedClientStore interface {
 	Insert(ctx context.Context, c *model.ApiPairedClient) error

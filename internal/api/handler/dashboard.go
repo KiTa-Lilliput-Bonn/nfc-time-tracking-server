@@ -1,14 +1,18 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	apimw "nfc-time-tracking-server/internal/api/middleware"
 	"nfc-time-tracking-server/internal/api/response"
+	"nfc-time-tracking-server/internal/audit"
 	"nfc-time-tracking-server/internal/service/schedulegaps"
+	"nfc-time-tracking-server/internal/service/shiftalerts"
 	"nfc-time-tracking-server/internal/service/teamoverview"
 	"nfc-time-tracking-server/internal/store"
 )
@@ -28,6 +32,8 @@ type DashboardHandler struct {
 	Settings             store.SettingsStore
 	VacationEnt store.VacationEntitlementStore
 	Schedules   store.ScheduleStore
+	ShiftAlertDismissals store.ShiftAlertDismissalStore
+	Audit       *audit.Logger
 }
 
 func (h *DashboardHandler) teamDeps() teamoverview.Deps {
@@ -95,6 +101,74 @@ func (h *DashboardHandler) ScheduleGaps(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	response.JSON(w, http.StatusOK, res)
+}
+
+func (h *DashboardHandler) shiftAlertDeps() shiftalerts.Deps {
+	return shiftalerts.Deps{
+		Users:       h.Users,
+		WorkPeriods: h.WorkPeriods,
+		Corrections: h.Corrections,
+		WeeklyHours: h.WeeklyHours,
+		Dismissals:  h.ShiftAlertDismissals,
+	}
+}
+
+// ShiftAlerts returns days with unusually long or late recorded work times through yesterday.
+func (h *DashboardHandler) ShiftAlerts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	cfg, err := shiftalerts.LoadConfig(ctx, h.Settings)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "settings failed")
+		return
+	}
+	res, err := shiftalerts.Build(ctx, h.shiftAlertDeps(), cfg, time.Now())
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.JSON(w, http.StatusOK, res)
+}
+
+type shiftAlertDismissBody struct {
+	UserID   int    `json:"user_id"`
+	WorkDate string `json:"work_date"`
+}
+
+// DismissShiftAlert marks a user/day shift alert as reviewed (POST /dashboard/shift-alerts/dismiss).
+func (h *DashboardHandler) DismissShiftAlert(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var body shiftAlertDismissBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	body.WorkDate = strings.TrimSpace(body.WorkDate)
+	if body.UserID <= 0 || body.WorkDate == "" {
+		response.Error(w, http.StatusBadRequest, "user_id and work_date required")
+		return
+	}
+	actorID, ok := ctx.Value(apimw.CtxUserID).(int)
+	if !ok || actorID <= 0 {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if h.ShiftAlertDismissals == nil {
+		response.Error(w, http.StatusInternalServerError, "not configured")
+		return
+	}
+	if err := h.ShiftAlertDismissals.Create(ctx, body.UserID, body.WorkDate, actorID); err != nil {
+		response.Error(w, http.StatusInternalServerError, "save failed")
+		return
+	}
+	logAudit(h.Audit, ctx, audit.Entry{
+		Action: audit.ActionCreate, EntityType: audit.EntityShiftAlertDismissal,
+		EntityID: auditID(body.UserID) + ":" + body.WorkDate,
+		TargetUserID: auditTarget(body.UserID),
+		Summary: audit.JSONSummary(map[string]any{
+			"user_id": body.UserID, "work_date": body.WorkDate,
+		}),
+	})
+	response.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func parseVacationYearParam(q interface{ Get(string) string }) (int, error) {

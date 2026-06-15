@@ -18,6 +18,8 @@ import type {
   ScheduleExcelPastPreview,
   TeamMeeting,
   ScheduleGapsResponse,
+  ShiftAlertConfig,
+  ShiftAlertsResponse,
   TeamOverviewRow,
   TimeCorrection,
   VacationBalance,
@@ -455,6 +457,30 @@ export async function fetchScheduleGaps(): Promise<ScheduleGapsResponse> {
     count: data.count,
     items: data.items ?? [],
   }
+}
+
+export async function fetchShiftAlerts(): Promise<ShiftAlertsResponse> {
+  const { data } = await api.get<ShiftAlertsResponse>('/dashboard/shift-alerts')
+  return {
+    from: data.from,
+    through: data.through,
+    count: data.count,
+    items: data.items ?? [],
+  }
+}
+
+export async function dismissShiftAlert(userId: number, workDate: string): Promise<void> {
+  await api.post('/dashboard/shift-alerts/dismiss', { user_id: userId, work_date: workDate })
+}
+
+export async function fetchShiftAlertConfig(): Promise<ShiftAlertConfig> {
+  const { data } = await api.get<ShiftAlertConfig>('/shift-alert-config')
+  return data
+}
+
+export async function putShiftAlertConfig(body: ShiftAlertConfig): Promise<ShiftAlertConfig> {
+  const { data } = await api.put<ShiftAlertConfig>('/shift-alert-config', body)
+  return data
 }
 
 /** Erreichbarkeit des Android-LAN-Geräts (Stamps); nur Leitung/Superadmin. */

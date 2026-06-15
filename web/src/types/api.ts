@@ -414,6 +414,31 @@ export interface ScheduleGapsResponse {
   items: ScheduleGapItem[]
 }
 
+export type ShiftAlertReason = 'long_duration' | 'late_end'
+
+export interface ShiftAlertItem {
+  user_id: number
+  display_name: string
+  work_date: string
+  total_duration_minutes: number
+  latest_end: string
+  reasons: ShiftAlertReason[]
+  iso_week_year: number
+  iso_week: number
+}
+
+export interface ShiftAlertsResponse {
+  from: string
+  through: string
+  count: number
+  items: ShiftAlertItem[]
+}
+
+export interface ShiftAlertConfig {
+  max_hours: number
+  late_end_time: string
+}
+
 export interface TeamOverviewRow {
   id: number
   display_name: string

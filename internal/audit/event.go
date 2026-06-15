@@ -29,6 +29,7 @@ const (
 	EntityHoliday              = "holiday"
 	EntityClosureDay           = "closure_day"
 	EntitySetting              = "setting"
+	EntityShiftAlertDismissal  = "shift_alert_dismissal"
 	EntityAPIPairedClient      = "api_paired_client"
 	EntityLanStampsSync        = "lan_stamps_sync"
 )

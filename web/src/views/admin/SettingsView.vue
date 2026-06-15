@@ -15,6 +15,7 @@ import { useToast } from 'primevue/usetoast'
 
 import AndroidApiPairingSection from '@/components/AndroidApiPairingSection.vue'
 import BackupPathPickerDialog from '@/components/BackupPathPickerDialog.vue'
+import ShiftAlertSettingsPanel from '@/components/ShiftAlertSettingsPanel.vue'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import {
   fetchBackupStatus,
@@ -402,6 +403,8 @@ function removeRule(i: number) {
       </template>
     </Card>
 
+    <ShiftAlertSettingsPanel class="shift-alert-settings-card" />
+
     <Card class="backup-card">
       <template #title>Datenbank-Backup</template>
       <template #content>
@@ -581,6 +584,9 @@ function removeRule(i: number) {
   width: 100%;
 }
 .backup-card {
+  margin-top: 1.25rem;
+}
+.shift-alert-settings-card {
   margin-top: 1.25rem;
 }
 .backup-grid {
