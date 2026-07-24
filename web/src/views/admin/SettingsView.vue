@@ -10,7 +10,6 @@ import InputGroup from 'primevue/inputgroup'
 import InputGroupAddon from 'primevue/inputgroupaddon'
 import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
-import Select from 'primevue/select'
 import { useToast } from 'primevue/usetoast'
 
 import AndroidApiPairingSection from '@/components/AndroidApiPairingSection.vue'
@@ -37,14 +36,6 @@ const backupSaving = ref(false)
 const backupInitLoading = ref(false)
 const backupRunLoading = ref(false)
 
-const roundingOptions = [
-  { label: '5 Minuten', value: 5 },
-  { label: '10 Minuten', value: 10 },
-  { label: '15 Minuten', value: 15 },
-  { label: '30 Minuten', value: 30 },
-]
-
-const rounding = ref(15)
 const breakRules = ref<BreakRule[]>([])
 
 const stampsPollIntervalSeconds = ref(300)
@@ -87,8 +78,6 @@ async function loadSettings() {
   loading.value = true
   try {
     const list = await fetchSettings()
-    const r = parseInt(settingVal(list, 'rounding_minutes', '15'), 10)
-    rounding.value = [5, 10, 15, 30].includes(r) ? r : 15
     const brRaw = settingVal(
       list,
       'break_rules',
@@ -146,7 +135,6 @@ onMounted(load)
 async function saveAll() {
   saving.value = true
   try {
-    await putSetting('rounding_minutes', String(rounding.value))
     await putSetting('break_rules', JSON.stringify(breakRules.value))
 
     await putSetting('stamps_poll_interval_seconds', String(Math.max(0, stampsPollIntervalSeconds.value)))
@@ -342,22 +330,12 @@ function removeRule(i: number) {
         <div v-if="loading" class="muted">Laden…</div>
         <template v-else>
           <section class="sec">
-            <h3 class="h">Rundung (Netto-Arbeitszeit)</h3>
-            <Select
-              v-model="rounding"
-              :options="roundingOptions"
-              option-label="label"
-              option-value="value"
-              class="field"
-            />
-          </section>
-
-          <section class="sec">
             <h3 class="h">Pausenregeln</h3>
             <p class="muted small">
-              Pro zusammenhängendem Arbeitsblock (Brutto, nach Schichtbeginn): ab „Mindest-Arbeitsstunden“ wird
-              die angegebene „Pause (Minuten)“ für diesen Block abgezogen — unabhängig von Ausstempel-Pausen
-              dazwischen (siehe Backend-Zeitberechnung).
+              Berechnung auf Tagesbrutto (Blöcke minutengenau aufgerundet). Ab jeder Schwelle
+              „Mindest-Arbeitsstunden“ wird jede weitere Minute als Pause gewertet, bis die angegebene
+              Pausenzeit erreicht ist. Ausstempel-Zeiten zwischen Arbeitsblöcken zählen als erfüllte Pause
+              und reduzieren den automatischen Abzug.
             </p>
             <DataTable :value="breakRules" size="small" class="tbl">
               <Column header="Mindest-Arbeitsstunden">

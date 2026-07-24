@@ -1,6 +1,7 @@
 package daycalc
 
 import (
+	"sort"
 	"time"
 
 	"nfc-time-tracking-server/internal/model"
@@ -50,33 +51,59 @@ func AbsenceCreditHours(day time.Time, daily float64, fixedNonWork []int, hol *m
 	return 0
 }
 
-// NetHours mirrors export row logic: for each closed non-break work period, gross duration (after shift-start
-// clipping) minus timecalc.CalcBreakDeduction for that block alone (stamped breaks are not used). Legacy rows
-// with is_break are ignored. Sum is clamped at zero, then timecalc.RoundDown to roundMin-minute grid.
-// Incomplete periods (no punch-out) are skipped.
-func NetHours(wps []model.WorkPeriod, breakRules []model.BreakRule, roundMin int, shift *ShiftBounds) float64 {
+type workInterval struct {
+	start time.Time
+	end   time.Time
+	dur   time.Duration
+}
+
+// NetHours computes day net hours: ceil each closed non-break block to whole minutes, sum day gross,
+// credit gaps between consecutive blocks as stamped breaks, apply progressive break deduction once
+// for the day total. Legacy is_break rows are ignored. Incomplete periods are skipped.
+func NetHours(wps []model.WorkPeriod, breakRules []model.BreakRule, shift *ShiftBounds) float64 {
 	loc := time.Local
-	var gross time.Duration
-	var ded time.Duration
+	var intervals []workInterval
 	for _, wp := range wps {
 		if wp.PunchOut == nil || wp.IsBreak {
 			continue
 		}
-		dur, ok := effectiveWorkDuration(wp, shift, loc)
+		start, end, ok := effectiveWorkInterval(wp, shift, loc)
 		if !ok {
 			continue
 		}
-		blockDed := timecalc.CalcBreakDeduction(dur, 0, breakRules)
-		if blockDed > dur {
-			blockDed = dur
+		dur := timecalc.RoundUpToMinute(end.Sub(start))
+		if dur <= 0 {
+			continue
 		}
-		gross += dur
-		ded += blockDed
+		intervals = append(intervals, workInterval{start: start, end: end, dur: dur})
+	}
+	if len(intervals) == 0 {
+		return 0
+	}
+	sort.Slice(intervals, func(i, j int) bool {
+		return intervals[i].start.Before(intervals[j].start)
+	})
+
+	var gross time.Duration
+	for _, iv := range intervals {
+		gross += iv.dur
+	}
+
+	var stamped time.Duration
+	for i := 0; i+1 < len(intervals); i++ {
+		gap := intervals[i+1].start.Sub(intervals[i].end)
+		if gap > 0 {
+			stamped += timecalc.RoundUpToMinute(gap)
+		}
+	}
+
+	ded := timecalc.CalcBreakDeduction(gross, stamped, breakRules)
+	if ded > gross {
+		ded = gross
 	}
 	net := gross - ded
 	if net < 0 {
 		net = 0
 	}
-	net = timecalc.RoundDown(net, roundMin)
 	return net.Hours()
 }

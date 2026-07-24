@@ -32,7 +32,6 @@ const props = defineProps<{
   /** Pro Kalendertag (YYYY-MM-DD): Schicht aus dem Dienstplan — für effektiven Beginn max(Stempel, Schichtbeginn). */
   scheduleByDate?: Record<string, { shift_start: string; shift_end: string }>
   breakRules?: BreakRule[]
-  roundingMinutes?: number
   weeklyHours?: WeeklyHours[]
   fixedNonWorkWeekdays?: number[]
   fixedNonWorkWeekdaysHistory?: FixedNonWorkWeekdays[]
@@ -60,7 +59,6 @@ const rows = computed<TimeTableRow[]>(() =>
     absenceCredits: props.absenceCredits,
     scheduleByDate: props.scheduleByDate,
     breakRules: props.breakRules,
-    roundingMinutes: props.roundingMinutes,
     weeklyHours: props.weeklyHours,
     fixedNonWorkWeekdays: props.fixedNonWorkWeekdays,
     fixedNonWorkWeekdaysHistory: props.fixedNonWorkWeekdaysHistory,

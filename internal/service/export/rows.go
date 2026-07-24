@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"nfc-time-tracking-server/internal/model"
@@ -73,12 +72,6 @@ func BuildDayRows(ctx context.Context, d Data, userID int, from, to string) ([]D
 		scheduleBoundRows, _ = d.ScheduleBound.ListByUser(ctx, userID)
 	}
 
-	roundMin := 15
-	if v, err := d.Settings.Get(ctx, "rounding_minutes"); err == nil {
-		if n, e := strconv.Atoi(v); e == nil && n > 0 {
-			roundMin = n
-		}
-	}
 	var breakRules []model.BreakRule
 	if v, err := d.Settings.Get(ctx, "break_rules"); err == nil {
 		_ = json.Unmarshal([]byte(v), &breakRules)
@@ -105,7 +98,7 @@ func BuildDayRows(ctx context.Context, d Data, userID int, from, to string) ([]D
 		}
 
 		grossH := daycalc.GrossWorkHours(wps, shiftBounds)
-		netH := daycalc.NetHours(wps, breakRules, roundMin, shiftBounds)
+		netH := daycalc.NetHours(wps, breakRules, shiftBounds)
 
 		wh, _ := d.WeeklyHours.GetForDate(ctx, userID, ds)
 		fixed := model.FixedNonWorkWeekdaysForDate(fnwRows, ds)

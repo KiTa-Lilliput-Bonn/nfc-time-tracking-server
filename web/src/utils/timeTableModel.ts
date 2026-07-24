@@ -123,32 +123,33 @@ function round2(x: number) {
   return Math.round(x * 100) / 100
 }
 
-function roundDownMinutes(totalMinutes: number, gridMin: number) {
-  if (gridMin <= 0) return totalMinutes
-  return Math.floor(totalMinutes / gridMin) * gridMin
+function ceilMinutesBetween(aISO: string, bISO: string): number {
+  const a = new Date(aISO).getTime()
+  const b = new Date(bISO).getTime()
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return 0
+  return Math.ceil((b - a) / 60_000)
 }
 
 function calcBreakDeductionMinutes(grossWorkMinutes: number, stampedBreakMinutes: number, rules: BreakRule[]) {
-  if (!rules?.length) return 0
-  const grossH = grossWorkMinutes / 60
+  if (!rules?.length || grossWorkMinutes <= 0) return 0
+  const sorted = [...rules].sort((a, b) =>
+    a.min_work_hours === b.min_work_hours
+      ? a.break_minutes - b.break_minutes
+      : a.min_work_hours - b.min_work_hours,
+  )
   let required = 0
-  let bestThreshold = 0
-  for (const r of rules) {
-    if (grossH > r.min_work_hours && r.min_work_hours >= bestThreshold) {
-      bestThreshold = r.min_work_hours
-      required = r.break_minutes
-    }
+  let prevRequired = 0
+  for (const r of sorted) {
+    let incremental = r.break_minutes - prevRequired
+    if (incremental < 0) incremental = 0
+    const thresholdMin = Math.round(r.min_work_hours * 60)
+    const overMin = Math.max(0, grossWorkMinutes - thresholdMin)
+    required += Math.min(incremental, overMin)
+    prevRequired = r.break_minutes
   }
   if (required <= 0) return 0
   if (stampedBreakMinutes >= required) return 0
   return required - stampedBreakMinutes
-}
-
-function hoursBetween(aISO: string, bISO: string) {
-  const a = new Date(aISO).getTime()
-  const b = new Date(bISO).getTime()
-  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return 0
-  return round2((b - a) / 3_600_000)
 }
 
 function scheduledWorkdaysPerWeek(fixed: number[] | undefined): number {
@@ -221,7 +222,6 @@ export function buildTimeTableRows(opts: {
   absenceCredits?: AbsenceCredit[]
   scheduleByDate?: Record<string, { shift_start: string; shift_end: string }>
   breakRules?: BreakRule[]
-  roundingMinutes?: number
   weeklyHours?: WeeklyHours[]
   fixedNonWorkWeekdays?: number[]
   fixedNonWorkWeekdaysHistory?: FixedNonWorkWeekdays[]
@@ -229,7 +229,6 @@ export function buildTimeTableRows(opts: {
 }): TimeTableRow[] {
   const rules: BreakRule[] =
     opts.breakRules && opts.breakRules.length ? opts.breakRules : DEFAULT_BREAK_RULES
-  const roundMin = opts.roundingMinutes ?? 15
   const absMap = absenceByDate(opts.absences)
   const holMap = holidayByDate(opts.holidays)
   const absCreditMap = absenceCreditByDate(opts.absenceCredits)
@@ -338,6 +337,14 @@ export function buildTimeTableRows(opts: {
     }
 
     const dayRows: TimeTableRow[] = []
+    type ClosedMeta = {
+      rowIndex: number
+      effectiveIn: string
+      effectiveOut: string
+      blockMin: number
+    }
+    const closedMeta: ClosedMeta[] = []
+
     for (const p of candidates) {
       const corr = corrMap.get(p.id)
       const disabled = isPeriodDisabled(corr)
@@ -401,13 +408,13 @@ export function buildTimeTableRows(opts: {
         continue
       }
 
-      const blockMin = Math.round(hoursBetween(effectiveIn, effectiveOut) * 60)
-      let blockDed = calcBreakDeductionMinutes(blockMin, 0, rules)
-      if (blockDed > blockMin) blockDed = blockMin
-      let netMin = blockMin - blockDed
-      if (netMin < 0) netMin = 0
-      netMin = roundDownMinutes(netMin, roundMin)
-
+      const blockMin = ceilMinutesBetween(effectiveIn, effectiveOut)
+      closedMeta.push({
+        rowIndex: dayRows.length,
+        effectiveIn,
+        effectiveOut,
+        blockMin,
+      })
       dayRows.push({
         rowKey: `${workDate}-wp${p.id}`,
         workDate,
@@ -416,12 +423,29 @@ export function buildTimeTableRows(opts: {
         stampInEarliest: rawIn,
         effectiveOut,
         gross: round2(blockMin / 60),
-        net: round2(netMin / 60),
+        net: round2(blockMin / 60),
         notes: '',
         rowHint,
         candidates: [p],
         isDisabled: false,
       })
+    }
+
+    let dayGrossMin = 0
+    let stampedBreakMin = 0
+    for (let i = 0; i < closedMeta.length; i++) {
+      dayGrossMin += closedMeta[i]!.blockMin
+      if (i > 0) {
+        stampedBreakMin += ceilMinutesBetween(closedMeta[i - 1]!.effectiveOut, closedMeta[i]!.effectiveIn)
+      }
+    }
+    let dayDed = calcBreakDeductionMinutes(dayGrossMin, stampedBreakMin, rules)
+    if (dayDed > dayGrossMin) dayDed = dayGrossMin
+    let remDed = dayDed
+    for (const m of closedMeta) {
+      const take = Math.min(m.blockMin, remDed)
+      remDed -= take
+      dayRows[m.rowIndex]!.net = round2((m.blockMin - take) / 60)
     }
 
     const credIdx = dayRows.findIndex((r) => r.effectiveOut && !r.isDisabled)

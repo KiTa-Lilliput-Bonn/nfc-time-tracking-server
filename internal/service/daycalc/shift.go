@@ -81,32 +81,33 @@ func parseClockOnDay(dayYYYYMMDD, hhmm string, loc *time.Location) (time.Time, b
 	return time.Date(base.Year(), base.Month(), base.Day(), h, m, 0, 0, loc), true
 }
 
-// effectiveWorkDuration returns the duration for a closed non-break period after applying
-// effektiver_start = max(punch_in, shift_start) when shift bounds have a start time.
-func effectiveWorkDuration(wp model.WorkPeriod, shift *ShiftBounds, loc *time.Location) (time.Duration, bool) {
+// effectiveWorkInterval returns clipped start/end for a closed non-break period
+// (effektiver_start = max(punch_in, shift_start) when shift bounds have a start time).
+func effectiveWorkInterval(wp model.WorkPeriod, shift *ShiftBounds, loc *time.Location) (time.Time, time.Time, bool) {
 	if wp.IsBreak || wp.PunchOut == nil {
-		return 0, false
+		return time.Time{}, time.Time{}, false
 	}
 	day := workCalendarDate(wp, loc)
 	pin := wp.PunchIn
 	pout := *wp.PunchOut
-	if shift == nil || strings.TrimSpace(shift.Start) == "" {
-		if !pin.Before(pout) {
-			return 0, false
+	if shift != nil && strings.TrimSpace(shift.Start) != "" {
+		if st, ok := parseClockOnDay(day, shift.Start, loc); ok {
+			if wp.Source != "manual" && pin.Before(st) {
+				pin = st
+			}
 		}
-		return pout.Sub(pin), true
-	}
-	st, ok := parseClockOnDay(day, shift.Start, loc)
-	if !ok {
-		if !pin.Before(pout) {
-			return 0, false
-		}
-		return pout.Sub(pin), true
-	}
-	if wp.Source != "manual" && pin.Before(st) {
-		pin = st
 	}
 	if !pin.Before(pout) {
+		return time.Time{}, time.Time{}, false
+	}
+	return pin, pout, true
+}
+
+// effectiveWorkDuration returns the duration for a closed non-break period after applying
+// effektiver_start = max(punch_in, shift_start) when shift bounds have a start time.
+func effectiveWorkDuration(wp model.WorkPeriod, shift *ShiftBounds, loc *time.Location) (time.Duration, bool) {
+	pin, pout, ok := effectiveWorkInterval(wp, shift, loc)
+	if !ok {
 		return 0, false
 	}
 	return pout.Sub(pin), true

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 	"time"
 
@@ -53,7 +52,7 @@ func SumRange(ctx context.Context, d Deps, userID int, from, to string) (RangeTo
 	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, loc)
 	end = time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, loc)
 
-	roundMin, breakRules := loadExportSettings(ctx, d.Settings)
+	breakRules := loadBreakRules(ctx, d.Settings)
 
 	var fnwRows []model.FixedNonWorkWeekdays
 	if d.FixedNonWorkWeekdays != nil {
@@ -131,7 +130,7 @@ func SumRange(ctx context.Context, d Deps, userID int, from, to string) (RangeTo
 				shiftBounds = daycalc.ShiftBoundsIfBound(sch, bound)
 			}
 		}
-		net := daycalc.NetHours(dayWps, breakRules, roundMin, shiftBounds)
+		net := daycalc.NetHours(dayWps, breakRules, shiftBounds)
 
 		fixed := model.FixedNonWorkWeekdaysForDate(fnwRows, ds)
 		var daily float64
@@ -155,20 +154,14 @@ func SumRange(ctx context.Context, d Deps, userID int, from, to string) (RangeTo
 	}, nil
 }
 
-func loadExportSettings(ctx context.Context, s store.SettingsStore) (roundMin int, breakRules []model.BreakRule) {
-	roundMin = 15
+func loadBreakRules(ctx context.Context, s store.SettingsStore) (breakRules []model.BreakRule) {
 	if s == nil {
-		return roundMin, breakRules
-	}
-	if v, err := s.Get(ctx, "rounding_minutes"); err == nil {
-		if n, e := strconv.Atoi(v); e == nil && n > 0 {
-			roundMin = n
-		}
+		return breakRules
 	}
 	if v, err := s.Get(ctx, "break_rules"); err == nil {
 		_ = json.Unmarshal([]byte(v), &breakRules)
 	}
-	return roundMin, breakRules
+	return breakRules
 }
 
 func groupWorkPeriodsByDate(wps []model.WorkPeriod) map[string][]model.WorkPeriod {
