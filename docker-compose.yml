@@ -1,6 +1,9 @@
 # NFC Time Tracking Server — Docker mit persistenten Volumes.
 # Image nach Release: ghcr.io/kita-lilliput-bonn/nfc-time-tracking-server:<tag>
 # Lokal bauen: docker compose build
+#
+# Watchtower prüft nachts (03:00 Europe/Berlin), ob ein neues Image verfügbar ist,
+# und aktualisiert nur Container mit dem Label com.centurylinklabs.watchtower.enable=true.
 
 services:
   nfc-time-tracking:
@@ -16,6 +19,20 @@ services:
     volumes:
       - nfc-data:/data
       - nfc-backup:/backup
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    restart: unless-stopped
+
+  watchtower:
+    image: nickfedor/watchtower:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: Europe/Berlin
+      # 6-Feld-Cron (mit Sekunden): täglich um 03:00
+      WATCHTOWER_SCHEDULE: "0 0 3 * * *"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_LABEL_ENABLE: "true"
     restart: unless-stopped
 
 volumes:
