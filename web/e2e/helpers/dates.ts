@@ -1,6 +1,6 @@
 /**
  * Rolling anchors for the current ISO week (Playwright: timezoneId UTC, TZ=UTC).
- * Keeps seeded API data inside the default UI week filter (Mon–Sun).
+ * Schedule UI shows Mon–Fri only; E2E_SCHEDULE_DATE is clamped to that range.
  */
 function pad2(n: number): string {
   return String(n).padStart(2, '0')
@@ -16,6 +16,15 @@ function startOfISOWeek(d: Date): Date {
   const diff = day === 0 ? -6 : 1 - day
   x.setDate(x.getDate() + diff)
   x.setHours(0, 0, 0, 0)
+  return x
+}
+
+/** Schedule grid is Mo–Fr; Sat/Sun → previous Friday. */
+function clampToScheduleWeekday(d: Date): Date {
+  const x = new Date(d)
+  const day = x.getDay()
+  if (day === 0) x.setDate(x.getDate() - 2)
+  else if (day === 6) x.setDate(x.getDate() - 1)
   return x
 }
 
@@ -49,7 +58,8 @@ gapAnchor.setDate(gapAnchor.getDate() - 1)
 export const E2E_GAP_DATE = toIsoDateLocal(gapAnchor)
 export const E2E_ALERT_DATE = E2E_GAP_DATE
 export const E2E_ABSENCE_DATE = E2E_WORK_DATE
-export const E2E_SCHEDULE_DATE = E2E_WORK_DATE
+/** Letzter Mo–Fr-Tag ≤ heute (Dienstplan-Raster hat kein Wochenende). */
+export const E2E_SCHEDULE_DATE = toIsoDateLocal(clampToScheduleWeekday(anchor))
 export const E2E_WEEK_YEAR = isoYear
 export const E2E_WEEK = isoWeek
 
