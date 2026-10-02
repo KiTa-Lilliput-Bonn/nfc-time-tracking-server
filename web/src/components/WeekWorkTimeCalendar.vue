@@ -337,7 +337,7 @@ function onWorkBlockClick(iso: string, workPeriodId: number) {
 <template>
   <div class="wc-root">
     <div v-if="loading" class="wc-loading muted">Laden…</div>
-    <div class="wc-shell" :class="{ dim: loading }">
+    <div class="wc-shell" :class="{ dim: loading, 'wc-shell--wide': useDualLayout && weekHasAnyBookedTime }">
       <div class="wc-head">
         <div class="wc-corner" />
         <div
@@ -520,6 +520,21 @@ function onWorkBlockClick(iso: string, workPeriodId: number) {
   background: rgba(248, 250, 252, 0.85);
   border-radius: 8px;
 }
+/* Horizontal scrollt die ganze Woche (Kopf + Raster) gemeinsam, damit die Tagesköpfe über ihren Spalten bleiben. */
+.wc-shell {
+  overflow-x: auto;
+  border-radius: 8px;
+}
+.wc-shell > .wc-head,
+.wc-shell > .wc-legend,
+.wc-shell > .wc-scroll {
+  min-width: 520px;
+}
+.wc-shell--wide > .wc-head,
+.wc-shell--wide > .wc-legend,
+.wc-shell--wide > .wc-scroll {
+  min-width: 640px;
+}
 .wc-shell.dim {
   opacity: 0.55;
   pointer-events: none;
@@ -609,7 +624,7 @@ function onWorkBlockClick(iso: string, workPeriodId: number) {
 .wc-scroll {
   max-height: min(70vh, 720px);
   overflow-y: auto;
-  overflow-x: auto;
+  overflow-x: hidden;
   background: #f1f5f9;
   border-radius: 0 0 8px 8px;
 }

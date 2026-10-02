@@ -2,156 +2,200 @@
 import { computed } from 'vue'
 
 import type { VacationBalance } from '@/types/api'
+import { formatDays } from '@/utils/hours'
 
 const props = defineProps<{
   balance: VacationBalance | null
+  /** Herleitung (Startsaldo + Übertrag + Anspruch) anzeigen. */
+  showBreakdown?: boolean
 }>()
 
-/** Gesamt-Baseline = Stand 01.01. (Übertrag + Startsaldo + Anspruch); offen = Gesamt − genommen − geplant. */
-const vacationBar = computed(() => {
+/** Segmente relativ zum Gesamtanspruch: genommen | geplant | frei. */
+const bar = computed(() => {
   const v = props.balance
   if (!v) return null
-  const planned = v.planned ?? 0
-  const total = (v.carryover ?? 0) + v.carried_over + v.entitlement
-  if (total <= 0) {
-    return {
-      total,
-      taken: v.taken,
-      planned,
-      open: Math.max(0, total - v.taken - planned),
-      pctTaken: 0,
-      pctPlanned: 0,
-      pctOpen: 0,
-    }
-  }
+  const total = v.total
   const taken = v.taken
-  const openRaw = total - taken - planned
+  const planned = v.planned
+  const free = Math.max(0, v.free)
+  if (total <= 0) {
+    return { pctTaken: 0, pctPlanned: 0, pctFree: 0 }
+  }
   let a = (100 * taken) / total
   let b = (100 * planned) / total
-  let c = (100 * Math.max(0, openRaw)) / total
+  let c = (100 * free) / total
   const sum = a + b + c
   if (sum > 100.001) {
     a = (a / sum) * 100
     b = (b / sum) * 100
     c = (c / sum) * 100
   }
-  return { total, taken, planned, open: Math.max(0, openRaw), pctTaken: a, pctPlanned: b, pctOpen: c }
+  return { pctTaken: a, pctPlanned: b, pctFree: c }
 })
 
-const vacationBarAriaLabel = computed(() => {
-  const b = vacationBar.value
-  if (!b) return ''
-  return `Urlaub: ${b.total.toFixed(1)} Tage gesamt, ${b.taken.toFixed(1)} genommen, ${b.planned.toFixed(1)} geplant, ${b.open.toFixed(1)} noch offen`
-})
-
-const vacationBarTitle = computed(() => {
-  const b = vacationBar.value
-  if (!b) return ''
-  return [
-    `Gesamt (Stand 01.01.): ${b.total.toFixed(1)} Tg.`,
-    `Genommen: ${b.taken.toFixed(1)} Tg.`,
-    `Geplant: ${b.planned.toFixed(1)} Tg.`,
-    `Noch offen: ${b.open.toFixed(1)} Tg.`,
-  ].join(' · ')
+const ariaLabel = computed(() => {
+  const v = props.balance
+  if (!v) return ''
+  return `Urlaub ${v.year}: ${formatDays(v.total)} Tage gesamt, ${formatDays(v.taken)} genommen, ${formatDays(v.planned)} geplant, ${formatDays(v.free)} frei`
 })
 </script>
 
 <template>
   <div v-if="!balance" class="muted">Keine Urlaubsdaten.</div>
-  <template v-else-if="vacationBar">
-    <p class="stat vacation-bar-total">
-      Gesamt: <strong>{{ vacationBar.total.toFixed(1) }}</strong> Tage
-      <span class="sub vacation-bar-hint">(Stand 01.01.: Übertrag + Startsaldo + Anspruch)</span>
+  <div v-else class="vac">
+    <dl v-if="showBreakdown" class="calc" data-testid="vacation-breakdown">
+      <div v-if="balance.carried_over !== 0" class="calc-row">
+        <dt>Startsaldo (Übernahme)</dt>
+        <dd>{{ formatDays(balance.carried_over) }}</dd>
+      </div>
+      <div class="calc-row">
+        <dt>Übertrag aus {{ balance.year - 1 }}</dt>
+        <dd>{{ formatDays(balance.carryover) }}</dd>
+      </div>
+      <div class="calc-row">
+        <dt>Anspruch {{ balance.year }}</dt>
+        <dd>+ {{ formatDays(balance.entitlement) }}</dd>
+      </div>
+      <div class="calc-row calc-sum">
+        <dt>Gesamt</dt>
+        <dd>{{ formatDays(balance.total) }}</dd>
+      </div>
+      <div class="calc-row">
+        <dt>Genommen {{ balance.year }}</dt>
+        <dd>− {{ formatDays(balance.taken) }}</dd>
+      </div>
+      <div class="calc-row calc-sum">
+        <dt>Rest</dt>
+        <dd>{{ formatDays(balance.remaining) }}</dd>
+      </div>
+      <div class="calc-row">
+        <dt>Schon geplant</dt>
+        <dd>− {{ formatDays(balance.planned) }}</dd>
+      </div>
+      <div class="calc-row calc-sum calc-free">
+        <dt>Noch frei verplanbar</dt>
+        <dd data-testid="vacation-free">{{ formatDays(balance.free) }} Tage</dd>
+      </div>
+    </dl>
+    <p v-else class="headline">
+      <strong data-testid="vacation-free">{{ formatDays(balance.free) }}</strong> Tage noch frei
+      <span class="sub">von {{ formatDays(balance.total) }} Tagen {{ balance.year }}</span>
     </p>
-    <div v-tooltip.bottom="vacationBarTitle" class="vacation-bar" role="img" :aria-label="vacationBarAriaLabel">
-      <div
-        v-if="vacationBar.pctTaken > 0"
-        class="vacation-bar-seg vacation-bar-seg--taken"
-        :style="{ width: vacationBar.pctTaken + '%' }"
-      >
-        <span v-if="vacationBar.pctTaken >= 12" class="vacation-bar-label">{{ vacationBar.taken.toFixed(1) }}</span>
-      </div>
-      <div
-        v-if="vacationBar.pctPlanned > 0"
-        class="vacation-bar-seg vacation-bar-seg--planned"
-        :style="{ width: vacationBar.pctPlanned + '%' }"
-      >
-        <span v-if="vacationBar.pctPlanned >= 12" class="vacation-bar-label">{{ vacationBar.planned.toFixed(1) }}</span>
-      </div>
-      <div
-        v-if="vacationBar.pctOpen > 0"
-        class="vacation-bar-seg vacation-bar-seg--open"
-        :style="{ width: vacationBar.pctOpen + '%' }"
-      >
-        <span v-if="vacationBar.pctOpen >= 12" class="vacation-bar-label">{{ vacationBar.open.toFixed(1) }}</span>
-      </div>
+
+    <div v-if="bar" class="vacation-bar" role="img" :aria-label="ariaLabel">
+      <div v-if="bar.pctTaken > 0" class="seg seg--taken" :style="{ width: bar.pctTaken + '%' }" />
+      <div v-if="bar.pctPlanned > 0" class="seg seg--planned" :style="{ width: bar.pctPlanned + '%' }" />
+      <div v-if="bar.pctFree > 0" class="seg seg--free" :style="{ width: bar.pctFree + '%' }" />
     </div>
-    <p v-if="vacationBar.taken + vacationBar.planned > vacationBar.total + 0.05" class="sub vacation-bar-warn">
-      Hinweis: Genommen und geplant übersteigen den Gesamtanspruch rechnerisch — bitte Daten prüfen.
+    <ul class="legend">
+      <li><span class="dot dot--taken" />Genommen {{ formatDays(balance.taken) }}</li>
+      <li><span class="dot dot--planned" />Geplant {{ formatDays(balance.planned) }}</li>
+      <li><span class="dot dot--free" />Frei {{ formatDays(balance.free) }}</li>
+    </ul>
+    <p v-if="balance.free < -0.05" class="sub warn">
+      Es sind mehr Urlaubstage eingetragen als verfügbar. Bitte mit der Leitung klären.
     </p>
-  </template>
+  </div>
 </template>
 
 <style scoped>
-.stat {
-  margin: 0 0 0.35rem;
-  font-size: 0.95rem;
-}
-.sub {
-  margin: 0;
-  font-size: 0.85rem;
-  color: #64748b;
-}
 .muted {
   color: #64748b;
 }
-.vacation-bar-total {
-  margin-bottom: 0.5rem;
+.sub {
+  font-size: 0.85rem;
+  color: #64748b;
 }
-.vacation-bar-hint {
+.headline {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+.headline strong {
+  font-size: 1.35rem;
+}
+.headline .sub {
   display: block;
-  margin-top: 0.2rem;
-  font-weight: 400;
+  margin-top: 0.15rem;
+}
+.calc {
+  margin: 0 0 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-width: 22rem;
+}
+.calc-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.92rem;
+}
+.calc-row dt {
+  color: #475569;
+}
+.calc-row dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.calc-sum {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 0.2rem;
+  font-weight: 600;
+}
+.calc-sum dt {
+  color: #0f172a;
+}
+.calc-free dd {
+  color: #15803d;
 }
 .vacation-bar {
   display: flex;
   width: 100%;
-  height: 1.125rem;
+  height: 0.85rem;
   border-radius: 6px;
   overflow: hidden;
   background: #e2e8f0;
-  margin-bottom: 0.65rem;
+  margin-bottom: 0.5rem;
 }
-.vacation-bar-seg {
-  min-width: 0;
+.seg {
   height: 100%;
-  transition: width 0.2s ease;
-  position: relative;
+  min-width: 0;
 }
-.vacation-bar-label {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #ffffff;
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.45),
-    0 0 1px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
-}
-.vacation-bar-seg--taken {
+.seg--taken,
+.dot--taken {
   background: #3b82f6;
 }
-.vacation-bar-seg--planned {
+.seg--planned,
+.dot--planned {
   background: #f59e0b;
 }
-.vacation-bar-seg--open {
+.seg--free,
+.dot--free {
   background: #22c55e;
 }
-.vacation-bar-warn {
-  margin-top: 0.5rem;
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  font-size: 0.85rem;
+  color: #334155;
+}
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 3px;
+  display: inline-block;
+}
+.warn {
+  margin: 0.5rem 0 0;
   color: #b45309;
 }
 </style>

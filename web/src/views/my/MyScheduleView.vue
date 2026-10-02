@@ -5,6 +5,7 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 
 import WeekWorkTimeCalendar from '@/components/WeekWorkTimeCalendar.vue'
+import { useNarrowViewport } from '@/composables/useNarrowViewport'
 import { fetchMeAbsences, fetchMeSchedule, fetchMeTimes } from '@/api/me'
 import { addDays, formatGermanDate, isoWeekAndYear, startOfISOWeek, toISODateLocal } from '@/utils/dates'
 import type { Absence, HolidayCredit, Schedule, TeamMeeting } from '@/types/api'
@@ -14,6 +15,7 @@ const schedules = ref<Schedule[]>([])
 const absences = ref<Absence[]>([])
 const holidays = ref<HolidayCredit[]>([])
 const teamMeetings = ref<TeamMeeting[]>([])
+const narrow = useNarrowViewport()
 const loading = ref(false)
 const err = ref('')
 
@@ -140,6 +142,7 @@ watch(weekStart, load)
     </div>
     <p v-if="err" class="err">{{ err }}</p>
     <WeekWorkTimeCalendar
+      v-if="!narrow"
       class="schedule-cal"
       :week-start="weekStart"
       :periods="[]"

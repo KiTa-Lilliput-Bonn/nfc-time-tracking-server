@@ -17,19 +17,59 @@ export interface MonthBalance {
   balance_hours: number
   carryover: number
   total_balance: number
+  /** Erster Tag des Stundenkontos (YYYY-MM-DD). */
+  account_start?: string
+  /** Tatsächlich gezählter Zeitraum dieses Monats (leer, wenn nichts gezählt). */
+  counted_from?: string
+  counted_through?: string
+  /** Laufender Monat: gezählt nur bis gestern. */
+  is_partial?: boolean
+  /** Monat beginnt nach gestern: noch nichts gezählt. */
+  is_future?: boolean
 }
 
+/** GET /me/hours-account: Stand des Stundenkontos bis einschließlich gestern. */
+export interface HoursAccount {
+  balance_hours: number
+  account_start: string
+  counted_through: string
+  opening_hours: number
+}
+
+/** Ein Tag aus GET /me/days (gleiche Rechnung wie der Saldo). */
+export interface SaldoDay {
+  date: string
+  gross_minutes: number
+  stamped_break_minutes: number
+  deduction_minutes: number
+  net_minutes: number
+  open_period: boolean
+  credit_hours: number
+  target_hours: number
+  balance_hours: number
+  absence_type: string | null
+  half_day: boolean
+  holiday_name?: string
+  closure_name?: string
+  is_workday: boolean
+}
+
+/** Gesamt = Startsaldo + Übertrag + Anspruch; Rest = Gesamt − genommen; frei = Rest − geplant. */
 export interface VacationBalance {
   year: number
-  entitlement: number
-  /** Genommene Urlaubstage bis einschließlich heute (Fenster wie Backend). */
-  taken: number
-  /** Geplante Urlaubstage ab morgen bis 31.12. des Anspruchsjahrs. */
-  planned: number
-  /** Übertrag (Vorjahr) zum Stand 01.01. des aktuellen Jahres. */
-  carryover: number
-  remaining: number
+  /** Startsaldo aus dem Import. */
   carried_over: number
+  /** Übertrag aus den Vorjahren. */
+  carryover: number
+  /** Anspruch im aktuellen Jahr. */
+  entitlement: number
+  total: number
+  /** Genommene Urlaubstage im aktuellen Jahr bis einschließlich heute. */
+  taken: number
+  remaining: number
+  /** Alle eingetragenen Urlaubstage nach heute. */
+  planned: number
+  free: number
 }
 
 export interface Schedule {

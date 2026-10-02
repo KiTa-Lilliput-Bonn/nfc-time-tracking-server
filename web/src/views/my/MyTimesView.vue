@@ -2,10 +2,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
 
+import WeekDayList from '@/components/WeekDayList.vue'
 import WeekWorkTimeCalendar from '@/components/WeekWorkTimeCalendar.vue'
+import { useNarrowViewport } from '@/composables/useNarrowViewport'
 import {
   fetchMeAbsences,
   fetchMeCorrections,
+  fetchMeDays,
   fetchMeSchedule,
   fetchMeScheduleBound,
   fetchMeTimes,
@@ -15,6 +18,7 @@ import type {
   Absence,
   HolidayCredit,
   Schedule,
+  SaldoDay,
   ScheduleBoundSetting,
   TeamMeeting,
   TimeCorrection,
@@ -29,6 +33,10 @@ const schedules = ref<Schedule[]>([])
 const holidays = ref<HolidayCredit[]>([])
 const teamMeetings = ref<TeamMeeting[]>([])
 const scheduleBoundList = ref<ScheduleBoundSetting[]>([])
+const days = ref<SaldoDay[]>([])
+const countedThrough = ref('')
+const todayISO = toISODateLocal(new Date())
+const narrow = useNarrowViewport()
 const loading = ref(false)
 const err = ref('')
 
@@ -47,13 +55,16 @@ async function load() {
   const f = toISODateLocal(weekStart.value)
   const t = toISODateLocal(weekEndFriday.value)
   try {
-    const [times, abs, corr, sch, sb] = await Promise.all([
+    const [times, abs, corr, sch, sb, dl] = await Promise.all([
       fetchMeTimes(f, t),
       fetchMeAbsences(f, t),
       fetchMeCorrections(f, t),
       fetchMeSchedule(f, t),
       fetchMeScheduleBound().catch((): ScheduleBoundSetting[] => []),
+      fetchMeDays(f, t),
     ])
+    days.value = dl.days
+    countedThrough.value = dl.counted_through
     periods.value = times.work_periods
     holidays.value = times.holidays ?? []
     absences.value = abs.absences
@@ -70,6 +81,7 @@ async function load() {
     schedules.value = []
     teamMeetings.value = []
     scheduleBoundList.value = []
+    days.value = []
   } finally {
     loading.value = false
   }
@@ -112,6 +124,7 @@ const scheduleByDate = computed(() => {
     </div>
     <p v-if="err" class="err">{{ err }}</p>
     <WeekWorkTimeCalendar
+      v-if="!narrow"
       :week-start="weekStart"
       :periods="periods"
       :absences="absences"
@@ -122,6 +135,15 @@ const scheduleByDate = computed(() => {
       :schedule-bound-history="scheduleBoundList"
       :loading="loading"
       :dual-track="true"
+    />
+    <WeekDayList
+      :days="days"
+      :periods="periods"
+      :corrections="corrections"
+      :schedule-by-date="scheduleByDate"
+      :counted-through="countedThrough"
+      :today="todayISO"
+      :loading="loading"
     />
   </div>
 </template>
