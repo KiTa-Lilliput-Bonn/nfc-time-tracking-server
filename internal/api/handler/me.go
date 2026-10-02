@@ -184,28 +184,91 @@ func (h *MeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "user query failed")
 		return
 	}
-	mb, err := saldocalc.MonthWithOpening(
-		r.Context(),
-		uid,
-		y,
-		m,
-		u.OpeningHoursBalance,
-		h.FixedNonWorkWeekdays,
-		h.WorkPeriods,
-		h.Corrections,
-		h.WeeklyHours,
-		h.Holidays,
-		h.Absences,
-		h.Schedules,
-		h.ScheduleBound,
-		h.ClosureDays,
-		h.Settings,
-	)
+	mb, err := saldocalc.Month(r.Context(), h.saldoDeps(), u, y, m, time.Now())
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	response.JSON(w, http.StatusOK, mb)
+}
+
+func (h *MeHandler) saldoDeps() saldocalc.Deps {
+	return saldocalc.Deps{
+		WorkPeriods:          h.WorkPeriods,
+		Corrections:          h.Corrections,
+		Absences:             h.Absences,
+		Holidays:             h.Holidays,
+		Closures:             h.ClosureDays,
+		WeeklyHours:          h.WeeklyHours,
+		FixedNonWorkWeekdays: h.FixedNonWorkWeekdays,
+		ScheduleBound:        h.ScheduleBound,
+		Schedules:            h.Schedules,
+		Settings:             h.Settings,
+	}
+}
+
+// maxDaysRange begrenzt GET /me/days (eine Ansicht braucht höchstens einen Monat plus Rand).
+const maxDaysRange = 62
+
+// Days liefert die Tageswerte (gestempelt, Pause, Abzug, netto, Gutschrift, Soll) für from..to.
+// counted_through ist der letzte Tag, der ins Stundenkonto zählt (gestern); spätere Tage sind vorläufig.
+func (h *MeHandler) Days(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.UserID(r)
+	if uid == 0 {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	from, to, err := queryDateRange(r)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	f, _ := time.Parse("2006-01-02", from)
+	t, _ := time.Parse("2006-01-02", to)
+	if t.Before(f) || t.Sub(f) > maxDaysRange*24*time.Hour {
+		response.Error(w, http.StatusBadRequest, "range too large")
+		return
+	}
+	days, err := saldocalc.Days(r.Context(), h.saldoDeps(), uid, from, to)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]interface{}{
+		"from":            from,
+		"to":              to,
+		"days":            days,
+		"counted_through": saldocalc.Yesterday(time.Now(), time.Local).Format("2006-01-02"),
+	})
+}
+
+// HoursAccount liefert den aktuellen Stand des Stundenkontos (bis einschließlich gestern), identisch zur Team-Übersicht.
+func (h *MeHandler) HoursAccount(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.UserID(r)
+	if uid == 0 {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	u, err := h.Users.GetByID(r.Context(), uid)
+	if err != nil || u == nil {
+		response.Error(w, http.StatusInternalServerError, "user query failed")
+		return
+	}
+	acc, err := saldocalc.Account(r.Context(), h.saldoDeps(), u, time.Now())
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	opening := 0.0
+	if acc.OpeningApplied {
+		opening = u.OpeningHoursBalance
+	}
+	response.JSON(w, http.StatusOK, map[string]interface{}{
+		"balance_hours":   acc.Balance,
+		"account_start":   acc.Start.Format("2006-01-02"),
+		"counted_through": acc.Through.Format("2006-01-02"),
+		"opening_hours":   opening,
+	})
 }
 
 func (h *MeHandler) GetScheduleBound(w http.ResponseWriter, r *http.Request) {

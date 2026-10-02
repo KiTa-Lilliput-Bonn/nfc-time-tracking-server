@@ -307,23 +307,18 @@ func (h *EmployeeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "user query failed")
 		return
 	}
-	mb, err := saldocalc.MonthWithOpening(
-		r.Context(),
-		uid,
-		y,
-		m,
-		u.OpeningHoursBalance,
-		h.FixedNonWorkWeekdays,
-		h.WorkPeriods,
-		h.Corrections,
-		h.WeeklyHours,
-		h.Holidays,
-		h.Absences,
-		h.Schedules,
-		h.ScheduleBound,
-		h.ClosureDays,
-		h.Settings,
-	)
+	mb, err := saldocalc.Month(r.Context(), saldocalc.Deps{
+		WorkPeriods:          h.WorkPeriods,
+		Corrections:          h.Corrections,
+		Absences:             h.Absences,
+		Holidays:             h.Holidays,
+		Closures:             h.ClosureDays,
+		WeeklyHours:          h.WeeklyHours,
+		FixedNonWorkWeekdays: h.FixedNonWorkWeekdays,
+		ScheduleBound:        h.ScheduleBound,
+		Schedules:            h.Schedules,
+		Settings:             h.Settings,
+	}, u, y, m, time.Now())
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return

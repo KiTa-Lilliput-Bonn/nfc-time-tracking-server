@@ -50,7 +50,7 @@ func TestMonthWithOpening_ExcludesDisabledWorkPeriod(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mb, err := MonthWithOpening(ctx, u.ID, 2026, 3, 0, sqlite.NewFixedNonWorkWeekdaysStore(db), ws, cs, whs, nil, nil, nil, nil, sqlite.NewClosureDayStore(db), sqlite.NewSettingsStore(db))
+	mb, err := monthFull(ctx, u.ID, 2026, 3, 0, sqlite.NewFixedNonWorkWeekdaysStore(db), ws, cs, whs, nil, nil, nil, nil, sqlite.NewClosureDayStore(db), sqlite.NewSettingsStore(db))
 	if err != nil {
 		t.Fatal(err)
 	}

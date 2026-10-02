@@ -136,6 +136,8 @@ func NewRouter(d Deps) http.Handler {
 			r.Use(apimw.AuthJWT(d.Auth))
 			r.Get("/me/times", me.Times)
 			r.Get("/me/balance", me.Balance)
+			r.Get("/me/hours-account", me.HoursAccount)
+			r.Get("/me/days", me.Days)
 			r.Get("/me/vacation", me.Vacation)
 			r.Get("/me/profile", me.Profile)
 			r.Get("/me/schedule-bound", me.GetScheduleBound)
