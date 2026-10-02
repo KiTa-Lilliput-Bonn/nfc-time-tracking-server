@@ -530,37 +530,13 @@ func (h *EmployeeHandler) CreateCorrection(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Prevent corrections from creating overlapping work periods on the same day.
-	// We compare the *effective* intervals (latest correction if present) of all periods on that work_date.
-	dayPeriods, err := h.WorkPeriods.ListByUserDateRange(r.Context(), uid, day, day)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "query failed")
+	if err := checkDayOverlap(r.Context(), h.WorkPeriods, h.Corrections, uid, day, body.WorkPeriodID, body.CorrectedIn, body.CorrectedOut); err != nil {
+		if errors.Is(err, errDayOverlap) {
+			response.Error(w, http.StatusBadRequest, err.Error())
+		} else {
+			response.Error(w, http.StatusInternalServerError, "query failed")
+		}
 		return
-	}
-	newStart := body.CorrectedIn.UTC()
-	newEnd := body.CorrectedOut.UTC()
-	for _, p := range dayPeriods {
-		if p.ID == body.WorkPeriodID {
-			continue
-		}
-		start := p.PunchIn.UTC()
-		end := p.PunchOut
-		if corr, err := h.Corrections.GetLatestForPeriod(r.Context(), p.ID); err == nil && corr != nil {
-			if corr.Disabled {
-				continue
-			}
-			start = corr.CorrectedIn.UTC()
-			cend := corr.CorrectedOut.UTC()
-			end = &cend
-		}
-		// Ignore invalid existing intervals; overlap check is best-effort here.
-		if end != nil && !end.After(start) {
-			continue
-		}
-		// Overlap condition: existing_start < new_end && new_start < existing_end (nil end = open-ended).
-		if start.Before(newEnd) && (end == nil || newStart.Before(end.UTC())) {
-			response.Error(w, http.StatusBadRequest, "die korrigierte Zeit überschneidet sich mit einem anderen Eintrag an diesem Tag")
-			return
-		}
 	}
 
 	if err := h.Corrections.Create(r.Context(), c); err != nil {

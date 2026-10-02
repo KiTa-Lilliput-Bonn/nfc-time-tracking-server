@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Menu from 'primevue/menu'
 import type { MenuItem } from 'primevue/menuitem'
 import { useAuthStore } from '@/stores/auth'
+import { usePendingRequests } from '@/stores/pendingRequests'
 
 const route = useRoute()
 const router = useRouter()
@@ -102,6 +103,15 @@ function logout() {
 const isLeitung = computed(() => auth.role === 'leitung' || auth.role === 'superadmin')
 const isSuper = computed(() => auth.role === 'superadmin')
 
+const pendingRequests = usePendingRequests()
+watch(
+  [isLeitung, () => route.fullPath],
+  ([lead]) => {
+    if (lead) void pendingRequests.refresh()
+  },
+  { immediate: true },
+)
+
 const userMenuRef = ref<InstanceType<typeof Menu> | null>(null)
 const userMenuVisible = ref(false)
 
@@ -158,12 +168,19 @@ watch(
         <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/my/schedule') }" to="/my/schedule">
           Dienstplan
         </RouterLink>
+        <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/my/requests') }" to="/my/requests">
+          Anträge
+        </RouterLink>
         <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/my/password') }" to="/my/password">
           Passwort ändern
         </RouterLink>
 
         <template v-if="isLeitung">
           <span class="nav-group">Leitung</span>
+          <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/requests') }" to="/requests">
+            Anträge freigeben
+            <span v-if="pendingRequests.count > 0" class="nav-badge" data-testid="pending-requests-badge">{{ pendingRequests.count }}</span>
+          </RouterLink>
           <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/employees') }" to="/employees">
             Mitarbeiter
           </RouterLink>
@@ -318,6 +335,19 @@ watch(
   flex-direction: column;
   gap: 0.15rem;
   padding: 0 0.5rem;
+}
+.nav-badge {
+  display: inline-block;
+  min-width: 1.25rem;
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #0f172a;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.25rem;
 }
 .nav-group {
   font-size: 0.7rem;

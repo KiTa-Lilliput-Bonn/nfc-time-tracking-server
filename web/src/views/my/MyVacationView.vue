@@ -111,6 +111,7 @@ onMounted(async () => {
     <p v-if="err" class="err">{{ err }}</p>
     <div v-if="loading" class="muted">Laden…</div>
     <template v-else>
+      <RouterLink to="/my/requests?type=vacation" class="request-link">Urlaub beantragen</RouterLink>
       <div v-if="balance" class="cards">
         <Card>
           <template #title>Anspruch {{ balance.year }}</template>
@@ -162,6 +163,10 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.request-link {
+  align-self: flex-start;
+  color: #4f46e5;
+}
 .page {
   display: flex;
   flex-direction: column;

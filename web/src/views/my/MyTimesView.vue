@@ -109,6 +109,7 @@ const scheduleByDate = computed(() => {
         <Button icon="pi pi-chevron-right" rounded text severity="secondary" aria-label="Nächste Woche" @click="nextWeek" />
       </div>
       <Button label="Diese Woche" severity="secondary" text @click="setThisWeek" />
+      <RouterLink to="/my/requests?type=time_correction" class="request-link">Zeit korrigieren / nachtragen</RouterLink>
     </div>
     <p v-if="err" class="err">{{ err }}</p>
     <WeekWorkTimeCalendar
@@ -127,6 +128,11 @@ const scheduleByDate = computed(() => {
 </template>
 
 <style scoped>
+.request-link {
+  margin-left: auto;
+  font-size: 0.9rem;
+  color: #4f46e5;
+}
 .page {
   display: flex;
   flex-direction: column;

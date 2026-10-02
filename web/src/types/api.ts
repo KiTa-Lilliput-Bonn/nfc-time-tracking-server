@@ -453,3 +453,32 @@ export interface TeamOverviewRow {
   vacation_opening_days: number
   compensation_day_claims_open: number
 }
+
+export type ChangeRequestKind = 'time_correction' | 'time_entry' | 'vacation'
+export type ChangeRequestStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn'
+
+/** Antrag von Mitarbeitenden, wird erst nach Freigabe durch die Leitung wirksam. */
+export interface ChangeRequest {
+  id: number
+  user_id: number
+  user_display_name: string
+  kind: ChangeRequestKind
+  status: ChangeRequestStatus
+  work_period_id?: number
+  work_date?: string
+  original_in?: string
+  original_out?: string | null
+  punch_in?: string
+  punch_out?: string
+  date_from?: string
+  date_to?: string
+  half_day: boolean
+  vacation_days?: number
+  vacation_dates?: string[]
+  reason: string
+  decided_by?: number
+  decided_by_name?: string
+  decided_at?: string
+  decision_comment: string
+  created_at: string
+}

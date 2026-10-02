@@ -101,13 +101,3 @@ export async function fetchMeCorrections(from: string, to: string) {
     corrections: data.corrections ?? [],
   }
 }
-
-export async function createMeCorrection(body: {
-  work_period_id: number
-  corrected_in: string
-  corrected_out: string
-  reason: string
-}) {
-  const { data } = await api.post<TimeCorrection>('/me/corrections', body)
-  return data
-}

@@ -5,7 +5,7 @@ import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import { useToast } from 'primevue/usetoast'
-import { createMeCorrection } from '@/api/me'
+import { createMyRequest } from '@/api/requests'
 import { createCorrection } from '@/api/management'
 import type { TimeCorrection, WorkPeriod } from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
@@ -175,11 +175,19 @@ async function submitCorrect() {
       reason: corrReason.value.trim(),
     }
     if (props.rowCorrection.mode === 'self') {
-      await createMeCorrection(body)
+      // Mitarbeitende stellen einen Antrag; wirksam erst nach Freigabe durch die Leitung.
+      await createMyRequest({
+        kind: 'time_correction',
+        work_period_id: body.work_period_id,
+        punch_in: body.corrected_in,
+        punch_out: body.corrected_out,
+        reason: body.reason,
+      })
+      toast.add({ severity: 'success', summary: 'Antrag gestellt', detail: 'Gilt erst nach Freigabe durch die Leitung.', life: 10000 })
     } else {
       await createCorrection(props.rowCorrection.employeeId, body)
+      toast.add({ severity: 'success', summary: 'Korrektur gespeichert', life: 10000 })
     }
-    toast.add({ severity: 'success', summary: 'Korrektur gespeichert', life: 10000 })
     close()
     emit('saved')
   } catch (e) {
@@ -263,7 +271,7 @@ async function submitDisable() {
         @click="submitDisable"
       />
       <Button label="Abbrechen" severity="secondary" text @click="close" />
-      <Button label="Speichern" :loading="saving" :disabled="selWpId == null" @click="submitCorrect" />
+      <Button :label="rowCorrection.mode === 'self' ? 'Beantragen' : 'Speichern'" :loading="saving" :disabled="selWpId == null" @click="submitCorrect" />
     </template>
   </Dialog>
 </template>
