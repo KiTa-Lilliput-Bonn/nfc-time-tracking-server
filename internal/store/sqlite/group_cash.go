@@ -92,6 +92,43 @@ func (s *GroupCashStore) SetKeepers(ctx context.Context, groupID int, userIDs []
 	return tx.Commit()
 }
 
+func (s *GroupCashStore) GetOpening(ctx context.Context, groupID int) (*model.CashOpening, error) {
+	var o model.CashOpening
+	var by sql.NullInt64
+	var updated string
+	err := s.db.DB.QueryRowContext(ctx,
+		`SELECT group_id, opening_date, cash_cents, savings_cents, updated_by, updated_at FROM cash_openings WHERE group_id = ?`,
+		groupID).Scan(&o.GroupID, &o.Date, &o.CashCents, &o.SavingsCents, &by, &updated)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	o.UpdatedBy = optInt(by)
+	o.UpdatedAt = parseText(updated)
+	return &o, nil
+}
+
+func (s *GroupCashStore) SetOpening(ctx context.Context, o *model.CashOpening) error {
+	o.UpdatedAt = time.Now().UTC()
+	_, err := s.db.DB.ExecContext(ctx,
+		`INSERT INTO cash_openings (group_id, opening_date, cash_cents, savings_cents, updated_by, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT (group_id) DO UPDATE SET opening_date = excluded.opening_date, cash_cents = excluded.cash_cents,
+		   savings_cents = excluded.savings_cents, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+		o.GroupID, o.Date, o.CashCents, o.SavingsCents, intArg(o.UpdatedBy), o.UpdatedAt.Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("set opening: %w", err)
+	}
+	return nil
+}
+
+func (s *GroupCashStore) DeleteOpening(ctx context.Context, groupID int) error {
+	_, err := s.db.DB.ExecContext(ctx, `DELETE FROM cash_openings WHERE group_id = ?`, groupID)
+	return err
+}
+
 func (s *GroupCashStore) ListAllowances(ctx context.Context, groupID int) ([]model.CashAllowance, error) {
 	rows, err := s.db.DB.QueryContext(ctx,
 		`SELECT id, group_id, valid_from, amount_cents, created_by, created_at FROM cash_allowances

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +75,8 @@ func newCashFixture(t *testing.T) *cashFixture {
 	r.Get("/cash-boxes/{groupId}", h.Get)
 	r.With(apimw.RequireRole(string(model.RoleLeitung), string(model.RoleSuperadmin))).Put("/cash-boxes/{groupId}/keepers", h.PutKeepers)
 	r.Put("/cash-boxes/{groupId}/allowances", h.PutAllowance)
+	r.Put("/cash-boxes/{groupId}/opening", h.PutOpening)
+	r.Get("/cash-boxes/{groupId}/export", h.Export)
 	r.Post("/cash-boxes/{groupId}/entries", h.CreateEntry)
 	r.Put("/cash-boxes/{groupId}/entries/{entryId}", h.UpdateEntry)
 	r.Delete("/cash-boxes/{groupId}/entries/{entryId}", h.DeleteEntry)
@@ -300,5 +304,73 @@ func TestGroupCash_Receipts(t *testing.T) {
 	_ = f.db.DB.QueryRow(`SELECT COUNT(*) FROM cash_receipts`).Scan(&n)
 	if n != 0 {
 		t.Fatalf("orphan receipts: %d", n)
+	}
+}
+
+func TestGroupCash_OpeningAndExport(t *testing.T) {
+	f := newCashFixture(t)
+	box := f.box(f.group.ID)
+	f.do(t, f.lead, http.MethodPut, box+"/keepers", map[string]any{"user_ids": []int{f.keeper.ID}})
+
+	if rr := f.do(t, f.lead, http.MethodPut, box+"/opening", map[string]any{"date": "2026-03-01", "cash_cents": 1000}); rr.Code != http.StatusForbidden {
+		t.Fatalf("Leitung must not set opening: %d", rr.Code)
+	}
+	if rr := f.do(t, f.keeper, http.MethodPut, box+"/opening", map[string]any{"date": "2026-03-01", "cash_cents": 4250, "savings_cents": 30000}); rr.Code != http.StatusOK {
+		t.Fatalf("opening: %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := f.do(t, f.keeper, http.MethodPost, box+"/entries", map[string]any{
+		"kind": "expense", "entry_date": "2026-02-28", "amount_cents": 100, "description": "zu früh",
+	}); rr.Code != http.StatusConflict {
+		t.Fatalf("entry before opening: %d", rr.Code)
+	}
+	rr := f.do(t, f.keeper, http.MethodPost, box+"/entries", map[string]any{
+		"kind": "income", "source": "savings", "entry_date": "2026-04-02", "amount_cents": 30000,
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("withdraw opening savings: %d %s", rr.Code, rr.Body.String())
+	}
+	var e model.CashEntry
+	_ = json.NewDecoder(rr.Body).Decode(&e)
+	// Stichtag nach der ersten Buchung geht nicht.
+	if rr := f.do(t, f.keeper, http.MethodPut, box+"/opening", map[string]any{"date": "2026-04-10", "cash_cents": 0}); rr.Code != http.StatusConflict {
+		t.Fatalf("opening after entries: %d", rr.Code)
+	}
+
+	var detail cashBoxDetail
+	_ = json.NewDecoder(f.do(t, f.lead, http.MethodGet, box, nil).Body).Decode(&detail)
+	if detail.Summary.BalanceCents != 34250 || detail.Summary.SavingsCents != 0 || detail.Summary.OpeningDate != "2026-03-01" {
+		t.Fatalf("summary: %+v", detail.Summary)
+	}
+	if detail.Entries[0].BalanceAfterCents != 34250 {
+		t.Fatalf("running balance must start at opening: %+v", detail.Entries[0])
+	}
+
+	body, ct := multipartFiles(t, map[string][]byte{"bon.pdf": []byte("%PDF-1.4\n%%EOF\n")})
+	req := httptest.NewRequest(http.MethodPost, box+"/entries/"+itoa(e.ID)+"/receipts", body)
+	req.Header.Set("Content-Type", ct)
+	req.Header.Set("X-User", itoa(f.keeper.ID))
+	f.router.ServeHTTP(httptest.NewRecorder(), req)
+
+	rr = f.do(t, f.lead, http.MethodGet, box+"/export?year=2026&format=csv", nil)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Anfangsbestand;;;;42,50") {
+		t.Fatalf("csv: %d %s", rr.Code, rr.Body.String())
+	}
+	rr = f.do(t, f.lead, http.MethodGet, box+"/export?year=2026&format=zip", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("zip: %d", rr.Code)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(rr.Body.Bytes()), int64(rr.Body.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, zf := range zr.File {
+		names = append(names, zf.Name)
+	}
+	if strings.Join(names, "|") != "Kassenbuch_Mäuse_2026.pdf|Kassenbuch_Mäuse_2026.csv|Belege/001_2026-04-02_bon.pdf" {
+		t.Fatalf("zip entries: %v", names)
+	}
+	if rr := f.do(t, f.staff, http.MethodGet, box+"/export?year=2026&format=pdf", nil); rr.Code != http.StatusForbidden {
+		t.Fatalf("staff export: %d", rr.Code)
 	}
 }

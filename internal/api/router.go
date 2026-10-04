@@ -172,6 +172,9 @@ func NewRouter(d Deps) http.Handler {
 			r.Get("/cash-boxes/{groupId}", gc.Get)
 			r.With(apimw.RequireRole(string(model.RoleLeitung), string(model.RoleSuperadmin))).
 				Put("/cash-boxes/{groupId}/keepers", gc.PutKeepers)
+			r.Get("/cash-boxes/{groupId}/export", gc.Export)
+			r.Put("/cash-boxes/{groupId}/opening", gc.PutOpening)
+			r.Delete("/cash-boxes/{groupId}/opening", gc.DeleteOpening)
 			r.Put("/cash-boxes/{groupId}/allowances", gc.PutAllowance)
 			r.Delete("/cash-boxes/{groupId}/allowances/{allowanceId}", gc.DeleteAllowance)
 			r.Post("/cash-boxes/{groupId}/entries", gc.CreateEntry)

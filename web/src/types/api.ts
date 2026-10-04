@@ -582,6 +582,11 @@ export interface CashMonthRow {
 }
 
 export interface CashSummary {
+  /** Anfangsbestand (0 ohne Anfangsbestand) */
+  opening_cash_cents: number
+  opening_savings_cents: number
+  /** YYYY-MM-DD, fehlt ohne Anfangsbestand */
+  opening_date?: string
   balance_cents: number
   income_cents: number
   expense_cents: number

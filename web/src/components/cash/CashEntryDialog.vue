@@ -227,7 +227,7 @@ async function save() {
       <div class="two">
         <div>
           <label for="ce-date">Datum</label>
-          <input id="ce-date" v-model="entryDate" type="date" :max="today" class="p-inputtext p-component w" />
+          <input id="ce-date" v-model="entryDate" type="date" :min="summary.opening_date" :max="today" class="p-inputtext p-component w" />
         </div>
         <div>
           <label for="ce-amount">Betrag (€)</label>

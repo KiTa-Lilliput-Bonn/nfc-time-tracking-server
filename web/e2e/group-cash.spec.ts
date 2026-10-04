@@ -122,3 +122,46 @@ test('Kassenwart bucht Monatsbetrag, Ansparkonto und Ausgabe mit Beleg; Leitung 
   })
   expect(write.status()).toBe(403)
 })
+
+test('Anfangsbestand und Kassenbuch-Export', async ({ page, request }) => {
+  const admin = await apiSession(request, E2E_ADMIN_USER, E2E_ADMIN_PASSWORD)
+  const groupName = uniqueLabel('Kasse Export')
+  const grp = await request.post('/api/v1/groups', { headers: authHeaders(admin.token), data: { name: groupName } })
+  const groupId = ((await grp.json()) as { id: number }).id
+  const username = `e2e.cashx.${Date.now()}`
+  const emp = await request.post('/api/v1/employees', {
+    headers: authHeaders(admin.token),
+    data: { username, display_name: uniqueLabel('Kassenwartin'), role: 'user' },
+  })
+  const empBody = (await emp.json()) as { user: { id: number }; temporary_password: string }
+  await request.put(`/api/v1/cash-boxes/${groupId}/keepers`, {
+    headers: authHeaders(admin.token),
+    data: { user_ids: [empBody.user.id] },
+  })
+  const keeper = await apiSession(request, username, empBody.temporary_password)
+
+  const today = new Date().toISOString().slice(0, 10)
+  await useSession(page, keeper, `/cash-boxes/${groupId}`)
+  await page.getByTestId('cash-opening-edit').click()
+  await page.locator('#op-date').fill(today)
+  await page.locator('#op-cash').fill('42,50')
+  await page.locator('#op-savings').fill('300')
+  await page.getByTestId('cash-opening-save').click()
+  await expect(page.getByTestId('cash-balance')).toHaveText(/42,50\s€/)
+  await expect(page.getByTestId('cash-savings')).toHaveText(/300,00\s€/)
+  await expect(page.getByTestId('cash-opening-row')).toContainText('42,50')
+
+  const download = page.waitForEvent('download')
+  await page.getByTestId('cash-export-csv').click()
+  const file = await download
+  expect(file.suggestedFilename()).toBe(`Kassenbuch_${groupName}_${today.slice(0, 4)}.csv`)
+  const csv = await (await file.createReadStream()).toArray()
+  expect(Buffer.concat(csv).toString('utf-8')).toContain('Anfangsbestand;;;;42,50')
+
+  // Leitung darf exportieren.
+  const pdf = await request.get(`/api/v1/cash-boxes/${groupId}/export`, {
+    headers: authHeaders(admin.token),
+    params: { year: today.slice(0, 4), format: 'pdf' },
+  })
+  expect(pdf.headers()['content-type']).toBe('application/pdf')
+})

@@ -35,6 +35,7 @@ const (
 	EntityChangeRequest        = "change_request"
 	EntityCashKeepers          = "cash_keepers"
 	EntityCashAllowance        = "cash_allowance"
+	EntityCashOpening          = "cash_opening"
 	EntityCashEntry            = "cash_entry"
 	EntityCashReceipt          = "cash_receipt"
 )

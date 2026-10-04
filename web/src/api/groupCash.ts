@@ -69,3 +69,29 @@ export async function fetchCashReceipt(groupId: number, receiptId: number) {
 export async function deleteCashReceipt(groupId: number, receiptId: number) {
   await api.delete(`/cash-boxes/${groupId}/receipts/${receiptId}`)
 }
+
+export async function putCashOpening(groupId: number, body: { date: string; cash_cents: number; savings_cents: number }) {
+  await api.put(`/cash-boxes/${groupId}/opening`, body)
+}
+
+export async function deleteCashOpening(groupId: number) {
+  await api.delete(`/cash-boxes/${groupId}/opening`)
+}
+
+export type CashExportFormat = 'pdf' | 'csv' | 'zip'
+
+/** Lädt das Kassenbuch eines Jahres herunter (PDF, CSV oder ZIP mit allen Belegen). */
+export async function downloadCashExport(groupId: number, groupName: string, year: string, format: CashExportFormat) {
+  const { data } = await api.get<Blob>(`/cash-boxes/${groupId}/export`, {
+    params: { year, format },
+    responseType: 'blob',
+  })
+  const url = URL.createObjectURL(data)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `Kassenbuch_${groupName.replace(/[\\/:*?"<>|]/g, '_')}_${year}.${format}`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}

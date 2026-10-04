@@ -66,3 +66,14 @@ type CashReceipt struct {
 	UploadedBy  *int      `json:"uploaded_by,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 }
+
+// CashOpening ist der Anfangsbestand einer Gruppenkasse zum Stichtag Date (YYYY-MM-DD):
+// Bargeld in der Kasse und Guthaben im Ansparkonto, die vor der Erfassung in der App bestanden.
+type CashOpening struct {
+	GroupID      int       `json:"group_id"`
+	Date         string    `json:"date"`
+	CashCents    int64     `json:"cash_cents"`
+	SavingsCents int64     `json:"savings_cents"`
+	UpdatedBy    *int      `json:"updated_by,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}

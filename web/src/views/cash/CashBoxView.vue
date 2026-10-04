@@ -13,11 +13,21 @@ import { useToast } from 'primevue/usetoast'
 import CashEntryDialog from '@/components/cash/CashEntryDialog.vue'
 import ReceiptViewerDialog from '@/components/cash/ReceiptViewerDialog.vue'
 import { fetchEmployees } from '@/api/employees'
-import { deleteCashAllowance, deleteCashEntry, fetchCashBox, putCashAllowance, putCashKeepers } from '@/api/groupCash'
+import {
+  deleteCashAllowance,
+  deleteCashEntry,
+  deleteCashOpening,
+  downloadCashExport,
+  fetchCashBox,
+  putCashAllowance,
+  putCashKeepers,
+  putCashOpening,
+  type CashExportFormat,
+} from '@/api/groupCash'
 import type { CashBoxDetail, CashEntry, CashEntryKind, CashReceipt, Employee } from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { formatGermanDate, toISODateLocal } from '@/utils/dates'
-import { formatEuro, monthLabel, parseEuroToCents } from '@/utils/money'
+import { centsToInput, formatEuro, monthLabel, parseEuroToCents } from '@/utils/money'
 
 const route = useRoute()
 const toast = useToast()
@@ -104,6 +114,72 @@ async function removeEntry(e: CashEntry) {
     await load()
   } catch (er) {
     toast.add({ severity: 'error', summary: 'Löschen fehlgeschlagen', detail: getApiErrorMessage(er), life: 10000 })
+  }
+}
+
+/* Export */
+const exporting = ref<CashExportFormat | null>(null)
+
+async function exportLedger(format: CashExportFormat) {
+  if (!box.value) return
+  exporting.value = format
+  try {
+    await downloadCashExport(groupId.value, box.value.group_name, year.value, format)
+  } catch {
+    toast.add({ severity: 'error', summary: 'Export fehlgeschlagen', life: 10000 })
+  } finally {
+    exporting.value = null
+  }
+}
+
+/* Anfangsbestand */
+const openingDialog = ref(false)
+const openingDate = ref('')
+const openingCash = ref('')
+const openingSavings = ref('')
+const openingSaving = ref(false)
+const openingYearVisible = computed(() => box.value?.summary.opening_date?.startsWith(year.value) ?? false)
+
+function openOpening() {
+  const s = box.value?.summary
+  const firstEntry = box.value?.entries.at(-1)?.entry_date
+  openingDate.value = s?.opening_date ?? firstEntry ?? toISODateLocal(new Date())
+  openingCash.value = s?.opening_date ? centsToInput(s.opening_cash_cents) : ''
+  openingSavings.value = s?.opening_date ? centsToInput(s.opening_savings_cents) : ''
+  openingDialog.value = true
+}
+
+async function saveOpening() {
+  const cash = parseEuroToCents(openingCash.value || '0')
+  const savings = parseEuroToCents(openingSavings.value || '0')
+  if (cash == null || savings == null) {
+    toast.add({ severity: 'warn', summary: 'Bitte gültige Beträge eingeben, z. B. 42,50.', life: 8000 })
+    return
+  }
+  if (!openingDate.value) {
+    toast.add({ severity: 'warn', summary: 'Bitte den Stichtag angeben.', life: 8000 })
+    return
+  }
+  openingSaving.value = true
+  try {
+    await putCashOpening(groupId.value, { date: openingDate.value, cash_cents: cash, savings_cents: savings })
+    openingDialog.value = false
+    await load()
+  } catch (e) {
+    toast.add({ severity: 'error', summary: 'Speichern nicht möglich', detail: getApiErrorMessage(e), life: 10000 })
+  } finally {
+    openingSaving.value = false
+  }
+}
+
+async function removeOpening() {
+  if (!confirm('Anfangsbestand löschen? Kassenstand und Ansparkonto werden ohne ihn neu berechnet.')) return
+  try {
+    await deleteCashOpening(groupId.value)
+    openingDialog.value = false
+    await load()
+  } catch (e) {
+    toast.add({ severity: 'error', summary: 'Löschen fehlgeschlagen', detail: getApiErrorMessage(e), life: 10000 })
   }
 }
 
@@ -251,8 +327,14 @@ async function saveKeepers() {
           </div>
         </template>
         <template #content>
-          <p v-if="!visibleEntries.length" class="muted">Keine Buchungen in {{ year }}.</p>
-          <template v-else>
+          <div class="export">
+            <span class="muted small">Kassenbuch {{ year }}:</span>
+            <Button label="PDF" icon="pi pi-file-pdf" size="small" severity="secondary" outlined :loading="exporting === 'pdf'" data-testid="cash-export-pdf" @click="exportLedger('pdf')" />
+            <Button label="Excel (CSV)" icon="pi pi-table" size="small" severity="secondary" outlined :loading="exporting === 'csv'" data-testid="cash-export-csv" @click="exportLedger('csv')" />
+            <Button label="ZIP mit Belegen" icon="pi pi-download" size="small" severity="secondary" outlined :loading="exporting === 'zip'" data-testid="cash-export-zip" @click="exportLedger('zip')" />
+          </div>
+          <p v-if="!visibleEntries.length && !openingYearVisible" class="muted">Keine Buchungen in {{ year }}.</p>
+          <template v-if="visibleEntries.length">
             <p class="muted small totals">
               {{ year }}: Einnahmen {{ formatEuro(yearTotals.income) }} · Ausgaben {{ formatEuro(yearTotals.expense) }}
             </p>
@@ -298,6 +380,34 @@ async function saveKeepers() {
               </li>
             </ul>
           </template>
+          <div v-if="openingYearVisible" class="opening-row" data-testid="cash-opening-row">
+            <span>Anfangsbestand am {{ formatGermanDate(box.summary.opening_date!) }}</span>
+            <span>{{ formatEuro(box.summary.opening_cash_cents) }}</span>
+          </div>
+        </template>
+      </Card>
+
+      <Card>
+        <template #title>Anfangsbestand</template>
+        <template #content>
+          <p v-if="box.summary.opening_date" class="opening-text">
+            Am {{ formatGermanDate(box.summary.opening_date) }} lagen
+            <strong>{{ formatEuro(box.summary.opening_cash_cents) }}</strong> in der Kasse und
+            <strong>{{ formatEuro(box.summary.opening_savings_cents) }}</strong> im Ansparkonto.
+          </p>
+          <p v-else class="muted small opening-text">
+            Wenn die Kasse schon vor der Erfassung hier Geld hatte, tragen Sie den Bestand von Kasse und Ansparkonto
+            zum Stichtag ein. Buchungen beginnen dann am Stichtag.
+          </p>
+          <Button
+            v-if="box.can_edit"
+            :label="box.summary.opening_date ? 'Anfangsbestand ändern' : 'Anfangsbestand eintragen'"
+            size="small"
+            severity="secondary"
+            outlined
+            data-testid="cash-opening-edit"
+            @click="openOpening"
+          />
         </template>
       </Card>
 
@@ -382,6 +492,32 @@ async function saveKeepers() {
         @saved="load"
       />
       <ReceiptViewerDialog :group-id="box.group_id" :receipt="viewing" @close="viewing = null" />
+
+      <Dialog
+        v-model:visible="openingDialog"
+        modal
+        header="Anfangsbestand"
+        :style="{ width: 'min(480px, 96vw)' }"
+        :breakpoints="{ '600px': '100vw' }"
+      >
+        <div class="opening-form">
+          <p class="muted small">
+            Bestand am Stichtag, bevor die Kasse hier geführt wurde. Monatsbeträge ab dem Monat des Stichtags laufen
+            weiter ins Ansparkonto.
+          </p>
+          <label for="op-date">Stichtag</label>
+          <input id="op-date" v-model="openingDate" type="date" :max="toISODateLocal(new Date())" class="p-inputtext p-component w" />
+          <label for="op-cash">Bargeld in der Kasse (€)</label>
+          <InputText id="op-cash" v-model="openingCash" inputmode="decimal" placeholder="0,00" class="w" />
+          <label for="op-savings">Guthaben im Ansparkonto (€)</label>
+          <InputText id="op-savings" v-model="openingSavings" inputmode="decimal" placeholder="0,00" class="w" />
+        </div>
+        <template #footer>
+          <Button v-if="box.summary.opening_date" label="Löschen" severity="danger" text @click="removeOpening" />
+          <Button label="Abbrechen" severity="secondary" text @click="openingDialog = false" />
+          <Button label="Speichern" :loading="openingSaving" data-testid="cash-opening-save" @click="saveOpening" />
+        </template>
+      </Dialog>
 
       <Dialog
         v-model:visible="keeperDialog"
@@ -571,6 +707,35 @@ async function saveKeepers() {
 .entry-actions {
   display: flex;
   flex-shrink: 0;
+}
+.export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.opening-row {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 0.6rem;
+  margin-top: 0.25rem;
+  color: #475569;
+  font-weight: 600;
+}
+.opening-text {
+  margin-top: 0;
+}
+.opening-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.opening-form label {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-top: 0.35rem;
 }
 .explain {
   margin-top: 0;

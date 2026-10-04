@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -127,16 +129,35 @@ func (h *GroupCashHandler) keepers(r *http.Request, groupID int, names map[int]s
 	return out, nil
 }
 
-func (h *GroupCashHandler) summary(r *http.Request, groupID int) (groupcash.Summary, []model.CashAllowance, []model.CashEntry, error) {
+// boxData is everything stored for one box except receipts.
+type boxData struct {
+	opening    *model.CashOpening
+	allowances []model.CashAllowance
+	entries    []model.CashEntry
+}
+
+func (h *GroupCashHandler) loadBox(r *http.Request, groupID int) (*boxData, error) {
+	opening, err := h.Cash.GetOpening(r.Context(), groupID)
+	if err != nil {
+		return nil, err
+	}
 	allowances, err := h.Cash.ListAllowances(r.Context(), groupID)
 	if err != nil {
-		return groupcash.Summary{}, nil, nil, err
+		return nil, err
 	}
 	entries, err := h.Cash.ListEntries(r.Context(), groupID)
 	if err != nil {
-		return groupcash.Summary{}, nil, nil, err
+		return nil, err
 	}
-	return groupcash.Compute(allowances, entries, groupcash.MonthOf(h.now())), allowances, entries, nil
+	return &boxData{opening: opening, allowances: allowances, entries: entries}, nil
+}
+
+func (h *GroupCashHandler) summary(r *http.Request, groupID int) (groupcash.Summary, *boxData, error) {
+	b, err := h.loadBox(r, groupID)
+	if err != nil {
+		return groupcash.Summary{}, nil, err
+	}
+	return groupcash.Compute(b.opening, b.allowances, b.entries, groupcash.MonthOf(h.now())), b, nil
 }
 
 type cashBoxListItem struct {
@@ -181,7 +202,7 @@ func (h *GroupCashHandler) List(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusInternalServerError, "query failed")
 			return
 		}
-		sum, _, _, err := h.summary(r, g.ID)
+		sum, _, err := h.summary(r, g.ID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, "query failed")
 			return
@@ -227,7 +248,7 @@ func (h *GroupCashHandler) Get(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return
 	}
-	sum, allowances, entries, err := h.summary(r, a.group.ID)
+	sum, b, err := h.summary(r, a.group.ID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return
@@ -241,8 +262,9 @@ func (h *GroupCashHandler) Get(w http.ResponseWriter, r *http.Request) {
 	for _, rc := range receipts {
 		byEntry[rc.EntryID] = append(byEntry[rc.EntryID], rc)
 	}
+	entries, allowances := b.entries, b.allowances
 	out := make([]cashEntryResponse, len(entries))
-	var bal int64
+	bal := sum.OpeningCashCents
 	for i, e := range entries {
 		bal += e.SignedCents()
 		er := cashEntryResponse{CashEntry: e, BalanceAfterCents: bal, Receipts: byEntry[e.ID]}
@@ -312,6 +334,75 @@ func (h *GroupCashHandler) PutKeepers(w http.ResponseWriter, r *http.Request) {
 	names, _ := h.userNames(r)
 	ks, _ := h.keepers(r, a.group.ID, names)
 	response.JSON(w, http.StatusOK, map[string]any{"keepers": ks})
+}
+
+type openingBody struct {
+	Date         string `json:"date"`
+	CashCents    int64  `json:"cash_cents"`
+	SavingsCents int64  `json:"savings_cents"`
+}
+
+// PutOpening sets the opening balance (cash and savings account) as of date. Entries must not be older.
+func (h *GroupCashHandler) PutOpening(w http.ResponseWriter, r *http.Request) {
+	a := h.editAccess(w, r)
+	if a == nil {
+		return
+	}
+	var body openingBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	d, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(body.Date), time.Local)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Bitte den Stichtag angeben")
+		return
+	}
+	if d.After(h.now()) {
+		response.Error(w, http.StatusBadRequest, "Der Stichtag darf nicht in der Zukunft liegen")
+		return
+	}
+	if body.CashCents < 0 || body.CashCents > maxCashAmountCents || body.SavingsCents < 0 || body.SavingsCents > maxCashAmountCents {
+		response.Error(w, http.StatusBadRequest, "Ungültiger Betrag")
+		return
+	}
+	date := d.Format("2006-01-02")
+	entries, err := h.Cash.ListEntries(r.Context(), a.group.ID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	if len(entries) > 0 && entries[0].EntryDate < date {
+		response.Error(w, http.StatusConflict, fmt.Sprintf(
+			"Es gibt schon Buchungen ab dem %s. Der Stichtag darf nicht danach liegen.", groupcash.GermanDate(entries[0].EntryDate)))
+		return
+	}
+	uid := middleware.UserID(r)
+	o := &model.CashOpening{GroupID: a.group.ID, Date: date, CashCents: body.CashCents, SavingsCents: body.SavingsCents, UpdatedBy: &uid}
+	if err := h.Cash.SetOpening(r.Context(), o); err != nil {
+		response.Error(w, http.StatusInternalServerError, "Speichern fehlgeschlagen")
+		return
+	}
+	logAudit(h.Audit, r.Context(), audit.Entry{
+		Action: audit.ActionUpdate, EntityType: audit.EntityCashOpening, EntityID: auditID(a.group.ID),
+		Summary: audit.JSONSummary(map[string]any{"date": o.Date, "cash_cents": o.CashCents, "savings_cents": o.SavingsCents}),
+	})
+	response.JSON(w, http.StatusOK, o)
+}
+
+func (h *GroupCashHandler) DeleteOpening(w http.ResponseWriter, r *http.Request) {
+	a := h.editAccess(w, r)
+	if a == nil {
+		return
+	}
+	if err := h.Cash.DeleteOpening(r.Context(), a.group.ID); err != nil {
+		response.Error(w, http.StatusInternalServerError, "Löschen fehlgeschlagen")
+		return
+	}
+	logAudit(h.Audit, r.Context(), audit.Entry{
+		Action: audit.ActionDelete, EntityType: audit.EntityCashOpening, EntityID: auditID(a.group.ID),
+	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type allowanceBody struct {
@@ -436,21 +527,17 @@ func (b cashEntryBody) normalize(today time.Time) (model.CashEntry, error) {
 
 // checkAgainstBox validates the entry against allowance and savings, excluding entry excludeID.
 func (h *GroupCashHandler) checkAgainstBox(r *http.Request, groupID int, e model.CashEntry, excludeID int) (int, error) {
-	allowances, err := h.Cash.ListAllowances(r.Context(), groupID)
+	b, err := h.loadBox(r, groupID)
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("query failed")
 	}
-	entries, err := h.Cash.ListEntries(r.Context(), groupID)
-	if err != nil {
-		return http.StatusInternalServerError, fmt.Errorf("query failed")
-	}
-	others := entries[:0]
-	for _, o := range entries {
+	others := b.entries[:0]
+	for _, o := range b.entries {
 		if o.ID != excludeID {
 			others = append(others, o)
 		}
 	}
-	if err := groupcash.CheckEntry(allowances, others, e, groupcash.MonthOf(h.now())); err != nil {
+	if err := groupcash.CheckEntry(b.opening, b.allowances, others, e, groupcash.MonthOf(h.now())); err != nil {
 		return http.StatusConflict, err
 	}
 	return 0, nil
@@ -744,4 +831,105 @@ func (h *GroupCashHandler) DeleteReceipt(w http.ResponseWriter, r *http.Request)
 		Summary: audit.JSONSummary(map[string]any{"entry_id": rc.EntryID, "filename": rc.Filename}),
 	})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Export returns the ledger (Kassenbuch) of one year as csv, pdf, or zip (PDF, CSV and all receipts).
+func (h *GroupCashHandler) Export(w http.ResponseWriter, r *http.Request) {
+	a := h.access(w, r)
+	if a == nil {
+		return
+	}
+	now := h.now()
+	year := now.Year()
+	if q := r.URL.Query().Get("year"); q != "" {
+		y, err := strconv.Atoi(q)
+		if err != nil || y < 2000 || y > 2100 {
+			response.Error(w, http.StatusBadRequest, "invalid year")
+			return
+		}
+		year = y
+	}
+	format := r.URL.Query().Get("format")
+	if format != "csv" && format != "pdf" && format != "zip" {
+		response.Error(w, http.StatusBadRequest, "format must be csv, pdf or zip")
+		return
+	}
+	sum, b, err := h.summary(r, a.group.ID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	receipts, err := h.Cash.ListReceipts(r.Context(), a.group.ID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	l := groupcash.BuildLedger(a.group.Name, year, b.opening, b.entries, receipts, sum)
+	base := fmt.Sprintf("Kassenbuch_%s_%d", receiptFilename(a.group.Name), year)
+	disposition := func(ext string) string {
+		name := base + "." + ext
+		return fmt.Sprintf(`attachment; filename="kassenbuch-%d.%s"; filename*=UTF-8''%s`, year, ext, url.PathEscape(name))
+	}
+
+	switch format {
+	case "csv":
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", disposition("csv"))
+		_ = l.WriteCSV(w, false)
+	case "pdf":
+		pdf, err := l.PDF(now)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, "PDF konnte nicht erstellt werden")
+			return
+		}
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", disposition("pdf"))
+		_, _ = w.Write(pdf)
+	case "zip":
+		pdf, err := l.PDF(now)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, "PDF konnte nicht erstellt werden")
+			return
+		}
+		var csvBuf bytes.Buffer
+		_ = l.WriteCSV(&csvBuf, true)
+		var zipBuf bytes.Buffer
+		zw := zip.NewWriter(&zipBuf)
+		add := func(name string, data []byte) error {
+			f, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate, Modified: now})
+			if err != nil {
+				return err
+			}
+			_, err = f.Write(data)
+			return err
+		}
+		if err := add(base+".pdf", pdf); err != nil {
+			response.Error(w, http.StatusInternalServerError, "ZIP konnte nicht erstellt werden")
+			return
+		}
+		if err := add(base+".csv", csvBuf.Bytes()); err != nil {
+			response.Error(w, http.StatusInternalServerError, "ZIP konnte nicht erstellt werden")
+			return
+		}
+		for _, row := range l.Rows {
+			for i, rc := range row.Receipts {
+				data, err := h.Cash.ReceiptData(r.Context(), rc.ID)
+				if err == nil {
+					err = add("Belege/"+groupcash.ReceiptName(row, i), data)
+				}
+				if err != nil {
+					response.Error(w, http.StatusInternalServerError, "ZIP konnte nicht erstellt werden")
+					return
+				}
+			}
+		}
+		if err := zw.Close(); err != nil {
+			response.Error(w, http.StatusInternalServerError, "ZIP konnte nicht erstellt werden")
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", disposition("zip"))
+		w.Header().Set("Content-Length", strconv.Itoa(zipBuf.Len()))
+		_, _ = w.Write(zipBuf.Bytes())
+	}
 }

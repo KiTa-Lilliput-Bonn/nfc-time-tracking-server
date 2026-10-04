@@ -4,9 +4,11 @@
 // abgelaufenen Monat nicht als Monatsbetrag ausgezahlt wurde, wandert ins Ansparkonto. Aus dem
 // Ansparkonto bucht der Kassenwart per Einnahme mit Quelle „savings“ in die Kasse.
 //
-//	Ansparkonto = Σ abgelaufene Monate (Anspruch − ausgezahlter Monatsbetrag) − Σ Entnahmen
+//	Ansparkonto = Anfangsbestand + Σ abgelaufene Monate (Anspruch − ausgezahlter Monatsbetrag) − Σ Entnahmen
 //
 // Der laufende Monat zählt noch nicht: sein Anspruch kann noch als Monatsbetrag abgerufen werden.
+// Mit Anfangsbestand zählen nur Monate ab dem Monat des Stichtags; ein nachträglich gebuchter
+// Monatsbetrag für einen früheren Monat verringert das Ansparkonto direkt (der Anfangsbestand enthielt ihn).
 package groupcash
 
 import (
@@ -33,6 +35,11 @@ type MonthRow struct {
 
 // Summary fasst eine Gruppenkasse zusammen.
 type Summary struct {
+	// OpeningCashCents / OpeningSavingsCents: Anfangsbestand (0 ohne Anfangsbestand).
+	OpeningCashCents    int64  `json:"opening_cash_cents"`
+	OpeningSavingsCents int64  `json:"opening_savings_cents"`
+	OpeningDate         string `json:"opening_date,omitempty"`
+
 	BalanceCents int64 `json:"balance_cents"`
 	IncomeCents  int64 `json:"income_cents"`
 	ExpenseCents int64 `json:"expense_cents"`
@@ -77,13 +84,23 @@ func AllowanceFor(allowances []model.CashAllowance, m string) int64 {
 	return amount
 }
 
-// Compute berechnet Kassenstand, Ansparkonto und Monatsübersicht.
-func Compute(allowances []model.CashAllowance, entries []model.CashEntry, currentMonth string) Summary {
+// Compute berechnet Kassenstand, Ansparkonto und Monatsübersicht. opening darf nil sein.
+func Compute(opening *model.CashOpening, allowances []model.CashAllowance, entries []model.CashEntry, currentMonth string) Summary {
 	s := Summary{CurrentMonth: currentMonth}
+	openingMonth := ""
+	if opening != nil {
+		s.OpeningCashCents = opening.CashCents
+		s.OpeningSavingsCents = opening.SavingsCents
+		s.OpeningDate = opening.Date
+		openingMonth = opening.Date[:7]
+	}
 	paid := map[string]int64{}
 	withdrawn := map[string]int64{}
 	start := ""
 	consider := func(m string) {
+		if m < openingMonth {
+			m = openingMonth
+		}
 		if m != "" && m <= currentMonth && (start == "" || m < start) {
 			start = m
 		}
@@ -111,7 +128,13 @@ func Compute(allowances []model.CashAllowance, entries []model.CashEntry, curren
 			consider(m)
 		}
 	}
-	s.BalanceCents = s.IncomeCents - s.ExpenseCents
+	s.BalanceCents = s.OpeningCashCents + s.IncomeCents - s.ExpenseCents
+	s.SavingsCents += s.OpeningSavingsCents
+	for m, cents := range paid {
+		if m < openingMonth {
+			s.SavingsCents -= cents
+		}
+	}
 
 	if start != "" {
 		for m := start; m <= currentMonth; m = nextMonth(m) {
@@ -141,7 +164,10 @@ func Compute(allowances []model.CashAllowance, entries []model.CashEntry, curren
 
 // CheckEntry prüft eine neue oder geänderte Buchung gegen Monatsanspruch und Ansparkonto.
 // others sind alle übrigen Buchungen der Kasse (ohne die geprüfte). Die Fehlermeldung ist für Nutzer gedacht.
-func CheckEntry(allowances []model.CashAllowance, others []model.CashEntry, e model.CashEntry, currentMonth string) error {
+func CheckEntry(opening *model.CashOpening, allowances []model.CashAllowance, others []model.CashEntry, e model.CashEntry, currentMonth string) error {
+	if opening != nil && e.EntryDate < opening.Date {
+		return fmt.Errorf("Buchungen vor dem Anfangsbestand (%s) sind nicht möglich.", GermanDate(opening.Date))
+	}
 	switch e.Source {
 	case model.CashSourceAllowance:
 		if e.ForMonth > currentMonth {
@@ -163,7 +189,7 @@ func CheckEntry(allowances []model.CashAllowance, others []model.CashEntry, e mo
 				MonthLabel(e.ForMonth), FormatEuro(open))
 		}
 	case model.CashSourceSavings:
-		before := Compute(allowances, others, currentMonth).SavingsCents
+		before := Compute(opening, allowances, others, currentMonth).SavingsCents
 		if e.AmountCents > before {
 			if before < 0 {
 				before = 0
@@ -173,7 +199,7 @@ func CheckEntry(allowances []model.CashAllowance, others []model.CashEntry, e mo
 	}
 	if e.Source == model.CashSourceAllowance {
 		// Ein Monatsbetrag für einen vergangenen Monat verringert das Ansparkonto; es darf nicht negativ werden.
-		after := Compute(allowances, append(append([]model.CashEntry{}, others...), e), currentMonth).SavingsCents
+		after := Compute(opening, allowances, append(append([]model.CashEntry{}, others...), e), currentMonth).SavingsCents
 		if after < 0 && e.ForMonth < currentMonth {
 			return fmt.Errorf("Der Betrag für %s wurde bereits über das Ansparkonto entnommen.", MonthLabel(e.ForMonth))
 		}
@@ -190,6 +216,15 @@ func MonthLabel(m string) string {
 		return m
 	}
 	return fmt.Sprintf("%s %d", monthNames[t.Month()-1], t.Year())
+}
+
+// GermanDate formatiert YYYY-MM-DD als TT.MM.JJJJ.
+func GermanDate(d string) string {
+	t, err := time.Parse("2006-01-02", d)
+	if err != nil {
+		return d
+	}
+	return t.Format("02.01.2006")
 }
 
 // FormatEuro formatiert Cent als „1.234,56 €“.

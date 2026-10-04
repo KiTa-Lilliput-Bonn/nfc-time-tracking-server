@@ -208,6 +208,11 @@ type GroupCashStore interface {
 	IsKeeper(ctx context.Context, groupID, userID int) (bool, error)
 	SetKeepers(ctx context.Context, groupID int, userIDs []int) error
 
+	// GetOpening liefert den Anfangsbestand oder nil, wenn keiner gesetzt ist.
+	GetOpening(ctx context.Context, groupID int) (*model.CashOpening, error)
+	SetOpening(ctx context.Context, o *model.CashOpening) error
+	DeleteOpening(ctx context.Context, groupID int) error
+
 	ListAllowances(ctx context.Context, groupID int) ([]model.CashAllowance, error)
 	// UpsertAllowance setzt den Anspruch ab a.ValidFrom (ersetzt eine Version im selben Monat).
 	UpsertAllowance(ctx context.Context, a *model.CashAllowance) error
