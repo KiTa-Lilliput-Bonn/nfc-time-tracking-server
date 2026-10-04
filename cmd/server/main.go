@@ -232,6 +232,7 @@ func main() {
 		Settings:              settings,
 		ShiftAlertDismissals:  sqlite.NewShiftAlertDismissalStore(db),
 		ChangeRequests:        sqlite.NewChangeRequestStore(db),
+		GroupCash:             sqlite.NewGroupCashStore(db),
 		Stamps:                stampsSvc,
 		Backup:                backupSvc,
 		Audit:                 auditLog,

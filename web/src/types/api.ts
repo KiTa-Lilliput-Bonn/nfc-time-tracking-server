@@ -524,3 +524,99 @@ export interface ChangeRequest {
   decision_comment: string
   created_at: string
 }
+
+/** Gruppenkasse */
+export type CashEntryKind = 'expense' | 'income'
+/** Herkunft einer Einnahme: Monatsbetrag, Entnahme aus dem Ansparkonto, Sonstiges; leer bei Ausgaben. */
+export type CashIncomeSource = '' | 'allowance' | 'savings' | 'other'
+
+export interface CashPerson {
+  id: number
+  display_name: string
+}
+
+export interface CashAllowance {
+  id: number
+  group_id: number
+  /** YYYY-MM */
+  valid_from: string
+  amount_cents: number
+  created_at: string
+}
+
+export interface CashReceipt {
+  id: number
+  entry_id: number
+  filename: string
+  content_type: string
+  size_bytes: number
+  created_at: string
+}
+
+export interface CashEntry {
+  id: number
+  group_id: number
+  kind: CashEntryKind
+  source: CashIncomeSource
+  /** YYYY-MM, nur bei Monatsbetrag */
+  for_month: string
+  /** YYYY-MM-DD */
+  entry_date: string
+  amount_cents: number
+  description: string
+  balance_after_cents: number
+  created_by_name?: string
+  updated_by_name?: string
+  created_at: string
+  updated_at: string
+  receipts: CashReceipt[]
+}
+
+export interface CashMonthRow {
+  month: string
+  allowance_cents: number
+  paid_cents: number
+  saved_cents: number
+  withdrawn_cents: number
+  current: boolean
+}
+
+export interface CashSummary {
+  balance_cents: number
+  income_cents: number
+  expense_cents: number
+  savings_cents: number
+  current_month: string
+  current_allowance_cents: number
+  current_paid_cents: number
+  current_open_cents: number
+  months: CashMonthRow[] | null
+}
+
+export interface CashBoxListItem {
+  group_id: number
+  group_name: string
+  keepers: CashPerson[]
+  can_edit: boolean
+  summary: CashSummary
+}
+
+export interface CashBoxDetail {
+  group_id: number
+  group_name: string
+  keepers: CashPerson[]
+  can_edit: boolean
+  can_manage_keepers: boolean
+  allowances: CashAllowance[]
+  summary: CashSummary
+  entries: CashEntry[]
+}
+
+export interface CashEntryInput {
+  kind: CashEntryKind
+  source: CashIncomeSource
+  for_month: string
+  entry_date: string
+  amount_cents: number
+  description: string
+}

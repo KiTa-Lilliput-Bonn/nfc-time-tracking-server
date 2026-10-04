@@ -5,6 +5,7 @@ import Menu from 'primevue/menu'
 import type { MenuItem } from 'primevue/menuitem'
 import { useAuthStore } from '@/stores/auth'
 import { usePendingRequests } from '@/stores/pendingRequests'
+import { fetchCashBoxes } from '@/api/groupCash'
 
 const route = useRoute()
 const router = useRouter()
@@ -92,6 +93,7 @@ function isActiveNav(targetPath: string): boolean {
   if (path === targetPath) return true
   if (targetPath === '/employees' && path.startsWith('/employees/')) return true
   if (targetPath === '/groups' && path.startsWith('/groups')) return true
+  if (targetPath === '/cash-boxes' && path.startsWith('/cash-boxes')) return true
   return false
 }
 
@@ -108,6 +110,22 @@ watch(
   [isLeitung, () => route.fullPath],
   ([lead]) => {
     if (lead) void pendingRequests.refresh()
+  },
+  { immediate: true },
+)
+
+/** Mitarbeitende sehen die Gruppenkasse nur, wenn sie Kassenwart sind; die Leitung immer (unter „Leitung“). */
+const isCashKeeper = ref(false)
+watch(
+  [isLeitung, () => auth.user?.id],
+  async ([lead, uid]) => {
+    isCashKeeper.value = false
+    if (lead || !uid) return
+    try {
+      isCashKeeper.value = (await fetchCashBoxes()).length > 0
+    } catch {
+      isCashKeeper.value = false
+    }
   },
   { immediate: true },
 )
@@ -171,6 +189,16 @@ watch(
         <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/my/requests') }" to="/my/requests">
           Anträge
         </RouterLink>
+        <RouterLink
+          v-if="isCashKeeper"
+          class="nav-item"
+          active-class=""
+          :class="{ 'nav-item--active': isActiveNav('/cash-boxes') }"
+          to="/cash-boxes"
+          data-testid="nav-cash-boxes"
+        >
+          Gruppenkasse
+        </RouterLink>
         <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/my/password') }" to="/my/password">
           Passwort ändern
         </RouterLink>
@@ -186,6 +214,9 @@ watch(
           </RouterLink>
           <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/groups') }" to="/groups">
             Gruppen
+          </RouterLink>
+          <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/cash-boxes') }" to="/cash-boxes">
+            Gruppenkassen
           </RouterLink>
           <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/schedule') }" to="/schedule">
             Dienstplan-Editor

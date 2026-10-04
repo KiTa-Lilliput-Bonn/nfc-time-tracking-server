@@ -67,6 +67,18 @@ const router = createRouter({
           meta: { title: 'Anträge' },
         },
         {
+          path: 'cash-boxes',
+          name: 'cash-boxes',
+          component: () => import('@/views/cash/CashBoxListView.vue'),
+          meta: { title: 'Gruppenkassen' },
+        },
+        {
+          path: 'cash-boxes/:groupId',
+          name: 'cash-box',
+          component: () => import('@/views/cash/CashBoxView.vue'),
+          meta: { title: 'Gruppenkasse' },
+        },
+        {
           path: 'my/password',
           name: 'change-password',
           component: () => import('@/views/my/ChangePasswordView.vue'),

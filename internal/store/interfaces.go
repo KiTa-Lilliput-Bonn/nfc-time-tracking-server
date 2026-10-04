@@ -199,3 +199,30 @@ type ChangeRequestStore interface {
 	Withdraw(ctx context.Context, id, userID int) (bool, error)
 	Reopen(ctx context.Context, id int) error
 }
+
+// GroupCashStore verwaltet Gruppenkassen (Kassenwarte, Monatsanspruch, Buchungen, Belege).
+type GroupCashStore interface {
+	ListKeepers(ctx context.Context, groupID int) ([]int, error)
+	// ListKeeperGroups liefert die Gruppen-IDs, deren Kasse userID verwaltet.
+	ListKeeperGroups(ctx context.Context, userID int) ([]int, error)
+	IsKeeper(ctx context.Context, groupID, userID int) (bool, error)
+	SetKeepers(ctx context.Context, groupID int, userIDs []int) error
+
+	ListAllowances(ctx context.Context, groupID int) ([]model.CashAllowance, error)
+	// UpsertAllowance setzt den Anspruch ab a.ValidFrom (ersetzt eine Version im selben Monat).
+	UpsertAllowance(ctx context.Context, a *model.CashAllowance) error
+	DeleteAllowance(ctx context.Context, groupID, id int) (bool, error)
+
+	ListEntries(ctx context.Context, groupID int) ([]model.CashEntry, error)
+	GetEntry(ctx context.Context, id int) (*model.CashEntry, error)
+	CreateEntry(ctx context.Context, e *model.CashEntry) error
+	UpdateEntry(ctx context.Context, e *model.CashEntry) error
+	// DeleteEntry löscht die Buchung samt Belegen.
+	DeleteEntry(ctx context.Context, id int) error
+
+	ListReceipts(ctx context.Context, groupID int) ([]model.CashReceipt, error)
+	GetReceipt(ctx context.Context, id int) (*model.CashReceipt, error)
+	ReceiptData(ctx context.Context, id int) ([]byte, error)
+	CreateReceipt(ctx context.Context, r *model.CashReceipt, data []byte) error
+	DeleteReceipt(ctx context.Context, id int) error
+}
