@@ -352,7 +352,7 @@ func TestGroupCash_OpeningAndExport(t *testing.T) {
 	f.router.ServeHTTP(httptest.NewRecorder(), req)
 
 	rr = f.do(t, f.lead, http.MethodGet, box+"/export?year=2026&format=csv", nil)
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Anfangsbestand;;;;42,50") {
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Anfangsbestand;;;;;42,50") {
 		t.Fatalf("csv: %d %s", rr.Code, rr.Body.String())
 	}
 	rr = f.do(t, f.lead, http.MethodGet, box+"/export?year=2026&format=zip", nil)
@@ -372,5 +372,39 @@ func TestGroupCash_OpeningAndExport(t *testing.T) {
 	}
 	if rr := f.do(t, f.staff, http.MethodGet, box+"/export?year=2026&format=pdf", nil); rr.Code != http.StatusForbidden {
 		t.Fatalf("staff export: %d", rr.Code)
+	}
+}
+
+func TestGroupCash_ExpenseFromSavings(t *testing.T) {
+	f := newCashFixture(t)
+	box := f.box(f.group.ID)
+	f.do(t, f.lead, http.MethodPut, box+"/keepers", map[string]any{"user_ids": []int{f.keeper.ID}})
+	f.do(t, f.keeper, http.MethodPut, box+"/allowances", map[string]any{"valid_from": "2026-02", "amount_cents": 10000})
+
+	expense := map[string]any{"kind": "expense", "source": "savings", "entry_date": "2026-04-03", "amount_cents": 20001, "description": "Zoo"}
+	if rr := f.do(t, f.keeper, http.MethodPost, box+"/entries", expense); rr.Code != http.StatusConflict {
+		t.Fatalf("over savings: %d %s", rr.Code, rr.Body.String())
+	}
+	expense["amount_cents"] = 12000
+	if rr := f.do(t, f.keeper, http.MethodPost, box+"/entries", expense); rr.Code != http.StatusCreated {
+		t.Fatalf("direct expense: %d %s", rr.Code, rr.Body.String())
+	}
+	// Ungültige Quelle bei Ausgaben wird zu „aus der Kasse“.
+	rr := f.do(t, f.keeper, http.MethodPost, box+"/entries", map[string]any{
+		"kind": "expense", "source": "allowance", "entry_date": "2026-04-03", "amount_cents": 100, "description": "Kasse",
+	})
+	var e model.CashEntry
+	_ = json.NewDecoder(rr.Body).Decode(&e)
+	if rr.Code != http.StatusCreated || e.Source != "" {
+		t.Fatalf("cash expense: %d %+v", rr.Code, e)
+	}
+
+	var detail cashBoxDetail
+	_ = json.NewDecoder(f.do(t, f.lead, http.MethodGet, box, nil).Body).Decode(&detail)
+	if detail.Summary.SavingsCents != 8000 || detail.Summary.BalanceCents != -100 || detail.Summary.SavingsSpentCents != 12000 {
+		t.Fatalf("summary: %+v", detail.Summary)
+	}
+	if detail.Entries[1].BalanceAfterCents != 0 {
+		t.Fatalf("direct expense must not change the cash balance: %+v", detail.Entries[1])
 	}
 }

@@ -64,11 +64,13 @@ const visibleEntries = computed(() => (box.value?.entries ?? []).filter((e) => e
 const yearTotals = computed(() => {
   let income = 0
   let expense = 0
+  let fromSavings = 0
   for (const e of visibleEntries.value) {
     if (e.kind === 'income') income += e.amount_cents
+    else if (e.source === 'savings') fromSavings += e.amount_cents
     else expense += e.amount_cents
   }
-  return { income, expense }
+  return { income, expense, fromSavings }
 })
 
 const sourceLabel: Record<string, string> = {
@@ -337,6 +339,9 @@ async function saveKeepers() {
           <template v-if="visibleEntries.length">
             <p class="muted small totals">
               {{ year }}: Einnahmen {{ formatEuro(yearTotals.income) }} · Ausgaben {{ formatEuro(yearTotals.expense) }}
+              <template v-if="yearTotals.fromSavings">
+                · direkt aus Ansparkonto {{ formatEuro(yearTotals.fromSavings) }}
+              </template>
             </p>
             <ul class="entries">
               <li v-for="e in visibleEntries" :key="e.id" class="entry" data-testid="cash-entry">
@@ -346,15 +351,17 @@ async function saveKeepers() {
                     <span class="muted small">
                       {{ formatGermanDate(e.entry_date) }}
                       <template v-if="e.kind === 'income'"> · {{ sourceLabel[e.source] }}</template>
+                      <template v-else-if="e.source === 'savings'"> · direkt aus Ansparkonto</template>
                       <template v-if="e.created_by_name"> · {{ e.created_by_name }}</template>
                     </span>
                     <span v-if="entryNote(e)" class="muted small">{{ entryNote(e) }}</span>
                   </div>
                   <div class="entry-amount">
-                    <span :class="e.kind === 'income' ? 'pos' : 'neg'">
+                    <span :class="e.kind === 'income' ? 'pos' : e.source === 'savings' ? 'savings' : 'neg'">
                       {{ e.kind === 'income' ? '+' : '−' }}{{ formatEuro(e.amount_cents) }}
                     </span>
-                    <span class="muted small">Stand {{ formatEuro(e.balance_after_cents) }}</span>
+                    <span v-if="e.kind === 'expense' && e.source === 'savings'" class="muted small">aus Ansparkonto</span>
+                    <span v-else class="muted small">Stand {{ formatEuro(e.balance_after_cents) }}</span>
                   </div>
                 </div>
                 <div class="entry-foot">
@@ -416,7 +423,8 @@ async function saveKeepers() {
         <template #content>
           <p class="muted small explain">
             Was der Kasse in einem Monat zusteht, aber nicht als Monatsbetrag ausgezahlt wird, geht am Monatsende ins
-            Ansparkonto. Aus dem Ansparkonto kann über „Einnahme → Aus Ansparkonto“ in die Kasse gebucht werden.
+            Ansparkonto. Aus dem Ansparkonto kann über „Einnahme → Aus Ansparkonto“ in die Kasse gebucht oder eine Ausgabe
+            direkt bezahlt werden („Ausgabe → Direkt aus Ansparkonto“).
           </p>
 
           <h3 class="sub">Anspruch pro Monat</h3>
@@ -610,6 +618,9 @@ async function saveKeepers() {
 }
 .tile-value.neg {
   color: #b91c1c;
+}
+.savings {
+  color: #92400e;
 }
 .tile-sub {
   font-size: 0.75rem;

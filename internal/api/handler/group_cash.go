@@ -496,7 +496,10 @@ func (b cashEntryBody) normalize(today time.Time) (model.CashEntry, error) {
 	}
 	switch e.Kind {
 	case model.CashExpense:
-		e.Source, e.ForMonth = "", ""
+		e.ForMonth = ""
+		if e.Source != model.CashSourceSavings {
+			e.Source = ""
+		}
 		if e.Description == "" {
 			return e, fmt.Errorf("Bitte angeben, wofür das Geld ausgegeben wurde")
 		}

@@ -151,12 +151,23 @@ test('Anfangsbestand und Kassenbuch-Export', async ({ page, request }) => {
   await expect(page.getByTestId('cash-savings')).toHaveText(/300,00\s€/)
   await expect(page.getByTestId('cash-opening-row')).toContainText('42,50')
 
+  // Ausgabe direkt aus dem Ansparkonto: Kassenstand bleibt.
+  await page.getByTestId('cash-new-expense').click()
+  await page.getByTestId('cash-entry-paid-from').getByText('Direkt aus Ansparkonto').click()
+  await expect(page.getByTestId('cash-entry-hint')).toContainText('300,00')
+  await page.locator('#ce-amount').fill('120')
+  await page.locator('#ce-desc').fill('Bus für Ausflug')
+  await page.getByTestId('cash-entry-save').click()
+  await expect(page.getByTestId('cash-savings')).toHaveText(/180,00\s€/)
+  await expect(page.getByTestId('cash-balance')).toHaveText(/42,50\s€/)
+  await expect(page.getByTestId('cash-entry').first()).toContainText('aus Ansparkonto')
+
   const download = page.waitForEvent('download')
   await page.getByTestId('cash-export-csv').click()
   const file = await download
   expect(file.suggestedFilename()).toBe(`Kassenbuch_${groupName}_${today.slice(0, 4)}.csv`)
   const csv = await (await file.createReadStream()).toArray()
-  expect(Buffer.concat(csv).toString('utf-8')).toContain('Anfangsbestand;;;;42,50')
+  expect(Buffer.concat(csv).toString('utf-8')).toContain('Anfangsbestand;;;;;42,50')
 
   // Leitung darf exportieren.
   const pdf = await request.get(`/api/v1/cash-boxes/${groupId}/export`, {

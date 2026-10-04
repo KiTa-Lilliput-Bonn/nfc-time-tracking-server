@@ -527,7 +527,7 @@ export interface ChangeRequest {
 
 /** Gruppenkasse */
 export type CashEntryKind = 'expense' | 'income'
-/** Herkunft einer Einnahme: Monatsbetrag, Entnahme aus dem Ansparkonto, Sonstiges; leer bei Ausgaben. */
+/** Herkunft einer Einnahme (Monatsbetrag, aus Ansparkonto, Sonstiges); bei Ausgaben leer (Kasse) oder savings (direkt aus Ansparkonto). */
 export type CashIncomeSource = '' | 'allowance' | 'savings' | 'other'
 
 export interface CashPerson {
@@ -590,6 +590,8 @@ export interface CashSummary {
   balance_cents: number
   income_cents: number
   expense_cents: number
+  /** Ausgaben direkt aus dem Ansparkonto (ändern den Kassenstand nicht) */
+  savings_spent_cents: number
   savings_cents: number
   current_month: string
   current_allowance_cents: number

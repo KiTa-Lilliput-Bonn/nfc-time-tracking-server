@@ -6,6 +6,9 @@
 //
 //	Ansparkonto = Anfangsbestand + Σ abgelaufene Monate (Anspruch − ausgezahlter Monatsbetrag) − Σ Entnahmen
 //
+// Entnahmen sind Einnahmen der Kasse „aus dem Ansparkonto“ und Ausgaben, die direkt aus dem Ansparkonto
+// bezahlt wurden; letztere ändern den Kassenstand nicht.
+//
 // Der laufende Monat zählt noch nicht: sein Anspruch kann noch als Monatsbetrag abgerufen werden.
 // Mit Anfangsbestand zählen nur Monate ab dem Monat des Stichtags; ein nachträglich gebuchter
 // Monatsbetrag für einen früheren Monat verringert das Ansparkonto direkt (der Anfangsbestand enthielt ihn).
@@ -28,7 +31,7 @@ type MonthRow struct {
 	PaidCents      int64  `json:"paid_cents"`
 	// SavedCents geht in diesem Monat ins Ansparkonto (Anspruch − ausgezahlt); im laufenden Monat 0.
 	SavedCents int64 `json:"saved_cents"`
-	// WithdrawnCents sind Entnahmen aus dem Ansparkonto mit Buchungsdatum in diesem Monat.
+	// WithdrawnCents: Entnahmen in die Kasse und Ausgaben direkt aus dem Ansparkonto, nach Buchungsdatum.
 	WithdrawnCents int64 `json:"withdrawn_cents"`
 	Current        bool  `json:"current"`
 }
@@ -42,8 +45,10 @@ type Summary struct {
 
 	BalanceCents int64 `json:"balance_cents"`
 	IncomeCents  int64 `json:"income_cents"`
-	ExpenseCents int64 `json:"expense_cents"`
-	SavingsCents int64 `json:"savings_cents"`
+	// ExpenseCents: Ausgaben aus der Kasse; SavingsSpentCents: Ausgaben direkt aus dem Ansparkonto.
+	ExpenseCents      int64 `json:"expense_cents"`
+	SavingsSpentCents int64 `json:"savings_spent_cents"`
+	SavingsCents      int64 `json:"savings_cents"`
 
 	CurrentMonth          string `json:"current_month"`
 	CurrentAllowanceCents int64  `json:"current_allowance_cents"`
@@ -109,7 +114,9 @@ func Compute(opening *model.CashOpening, allowances []model.CashAllowance, entri
 		consider(a.ValidFrom)
 	}
 	for _, e := range entries {
-		if e.Kind == model.CashExpense {
+		if e.PaidFromSavings() {
+			s.SavingsSpentCents += e.AmountCents
+		} else if e.Kind == model.CashExpense {
 			s.ExpenseCents += e.AmountCents
 		} else {
 			s.IncomeCents += e.AmountCents

@@ -34,7 +34,9 @@ type Ledger struct {
 	Rows         []LedgerRow
 	IncomeCents  int64
 	ExpenseCents int64
-	EndCents     int64
+	// SavingsSpentCents: Ausgaben direkt aus dem Ansparkonto (ändern den Kassenstand nicht).
+	SavingsSpentCents int64
+	EndCents          int64
 	Summary      Summary
 }
 
@@ -68,15 +70,33 @@ func BuildLedger(groupName string, year int, opening *model.CashOpening, entries
 			break
 		}
 		bal += e.SignedCents()
-		if e.Kind == model.CashExpense {
-			l.ExpenseCents += e.AmountCents
-		} else {
-			l.IncomeCents += e.AmountCents
-		}
+		in, out, direct := amounts(e)
+		l.IncomeCents += in
+		l.ExpenseCents += out
+		l.SavingsSpentCents += direct
 		l.Rows = append(l.Rows, LedgerRow{No: len(l.Rows) + 1, Entry: e, BalanceCents: bal, Receipts: byEntry[e.ID]})
 	}
 	l.EndCents = bal
 	return l
+}
+
+// amounts teilt den Betrag auf die Spalten Einnahme, Ausgabe (aus der Kasse) und Ausgabe direkt aus dem Ansparkonto auf.
+func amounts(e model.CashEntry) (in, out, direct int64) {
+	switch {
+	case e.PaidFromSavings():
+		return 0, 0, e.AmountCents
+	case e.Kind == model.CashExpense:
+		return 0, e.AmountCents, 0
+	default:
+		return e.AmountCents, 0, 0
+	}
+}
+
+func optDecimal(c int64) string {
+	if c == 0 {
+		return ""
+	}
+	return decimal(c)
 }
 
 // EntryText ist der Buchungstext einer Buchung (Art und Beschreibung).
@@ -127,17 +147,12 @@ func (l Ledger) WriteCSV(w io.Writer, receiptNames bool) error {
 	}
 	cw := csv.NewWriter(w)
 	cw.Comma = ';'
-	if err := cw.Write([]string{"Nr", "Datum", "Buchungstext", "Herkunft", "Einnahme", "Ausgabe", "Kassenstand", "Belege"}); err != nil {
+	if err := cw.Write([]string{"Nr", "Datum", "Buchungstext", "Herkunft", "Einnahme", "Ausgabe", "Ausgabe aus Ansparkonto", "Kassenstand", "Belege"}); err != nil {
 		return err
 	}
-	_ = cw.Write([]string{"", GermanDate(l.CarryDate), l.CarryLabel, "", "", "", decimal(l.CarryCents), ""})
+	_ = cw.Write([]string{"", GermanDate(l.CarryDate), l.CarryLabel, "", "", "", "", decimal(l.CarryCents), ""})
 	for _, r := range l.Rows {
-		in, out := "", ""
-		if r.Entry.Kind == model.CashExpense {
-			out = decimal(r.Entry.AmountCents)
-		} else {
-			in = decimal(r.Entry.AmountCents)
-		}
+		in, out, direct := amounts(r.Entry)
 		names := make([]string, 0, len(r.Receipts))
 		for i, rc := range r.Receipts {
 			if receiptNames {
@@ -148,18 +163,21 @@ func (l Ledger) WriteCSV(w io.Writer, receiptNames bool) error {
 		}
 		if err := cw.Write([]string{
 			strconv.Itoa(r.No), GermanDate(r.Entry.EntryDate), EntryText(r.Entry), SourceLabel(r.Entry),
-			in, out, decimal(r.BalanceCents), strings.Join(names, ", "),
+			optDecimal(in), optDecimal(out), optDecimal(direct), decimal(r.BalanceCents), strings.Join(names, ", "),
 		}); err != nil {
 			return err
 		}
 	}
-	_ = cw.Write([]string{"", "", "Summe " + strconv.Itoa(l.Year), "", decimal(l.IncomeCents), decimal(l.ExpenseCents), decimal(l.EndCents), ""})
+	_ = cw.Write([]string{"", "", "Summe " + strconv.Itoa(l.Year), "", decimal(l.IncomeCents), decimal(l.ExpenseCents), decimal(l.SavingsSpentCents), decimal(l.EndCents), ""})
 	cw.Flush()
 	return cw.Error()
 }
 
 // SourceLabel beschreibt die Art einer Buchung.
 func SourceLabel(e model.CashEntry) string {
+	if e.PaidFromSavings() {
+		return "Ausgabe (Ansparkonto)"
+	}
 	if e.Kind == model.CashExpense {
 		return "Ausgabe"
 	}
@@ -190,9 +208,9 @@ func (l Ledger) PDF(generated time.Time) ([]byte, error) {
 	pdf.CellFormat(0, 8, tr(title), "", 1, "L", false, 0, "")
 	pdf.Ln(2)
 
-	w := []float64{12, 22, 98, 30, 25, 25, 27, 38}
-	head := []string{"Nr", "Datum", "Buchungstext", "Herkunft", "Einnahme", "Ausgabe", "Stand", "Belege"}
-	align := []string{"R", "L", "L", "L", "R", "R", "R", "C"}
+	w := []float64{11, 20, 84, 33, 24, 24, 28, 25, 28}
+	head := []string{"Nr", "Datum", "Buchungstext", "Herkunft", "Einnahme", "Ausgabe", "Aus Ansparkonto", "Stand", "Belege"}
+	align := []string{"R", "L", "L", "L", "R", "R", "R", "R", "C"}
 	header := func() {
 		pdf.SetFont("Arial", "B", 8)
 		pdf.SetFillColor(226, 232, 240)
@@ -217,24 +235,26 @@ func (l Ledger) PDF(generated time.Time) ([]byte, error) {
 		pdf.SetFont("Arial", "", 8)
 	}
 	euro := func(c int64) string { return FormatEuro(c) }
-	header()
-	row([]string{"", GermanDate(l.CarryDate), l.CarryLabel, "", "", "", euro(l.CarryCents), ""}, false)
-	for _, r := range l.Rows {
-		in, out := "", ""
-		if r.Entry.Kind == model.CashExpense {
-			out = euro(r.Entry.AmountCents)
-		} else {
-			in = euro(r.Entry.AmountCents)
+	optEuro := func(c int64) string {
+		if c == 0 {
+			return ""
 		}
+		return FormatEuro(c)
+	}
+	header()
+	row([]string{"", GermanDate(l.CarryDate), l.CarryLabel, "", "", "", "", euro(l.CarryCents), ""}, false)
+	for _, r := range l.Rows {
+		in, out, direct := amounts(r.Entry)
 		rec := ""
 		if n := len(r.Receipts); n > 0 {
 			rec = strconv.Itoa(n)
 		} else if r.Entry.Kind == model.CashExpense {
 			rec = "fehlt"
 		}
-		row([]string{strconv.Itoa(r.No), GermanDate(r.Entry.EntryDate), EntryText(r.Entry), SourceLabel(r.Entry), in, out, euro(r.BalanceCents), rec}, false)
+		row([]string{strconv.Itoa(r.No), GermanDate(r.Entry.EntryDate), EntryText(r.Entry), SourceLabel(r.Entry),
+			optEuro(in), optEuro(out), optEuro(direct), euro(r.BalanceCents), rec}, false)
 	}
-	row([]string{"", "", fmt.Sprintf("Summe %d", l.Year), "", euro(l.IncomeCents), euro(l.ExpenseCents), euro(l.EndCents), ""}, true)
+	row([]string{"", "", fmt.Sprintf("Summe %d", l.Year), "", euro(l.IncomeCents), euro(l.ExpenseCents), euro(l.SavingsSpentCents), euro(l.EndCents), ""}, true)
 
 	// Ansparkonto
 	pdf.Ln(6)

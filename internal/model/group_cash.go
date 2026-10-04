@@ -10,13 +10,15 @@ const (
 	CashIncome  CashEntryKind = "income"
 )
 
-// CashIncomeSource sagt, woher eine Einnahme kommt (leer bei Ausgaben).
+// CashIncomeSource sagt, woher eine Einnahme kommt. Bei Ausgaben leer (aus der Kasse) oder
+// CashSourceSavings (direkt aus dem Ansparkonto bezahlt).
 type CashIncomeSource string
 
 const (
 	// CashSourceAllowance ist die Auszahlung des Monatsanspruchs (z. B. vom Finanzvorstand) für ForMonth.
 	CashSourceAllowance CashIncomeSource = "allowance"
-	// CashSourceSavings ist eine Entnahme aus dem fiktiven Ansparkonto.
+	// CashSourceSavings ist bei Einnahmen eine Entnahme aus dem fiktiven Ansparkonto in die Kasse,
+	// bei Ausgaben eine Zahlung direkt aus dem Ansparkonto (ohne Umweg über die Kasse).
 	CashSourceSavings CashIncomeSource = "savings"
 	// CashSourceOther ist jede andere Einnahme (z. B. Spende); sie berührt das Ansparkonto nicht.
 	CashSourceOther CashIncomeSource = "other"
@@ -48,8 +50,16 @@ type CashEntry struct {
 	UpdatedAt   time.Time        `json:"updated_at"`
 }
 
+// PaidFromSavings: Ausgabe direkt aus dem Ansparkonto; sie ändert den Kassenstand nicht.
+func (e CashEntry) PaidFromSavings() bool {
+	return e.Kind == CashExpense && e.Source == CashSourceSavings
+}
+
 // SignedCents liefert den Betrag mit Vorzeichen für den Kassenstand.
 func (e CashEntry) SignedCents() int64 {
+	if e.PaidFromSavings() {
+		return 0
+	}
 	if e.Kind == CashExpense {
 		return -e.AmountCents
 	}

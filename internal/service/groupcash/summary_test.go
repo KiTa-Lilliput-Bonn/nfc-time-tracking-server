@@ -173,7 +173,7 @@ func TestLedger_CarryAndExports(t *testing.T) {
 		t.Fatal(err)
 	}
 	csv := buf.String()
-	for _, want := range []string{"\uFEFFNr;Datum;", "Monatsbetrag Januar 2026", ";25,50;114,50;002_2026-02-10_bon.pdf", "Summe 2026;;100,00;25,50;114,50"} {
+	for _, want := range []string{"\uFEFFNr;Datum;", "Monatsbetrag Januar 2026", ";;25,50;;114,50;002_2026-02-10_bon.pdf", "Summe 2026;;100,00;25,50;0,00;114,50"} {
 		if !strings.Contains(csv, want) {
 			t.Errorf("csv missing %q:\n%s", want, csv)
 		}
@@ -181,5 +181,37 @@ func TestLedger_CarryAndExports(t *testing.T) {
 	pdf, err := l.PDF(time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC))
 	if err != nil || !strings.HasPrefix(string(pdf), "%PDF") {
 		t.Fatalf("pdf: %v", err)
+	}
+}
+
+// Ausgaben direkt aus dem Ansparkonto verringern das Ansparkonto, nicht den Kassenstand.
+func TestCompute_ExpenseFromSavings(t *testing.T) {
+	allow := []model.CashAllowance{{ValidFrom: "2026-01", AmountCents: 10000}}
+	entries := []model.CashEntry{income(model.CashSourceAllowance, "2026-01-05", "2026-01", 10000)}
+	direct := model.CashEntry{Kind: model.CashExpense, Source: model.CashSourceSavings, EntryDate: "2026-04-02", AmountCents: 15000, Description: "Ausflug"}
+
+	if err := CheckEntry(nil, allow, entries, model.CashEntry{Kind: model.CashExpense, Source: model.CashSourceSavings, EntryDate: "2026-04-02", AmountCents: 20001, Description: "x"}, "2026-04"); err == nil {
+		t.Fatal("direct expense above savings must be refused")
+	}
+	if err := CheckEntry(nil, allow, entries, direct, "2026-04"); err != nil {
+		t.Fatal(err)
+	}
+	entries = append(entries, direct)
+	s := Compute(nil, allow, entries, "2026-04")
+	if s.SavingsCents != 5000 || s.BalanceCents != 10000 || s.ExpenseCents != 0 || s.SavingsSpentCents != 15000 {
+		t.Fatalf("summary: %+v", s)
+	}
+	if s.Months[0].WithdrawnCents != 15000 {
+		t.Fatalf("april withdrawn: %+v", s.Months[0])
+	}
+
+	l := BuildLedger("Mäuse", 2026, nil, entries, nil, s)
+	if l.EndCents != 10000 || l.SavingsSpentCents != 15000 || l.Rows[1].BalanceCents != 10000 {
+		t.Fatalf("ledger: %+v", l)
+	}
+	var buf strings.Builder
+	_ = l.WriteCSV(&buf, false)
+	if !strings.Contains(buf.String(), "Ausflug;Ausgabe (Ansparkonto);;;150,00;100,00;") {
+		t.Fatalf("csv:\n%s", buf.String())
 	}
 }

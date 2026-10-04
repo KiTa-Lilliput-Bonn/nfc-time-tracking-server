@@ -42,7 +42,14 @@ const sourceOptions: { label: string; value: CashIncomeSource }[] = [
   { label: 'Sonstige', value: 'other' },
 ]
 
+const paidFromOptions = [
+  { label: 'Aus der Kasse', value: 'cash' },
+  { label: 'Direkt aus Ansparkonto', value: 'savings' },
+]
+
 const kind = ref<CashEntryKind>('expense')
+/** Ausgaben: aus der Kasse oder direkt aus dem Ansparkonto bezahlt. */
+const paidFrom = ref<'cash' | 'savings'>('cash')
 const source = ref<CashIncomeSource>('allowance')
 const forMonth = ref(currentMonth)
 const entryDate = ref(today)
@@ -62,7 +69,8 @@ watch(
     if (!open) return
     const e = props.entry
     kind.value = e ? e.kind : props.kind
-    source.value = e?.source || 'allowance'
+    source.value = e?.kind === 'income' ? e.source || 'allowance' : 'allowance'
+    paidFrom.value = e?.kind === 'expense' && e.source === 'savings' ? 'savings' : 'cash'
     forMonth.value = e?.for_month || currentMonth
     entryDate.value = e?.entry_date || today
     amount.value = e ? centsToInput(e.amount_cents) : ''
@@ -81,8 +89,19 @@ const title = computed(() => {
 })
 
 /** Hinweis zu Monatsanspruch bzw. Ansparkonto (bei Bearbeitung ohne den eigenen alten Betrag). */
+function savingsAvailable() {
+  const own = props.entry
+  let avail = props.summary.savings_cents
+  if (own?.source === 'savings') avail += own.amount_cents
+  return Math.max(0, avail)
+}
+
 const sourceHint = computed(() => {
-  if (!isIncome.value) return ''
+  if (!isIncome.value) {
+    return paidFrom.value === 'savings'
+      ? `Wird direkt aus dem Ansparkonto bezahlt, der Kassenstand ändert sich nicht. Verfügbar: ${formatEuro(savingsAvailable())}.`
+      : ''
+  }
   const own = props.entry
   if (source.value === 'allowance') {
     if (forMonth.value !== props.summary.current_month) {
@@ -93,9 +112,7 @@ const sourceHint = computed(() => {
     return `Für ${monthLabel(forMonth.value)} stehen noch ${formatEuro(Math.max(0, open))} von ${formatEuro(props.summary.current_allowance_cents)} zu.`
   }
   if (source.value === 'savings') {
-    let avail = props.summary.savings_cents
-    if (own?.source === 'savings') avail += own.amount_cents
-    return `Im Ansparkonto verfügbar: ${formatEuro(Math.max(0, avail))}.`
+    return `Im Ansparkonto verfügbar: ${formatEuro(savingsAvailable())}.`
   }
   return 'Zum Beispiel Spenden oder Elternbeiträge. Sie zählen nicht zum Monatsanspruch.'
 })
@@ -145,7 +162,7 @@ async function save() {
   }
   const body: CashEntryInput = {
     kind: kind.value,
-    source: isIncome.value ? source.value : '',
+    source: isIncome.value ? source.value : paidFrom.value === 'savings' ? 'savings' : '',
     for_month: isIncome.value && source.value === 'allowance' ? forMonth.value : '',
     entry_date: entryDate.value,
     amount_cents: cents,
@@ -205,6 +222,20 @@ async function save() {
         :allow-empty="false"
         data-testid="cash-entry-kind"
       />
+
+      <template v-if="!isIncome">
+        <span class="label">Bezahlt</span>
+        <SelectButton
+          v-model="paidFrom"
+          :options="paidFromOptions"
+          option-label="label"
+          option-value="value"
+          :allow-empty="false"
+          class="wrap"
+          data-testid="cash-entry-paid-from"
+        />
+        <p v-if="sourceHint" class="hint" data-testid="cash-entry-hint">{{ sourceHint }}</p>
+      </template>
 
       <template v-if="isIncome">
         <span class="label">Herkunft</span>
