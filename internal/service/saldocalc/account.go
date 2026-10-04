@@ -12,8 +12,10 @@ import (
 //
 //   - Kontobeginn: frühestes valid_from der Wochenstunden; ohne Wochenstunden der 1.1. des Jahres von „gestern“.
 //   - Gezählt wird bis einschließlich „gestern“ (Ortszeit). Der laufende Tag ist noch nicht abgeschlossen.
-//   - Der Startsaldo (users.opening_hours_balance) zählt, wenn das Anlagedatum des Kontos (created_at)
-//     zwischen Kontobeginn und Stichtag liegt.
+//   - Der Startsaldo (users.opening_hours_balance) ist der Stand per Anlagedatum des Kontos (created_at).
+//     Er zählt, sobald das Konto begonnen hat und das Anlagedatum erreicht ist. Wochenstunden dürfen
+//     nicht vor dem Anlagedatum beginnen (siehe Handler); bei Altdaten mit früherem Beginn zählen die
+//     Tage davor zusätzlich zum Startsaldo (Hinweis in der Mitarbeiter-Bearbeitung).
 
 // AccountStart liefert den ersten Tag des Stundenkontos (lokales Datum, 00:00).
 func AccountStart(whRows []model.WeeklyHours, yesterday time.Time, loc *time.Location) time.Time {
@@ -40,7 +42,8 @@ func AccountStart(whRows []model.WeeklyHours, yesterday time.Time, loc *time.Loc
 	return best
 }
 
-// OpeningApplies meldet, ob der Startsaldo im Zeitraum accountStart..through enthalten ist.
+// OpeningApplies meldet, ob der Startsaldo im Stand bis einschließlich through enthalten ist:
+// das Konto hat begonnen (accountStart <= through) und das Anlagedatum ist erreicht.
 func OpeningApplies(createdAt, accountStart, through time.Time, loc *time.Location) bool {
 	if loc == nil {
 		loc = time.Local
@@ -48,9 +51,12 @@ func OpeningApplies(createdAt, accountStart, through time.Time, loc *time.Locati
 	if createdAt.IsZero() || accountStart.After(through) {
 		return false
 	}
+	return !creationDay(createdAt, loc).After(through)
+}
+
+func creationDay(createdAt time.Time, loc *time.Location) time.Time {
 	cy, cm, cd := createdAt.In(loc).Date()
-	openingDay := time.Date(cy, cm, cd, 0, 0, 0, 0, loc)
-	return !openingDay.Before(accountStart) && !openingDay.After(through)
+	return time.Date(cy, cm, cd, 0, 0, 0, 0, loc)
 }
 
 // Yesterday ist der letzte gezählte Tag des Stundenkontos relativ zu now (lokales Datum, 00:00).

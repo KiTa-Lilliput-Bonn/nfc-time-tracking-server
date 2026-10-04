@@ -85,6 +85,30 @@ const fnwValidFrom = ref<Date>(new Date())
 const vacDays = ref(25)
 const vacValidFrom = ref<Date>(new Date())
 
+/** Anlagedatum (lokaler Kalendertag): Wochenstunden und Urlaubsanspruch beginnen frühestens hier. */
+const createdDay = computed<Date | null>(() => {
+  const c = employee.value?.created_at
+  if (!c) return null
+  const d = new Date(c)
+  if (Number.isNaN(d.getTime())) return null
+  d.setHours(0, 0, 0, 0)
+  return d
+})
+const createdISO = computed(() => (createdDay.value ? toISODateLocal(createdDay.value) : ''))
+const createdLabel = computed(() => (createdISO.value ? formatGermanDate(createdISO.value) : ''))
+
+/** Altdaten: Einträge, die vor dem Anlagedatum beginnen (die Tage davor zählen zusätzlich zum Startsaldo). */
+const startsBeforeCreation = computed(() => {
+  const c = createdISO.value
+  if (!c) return [] as string[]
+  const out: string[] = []
+  const wh = weeklyList.value.filter((r) => r.valid_from.slice(0, 10) < c)
+  if (wh.length) out.push(`Wochenstunden ab ${formatGermanDate(wh.map((r) => r.valid_from).sort()[0]!)}`)
+  const ve = vacationList.value.filter((r) => r.valid_from.slice(0, 10) < c)
+  if (ve.length) out.push(`Urlaubsanspruch ab ${formatGermanDate(ve.map((r) => r.valid_from).sort()[0]!)}`)
+  return out
+})
+
 const tagUid = ref('')
 const tagFrom = ref<Date>(new Date())
 
@@ -315,8 +339,9 @@ async function saveWeekly() {
     })
     toast.add({ severity: 'success', summary: 'Wochenstunden gespeichert', life: 10000 })
     weeklyList.value = await fetchWeeklyHours(employee.value.id)
-  } catch {
-    toast.add({ severity: 'error', summary: 'Fehler Wochenstunden', life: 10000 })
+  } catch (e) {
+    const detail = getApiErrorMessage(e)
+    toast.add({ severity: 'error', summary: 'Fehler Wochenstunden', ...(detail ? { detail } : {}), life: 10000 })
   } finally {
     saving.value = false
   }
@@ -446,8 +471,9 @@ async function saveVacation() {
     })
     toast.add({ severity: 'success', summary: 'Urlaubsanspruch gespeichert', life: 10000 })
     vacationList.value = await fetchVacationEntitlements(employee.value.id)
-  } catch {
-    toast.add({ severity: 'error', summary: 'Fehler Urlaub', life: 10000 })
+  } catch (e) {
+    const detail = getApiErrorMessage(e)
+    toast.add({ severity: 'error', summary: 'Fehler Urlaub', ...(detail ? { detail } : {}), life: 10000 })
   } finally {
     saving.value = false
   }
@@ -647,8 +673,17 @@ function onTagUidEnter() {
       <template #title>Startsaldo (Import / Alt-System)</template>
       <template #content>
         <p class="muted">
-          Optional: Übernommener Stand aus einem früheren System. Stunden: werden in die Jahressaldo-Berechnung
-          (Ist−Soll) einbezogen. Urlaub: addiert zu Anspruch abzüglich erfasster Urlaubstage.
+          Optional: Übernommener Stand aus einem früheren System<template v-if="createdLabel">
+            per Anlagedatum <strong data-testid="opening-as-of">{{ createdLabel }}</strong></template
+          >. Stunden: Anfangsstand des Stundenkontos, danach zählt Ist−Soll ab Beginn der Wochenstunden. Urlaub:
+          addiert zu Anspruch abzüglich erfasster Urlaubstage. Wochenstunden und Urlaubsanspruch beginnen frühestens
+          am Anlagedatum; alles davor gehört in den Startsaldo.
+        </p>
+        <p v-if="startsBeforeCreation.length" class="warn-box" data-testid="starts-before-creation">
+          Achtung: {{ startsBeforeCreation.join(' und ') }}
+          {{ startsBeforeCreation.length > 1 ? 'beginnen' : 'beginnt' }} vor dem Anlagedatum ({{ createdLabel }}). Die Tage
+          dazwischen zählen zusätzlich zum Startsaldo. Bitte prüfen, ob der Startsaldo diese Zeit schon enthält, und
+          den Eintrag ggf. auf das Anlagedatum setzen.
         </p>
         <div class="row2">
           <div class="field">
@@ -691,7 +726,12 @@ function onTagUidEnter() {
           </div>
           <div class="field">
             <label>Gültig ab</label>
-            <DatePicker v-model="whValidFrom" date-format="dd.mm.yy" show-icon />
+            <DatePicker
+              v-model="whValidFrom"
+              date-format="dd.mm.yy"
+              show-icon
+              :min-date="createdDay ?? undefined"
+            />
           </div>
           <div class="field field--action">
             <Button label="Wochenstunden speichern" :loading="saving" @click="saveWeekly" />
@@ -794,6 +834,7 @@ function onTagUidEnter() {
               v-model="vacValidFrom"
               date-format="dd.mm.yy"
               show-icon
+              :min-date="createdDay ?? undefined"
               @update:model-value="onVacValidFromCal"
             />
           </div>
@@ -962,6 +1003,15 @@ function onTagUidEnter() {
   line-height: 1.4;
 }
 
+.warn-box {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  font-size: 0.9rem;
+}
 .muted {
   font-size: 0.85rem;
   color: #64748b;

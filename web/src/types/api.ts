@@ -194,6 +194,8 @@ export interface Employee {
   opening_vacation_days?: number
   /** Mo–Fr wie Date.getDay() (1=Mo … 5=Fr), regulär ohne Soll */
   fixed_non_work_weekdays?: number[]
+  /** Anlagedatum des Kontos (Zeitstempel). Startsaldo gilt per diesem Tag. */
+  created_at?: string
 }
 
 export interface TimeCorrection {

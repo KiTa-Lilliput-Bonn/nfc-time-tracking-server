@@ -85,14 +85,20 @@ func TestMonth_MatchesAccount(t *testing.T) {
 	}
 }
 
-func TestOpeningApplies_OutsideRange(t *testing.T) {
+func TestOpeningApplies(t *testing.T) {
 	loc := time.Local
 	start := time.Date(2026, 2, 1, 0, 0, 0, 0, loc)
 	through := time.Date(2026, 3, 1, 0, 0, 0, 0, loc)
-	if OpeningApplies(time.Date(2026, 1, 15, 0, 0, 0, 0, loc), start, through, loc) {
-		t.Fatal("created before account start must not apply")
+	if !OpeningApplies(time.Date(2026, 1, 15, 0, 0, 0, 0, loc), start, through, loc) {
+		t.Fatal("created before account start: Startsaldo zählt ab Kontobeginn")
 	}
 	if !OpeningApplies(time.Date(2026, 2, 15, 0, 0, 0, 0, loc), start, through, loc) {
 		t.Fatal("created within range must apply")
+	}
+	if OpeningApplies(time.Date(2026, 3, 2, 0, 0, 0, 0, loc), start, through, loc) {
+		t.Fatal("created after through must not apply yet")
+	}
+	if OpeningApplies(time.Date(2026, 1, 15, 0, 0, 0, 0, loc), start, time.Date(2026, 1, 31, 0, 0, 0, 0, loc), loc) {
+		t.Fatal("account not started yet must not apply")
 	}
 }

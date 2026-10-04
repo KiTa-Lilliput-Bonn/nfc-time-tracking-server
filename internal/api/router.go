@@ -306,10 +306,16 @@ func NewRouter(d Deps) http.Handler {
 
 		if bootstrap.TestModeEnabled() {
 			tsh := &handler.TestSeedHandler{WorkPeriods: d.WorkPeriods}
+			if us, ok := d.UserStore.(*sqlite.UserStore); ok {
+				tsh.Users = us
+			}
 			r.Group(func(r chi.Router) {
 				r.Use(apimw.AuthJWT(d.Auth))
 				r.Use(apimw.RequireRole(leitung...))
 				r.Post("/test/seed-imported-work-period", tsh.SeedImportedWorkPeriod)
+				if tsh.Users != nil {
+					r.Post("/test/backdate-user", tsh.BackdateUser)
+				}
 			})
 		}
 	})
