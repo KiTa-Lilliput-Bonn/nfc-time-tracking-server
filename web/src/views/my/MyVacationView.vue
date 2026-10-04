@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import Card from 'primevue/card'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
+
+import VacationBalanceBar from '@/components/VacationBalanceBar.vue'
 
 import {
   fetchClosureDaysForMe,
@@ -11,7 +11,7 @@ import {
   fetchMeVacation,
 } from '@/api/me'
 import type { Absence, ClosureDay, VacationBalance } from '@/types/api'
-import { formatGermanDate } from '@/utils/dates'
+import { formatGermanDate, toISODateLocal } from '@/utils/dates'
 
 function normalizeISODate(s: string): string {
   const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/)
@@ -65,23 +65,88 @@ const overviewRows = computed<OverviewRow[]>(() => {
   return rows
 })
 
-function artLabel(row: OverviewRow): string {
+const todayISO = toISODateLocal(new Date())
+
+/** Aufeinanderfolgende Einträge gleicher Art zu Blöcken zusammenfassen (z. B. „03.08.–12.08. · 7 Tage“). */
+interface OverviewBlock {
+  from: string
+  to: string
+  kind: 'vacation' | 'closure'
+  days: number
+  label: string
+  note: string
+}
+
+function rowLabel(row: OverviewRow): { label: string; note: string; days: number } {
   if (row.kind === 'closure' && row.closure) {
     const d = new Date(`${row.dateISO}T12:00:00`)
     const dow = d.getDay()
     const fix = dow >= 1 && dow <= 5 && fixedWeekdays.value.has(dow)
-    if (fix) {
-      return `Schließtag (${row.closure.name}) — bei Ihnen regulär frei, kein Urlaubsabzug`
+    return {
+      label: `Schließtag: ${row.closure.name}`,
+      note: fix ? 'Regulär freier Tag, kein Urlaubsabzug.' : 'Kein Urlaubsabzug.',
+      days: 0,
     }
-    return `Schließtag (${row.closure.name})`
   }
   const a = row.absence
-  if (!a) return '—'
-  const half = a.half_day ? 'Halber Tag' : 'Ganzer Tag'
-  if (row.closure) {
-    return `${half} · Schließtag`
+  const half = !!a?.half_day
+  return {
+    label: half ? 'Urlaub (halber Tag)' : 'Urlaub',
+    note: row.closure ? 'Fällt auf einen Schließtag.' : '',
+    days: half ? 0.5 : 1,
   }
-  return half
+}
+
+function isNextWorkdayGap(prevISO: string, nextISO: string): boolean {
+  const a = new Date(`${prevISO}T12:00:00`)
+  const b = new Date(`${nextISO}T12:00:00`)
+  for (let d = new Date(a); ; ) {
+    d.setDate(d.getDate() + 1)
+    const iso = toISODateLocal(d)
+    if (iso === nextISO) return true
+    if (d > b) return false
+    const dow = d.getDay()
+    const off = dow === 0 || dow === 6 || fixedWeekdays.value.has(dow)
+    if (!off) return false
+  }
+}
+
+function toBlocks(rows: OverviewRow[]): OverviewBlock[] {
+  const out: OverviewBlock[] = []
+  for (const row of rows) {
+    const l = rowLabel(row)
+    const last = out[out.length - 1]
+    const mergeable =
+      last &&
+      row.kind === 'vacation' &&
+      last.kind === 'vacation' &&
+      l.days === 1 &&
+      last.label === 'Urlaub' &&
+      !l.note &&
+      !last.note &&
+      isNextWorkdayGap(last.to, row.dateISO)
+    if (mergeable) {
+      last.to = row.dateISO
+      last.days += 1
+      continue
+    }
+    out.push({ from: row.dateISO, to: row.dateISO, kind: row.kind, days: l.days, label: l.label, note: l.note })
+  }
+  return out
+}
+
+const plannedBlocks = computed(() => toBlocks(overviewRows.value.filter((r) => r.dateISO > todayISO)))
+const pastBlocks = computed(() => toBlocks(overviewRows.value.filter((r) => r.dateISO <= todayISO)).reverse())
+
+function blockDate(b: OverviewBlock): string {
+  if (b.from === b.to) return formatGermanDate(b.from)
+  return `${formatGermanDate(b.from).slice(0, 6)}–${formatGermanDate(b.to)}`
+}
+
+function blockDays(b: OverviewBlock): string {
+  if (b.kind === 'closure') return ''
+  if (b.days === 0.5) return '½ Tag'
+  return b.days === 1 ? '1 Tag' : `${b.days} Tage`
 }
 
 onMounted(async () => {
@@ -90,7 +155,7 @@ onMounted(async () => {
   try {
     const [vb, abs, cls, prof] = await Promise.all([
       fetchMeVacation(),
-      fetchMeAbsences(`${year}-01-01`, `${year}-12-31`),
+      fetchMeAbsences(`${year}-01-01`, `${year + 1}-12-31`),
       fetchClosureDaysForMe(),
       fetchMeProfile(),
     ])
@@ -111,50 +176,45 @@ onMounted(async () => {
     <p v-if="err" class="err">{{ err }}</p>
     <div v-if="loading" class="muted">Laden…</div>
     <template v-else>
-      <div v-if="balance" class="cards">
-        <Card>
-          <template #title>Anspruch {{ balance.year }}</template>
-          <template #content>
-            <dl class="row">
-              <div v-if="balance.carried_over !== 0">
-                <dt>Start (Import)</dt>
-                <dd>{{ balance.carried_over.toFixed(1) }}</dd>
-              </div>
-              <div>
-                <dt>Tage/Jahr</dt>
-                <dd>{{ balance.entitlement.toFixed(1) }}</dd>
-              </div>
-              <div>
-                <dt>Genommen</dt>
-                <dd>{{ balance.taken.toFixed(1) }}</dd>
-              </div>
-              <div>
-                <dt>Rest</dt>
-                <dd class="highlight">{{ balance.remaining.toFixed(1) }}</dd>
-              </div>
-            </dl>
-          </template>
-        </Card>
-      </div>
-      <Card>
-        <template #title>Urlaub &amp; Schließtage {{ year }}</template>
+      <Card v-if="balance">
+        <template #title>Urlaub {{ balance.year }}</template>
         <template #content>
-          <DataTable
-            :value="overviewRows"
-            size="small"
-            :empty-message="'Keine Einträge für dieses Jahr.'"
-          >
-            <Column field="dateISO" header="Datum" sortable>
-              <template #body="{ data }: { data: OverviewRow }">
-                {{ formatGermanDate(data.dateISO) }}
-              </template>
-            </Column>
-            <Column header="Art">
-              <template #body="{ data }: { data: OverviewRow }">
-                {{ artLabel(data) }}
-              </template>
-            </Column>
-          </DataTable>
+          <VacationBalanceBar :balance="balance" show-breakdown />
+          <p class="hint">
+            Der Übertrag ist der Rest aus den Vorjahren. „Geplant“ sind alle eingetragenen Urlaubstage nach heute.
+          </p>
+        </template>
+      </Card>
+      <Card>
+        <template #title>Geplant</template>
+        <template #content>
+          <p v-if="!plannedBlocks.length" class="muted">Kein Urlaub geplant.</p>
+          <ul v-else class="blocks" data-testid="vacation-planned">
+            <li v-for="b in plannedBlocks" :key="b.from" :class="['block', `block--${b.kind}`]">
+              <div class="block-main">
+                <span class="block-date">{{ blockDate(b) }}</span>
+                <span class="block-days">{{ blockDays(b) }}</span>
+              </div>
+              <div class="block-label">{{ b.label }}</div>
+              <div v-if="b.note" class="block-note">{{ b.note }}</div>
+            </li>
+          </ul>
+        </template>
+      </Card>
+      <Card>
+        <template #title>Genommen {{ year }}</template>
+        <template #content>
+          <p v-if="!pastBlocks.length" class="muted">Noch kein Urlaub genommen.</p>
+          <ul v-else class="blocks" data-testid="vacation-taken">
+            <li v-for="b in pastBlocks" :key="b.from" :class="['block', `block--${b.kind}`]">
+              <div class="block-main">
+                <span class="block-date">{{ blockDate(b) }}</span>
+                <span class="block-days">{{ blockDays(b) }}</span>
+              </div>
+              <div class="block-label">{{ b.label }}</div>
+              <div v-if="b.note" class="block-note">{{ b.note }}</div>
+            </li>
+          </ul>
         </template>
       </Card>
     </template>
@@ -166,32 +226,54 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  max-width: 40rem;
 }
-.cards {
-  max-width: 480px;
-}
-.row {
-  display: flex;
-  gap: 2rem;
-  margin: 0;
-}
-.row dt {
-  font-size: 0.75rem;
+.hint {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
   color: #64748b;
-  margin: 0 0 0.2rem;
 }
-.row dd {
+.blocks {
+  list-style: none;
   margin: 0;
-  font-size: 1.25rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.block {
+  padding: 0.55rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+.block:last-child {
+  border-bottom: none;
+}
+.block-main {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
   font-weight: 600;
 }
-.highlight {
-  color: #3730a3;
+.block-days {
+  color: #475569;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.block-label {
+  font-size: 0.9rem;
+  color: #334155;
+}
+.block--closure .block-label {
+  color: #047857;
+}
+.block-note {
+  font-size: 0.8rem;
+  color: #64748b;
 }
 .err {
   color: #b91c1c;
 }
 .muted {
   color: #64748b;
+  margin: 0;
 }
 </style>

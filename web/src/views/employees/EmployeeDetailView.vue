@@ -425,7 +425,7 @@ async function submitVacationEdit() {
       <template #title>Urlaub {{ employeeVacation?.year ?? new Date().getFullYear() }}</template>
       <template #content>
         <div v-if="vacLoading" class="muted">Laden…</div>
-        <VacationBalanceBar v-else :balance="employeeVacation" />
+        <VacationBalanceBar v-else :balance="employeeVacation" show-breakdown />
       </template>
     </Card>
 

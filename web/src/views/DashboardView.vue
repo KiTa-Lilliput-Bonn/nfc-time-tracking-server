@@ -26,8 +26,10 @@ import {
   fetchHolidays,
 } from '@/api/management'
 import VacationBalanceBar from '@/components/VacationBalanceBar.vue'
-import { fetchMeBalance, fetchMeSchedule, fetchMeTimes, fetchMeVacation } from '@/api/me'
-import { addDays, formatGermanDate, toISODateLocal } from '@/utils/dates'
+import { fetchMeBalance, fetchMeDays, fetchMeHoursAccount, fetchMeSchedule, fetchMeTimes, fetchMeVacation } from '@/api/me'
+import { balanceClass, formatHoursHM } from '@/utils/hours'
+import type { HoursAccount } from '@/types/api'
+import { addDays, formatGermanDate, formatGermanTime, toISODateLocal } from '@/utils/dates'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { friendlyAbsenceCreateError } from '@/utils/absenceErrors'
 import {
@@ -58,9 +60,12 @@ function onTeamEmployeeRowClick(e: { data: Employee }) {
 const loading = ref(true)
 const err = ref('')
 
+/** Heute: netto der abgeschlossenen Blöcke (Server-Rechnung inkl. Pausenabzug) + laufender Block. */
 const todayNetHours = ref(0)
-const todayPeriodsCount = ref(0)
-const monthBalance = ref<{ worked: number; target: number; balance: number } | null>(null)
+const todayOpenSince = ref<string | null>(null)
+const todayHasStamps = ref(false)
+const monthBalance = ref<{ worked: number; target: number; balance: number; countedThrough: string } | null>(null)
+const hoursAccount = ref<HoursAccount | null>(null)
 const vacationBalance = ref<VacationBalance | null>(null)
 
 const nextShift = ref<Schedule | null>(null)
@@ -219,14 +224,6 @@ function teamVacationBarTitle(row: TeamOverviewRow): string {
   ].join(' · ')
 }
 
-function segmentHours(punchIn: string, punchOut: string | null): number {
-  if (!punchOut) return 0
-  const a = new Date(punchIn).getTime()
-  const b = new Date(punchOut).getTime()
-  if (b <= a) return 0
-  return Math.round(((b - a) / 3_600_000) * 100) / 100
-}
-
 async function loadTeamOverview() {
   if (!isLeitung.value) return
   teamOverviewLoading.value = true
@@ -275,9 +272,11 @@ async function load() {
   const m = now.getMonth() + 1
 
   try {
-    const [times, bal, vac, leadData] = await Promise.all([
+    const [times, days, bal, acc, vac, leadData] = await Promise.all([
       fetchMeTimes(today, today),
+      fetchMeDays(today, today).catch(() => ({ days: [], counted_through: '' })),
       fetchMeBalance(m, y),
+      fetchMeHoursAccount().catch((): HoursAccount | null => null),
       fetchMeVacation(),
       isLeitung.value
         ? Promise.all([
@@ -288,24 +287,23 @@ async function load() {
         : Promise.resolve({ employees: [] as Employee[], groups: [] as UserGroup[], closures: [] as ClosureDay[] }),
     ])
 
-    todayPeriodsCount.value = times.work_periods.length
-    let net = 0
-    for (const p of times.work_periods) {
-      if (p.is_break) continue
-      if (p.punch_out) {
-        net += segmentHours(p.punch_in, p.punch_out)
-      } else {
-        const start = new Date(p.punch_in).getTime()
-        net += Math.round(((now.getTime() - start) / 3_600_000) * 100) / 100
-      }
+    const work = times.work_periods.filter((p) => !p.is_break)
+    todayHasStamps.value = work.length > 0
+    let net = (days.days[0]?.net_minutes ?? 0) / 60
+    const open = work.find((p) => !p.punch_out)
+    todayOpenSince.value = open ? open.punch_in : null
+    if (open) {
+      net += Math.max(0, (now.getTime() - new Date(open.punch_in).getTime()) / 3_600_000)
     }
-    todayNetHours.value = Math.round(net * 100) / 100
+    todayNetHours.value = net
 
     monthBalance.value = {
       worked: bal.worked_hours,
       target: bal.target_hours,
       balance: bal.balance_hours,
+      countedThrough: bal.counted_through ?? '',
     }
+    hoursAccount.value = acc
     vacationBalance.value = vac
 
     const to = toISODateLocal(addDays(now, 21))
@@ -557,26 +555,33 @@ async function submitQuickSick() {
         <Card>
           <template #title>Heute</template>
           <template #content>
-            <p class="stat">Netto-Arbeitszeit (ca.): <strong>{{ todayNetHours }} h</strong></p>
-            <p class="sub">Stempel-Segmente: {{ todayPeriodsCount }}</p>
+            <p class="stat" data-testid="dashboard-today">
+              Gearbeitet: <strong>{{ formatHoursHM(todayNetHours) }}</strong>
+            </p>
+            <p v-if="todayOpenSince" class="sub">Eingestempelt seit {{ formatGermanTime(todayOpenSince) }} Uhr</p>
+            <p v-else-if="!todayHasStamps" class="sub">Heute noch nicht gestempelt.</p>
+            <p v-else class="sub">Nach Pausenabzug. Zählt ab morgen im Stundenkonto.</p>
           </template>
         </Card>
-        <Card v-if="monthBalance">
-          <template #title>Aktueller Monat</template>
+        <Card v-if="hoursAccount">
+          <template #title>Stundenkonto</template>
           <template #content>
-            <p class="stat">
-              Ist <strong>{{ monthBalance.worked.toFixed(2) }} h</strong> · Soll
-              <strong>{{ monthBalance.target.toFixed(2) }} h</strong>
+            <p class="stat big" :class="balanceClass(hoursAccount.balance_hours)" data-testid="dashboard-hours-account">
+              {{ formatHoursHM(hoursAccount.balance_hours, { signed: true }) }}
             </p>
-            <p class="sub" :class="monthBalance.balance >= 0 ? 'pos' : 'neg'">
-              Saldo: <strong>{{ monthBalance.balance.toFixed(2) }} h</strong>
+            <p class="sub">Stand {{ formatGermanDate(hoursAccount.counted_through) }}</p>
+            <p v-if="monthBalance && monthBalance.countedThrough" class="sub">
+              Dieser Monat bis gestern:
+              <span :class="balanceClass(monthBalance.balance)">{{ formatHoursHM(monthBalance.balance, { signed: true }) }}</span>
             </p>
+            <RouterLink class="card-link" to="/my/balance">Details</RouterLink>
           </template>
         </Card>
         <Card v-if="vacationBalance">
           <template #title>Urlaub {{ vacationBalance.year }}</template>
           <template #content>
             <VacationBalanceBar :balance="vacationBalance" />
+            <RouterLink class="card-link" to="/my/vacation">Details</RouterLink>
           </template>
         </Card>
         <Card>
@@ -821,6 +826,16 @@ async function submitQuickSick() {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 1rem;
+}
+.stat.big {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+.card-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #1d4ed8;
 }
 .stat {
   margin: 0 0 0.35rem;
