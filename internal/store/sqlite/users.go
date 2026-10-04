@@ -157,3 +157,9 @@ func (s *UserStore) Count(ctx context.Context) (int, error) {
 	err := s.db.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n)
 	return n, err
 }
+
+// SetCreatedAt setzt das Anlagedatum (nur für Test-Seeding, NFC_TEST_MODE).
+func (s *UserStore) SetCreatedAt(ctx context.Context, userID int, createdAt string) error {
+	_, err := s.db.DB.ExecContext(ctx, `UPDATE users SET created_at = ? WHERE id = ?`, createdAt, userID)
+	return err
+}

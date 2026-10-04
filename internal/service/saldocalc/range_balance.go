@@ -37,17 +37,60 @@ type RangeTotals struct {
 
 // SumRange aggregates (NetHours + AbsenceCredit − DailyTarget) per calendar day from..to (YYYY-MM-DD, inclusive).
 func SumRange(ctx context.Context, d Deps, userID int, from, to string) (RangeTotals, error) {
+	days, err := Days(ctx, d, userID, from, to)
+	if err != nil {
+		return RangeTotals{}, err
+	}
+	var worked, target float64
+	for _, day := range days {
+		worked += day.netRaw + day.creditRaw
+		target += day.targetRaw
+	}
+	return RangeTotals{
+		WorkedHours:  round2(worked),
+		TargetHours:  round2(target),
+		BalanceHours: round2(worked - target),
+	}, nil
+}
+
+// Day ist die Saldo-Rechnung eines Kalendertags, aufgeschlüsselt für die Anzeige (z. B. Tagesliste der Mitarbeitenden).
+// Stunden sind gerundet auf 2 Nachkommastellen, Minutenfelder sind ganzzahlig.
+type Day struct {
+	Date string `json:"date"`
+	// GrossMinutes: gestempelte Arbeitszeit (nach Dienstbeginn-Regel), StampedBreakMinutes: Lücken zwischen Blöcken,
+	// DeductionMinutes: automatischer Pausenabzug, NetMinutes = Gross − Deduction.
+	GrossMinutes        int `json:"gross_minutes"`
+	StampedBreakMinutes int `json:"stamped_break_minutes"`
+	DeductionMinutes    int `json:"deduction_minutes"`
+	NetMinutes          int `json:"net_minutes"`
+	// OpenPeriod: es gibt einen Block ohne Ausstempeln (zählt noch nicht).
+	OpenPeriod bool `json:"open_period"`
+	// CreditHours: Gutschrift für Urlaub/Krank/Sonstiges; TargetHours: Tagessoll.
+	CreditHours  float64 `json:"credit_hours"`
+	TargetHours  float64 `json:"target_hours"`
+	BalanceHours float64 `json:"balance_hours"`
+	AbsenceType  *string `json:"absence_type"`
+	HalfDay      bool    `json:"half_day"`
+	HolidayName  string  `json:"holiday_name,omitempty"`
+	ClosureName  string  `json:"closure_name,omitempty"`
+	IsWorkday    bool    `json:"is_workday"`
+
+	netRaw, creditRaw, targetRaw float64
+}
+
+// Days berechnet die Tageswerte from..to (YYYY-MM-DD, inklusive) mit derselben Logik wie SumRange.
+func Days(ctx context.Context, d Deps, userID int, from, to string) ([]Day, error) {
 	loc := time.Local
 	start, err := time.ParseInLocation("2006-01-02", from, loc)
 	if err != nil {
-		return RangeTotals{}, fmt.Errorf("range from: %w", err)
+		return nil, fmt.Errorf("range from: %w", err)
 	}
 	end, err := time.ParseInLocation("2006-01-02", to, loc)
 	if err != nil {
-		return RangeTotals{}, fmt.Errorf("range to: %w", err)
+		return nil, fmt.Errorf("range to: %w", err)
 	}
 	if end.Before(start) {
-		return RangeTotals{WorkedHours: 0, TargetHours: 0, BalanceHours: 0}, nil
+		return []Day{}, nil
 	}
 	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, loc)
 	end = time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, loc)
@@ -58,21 +101,21 @@ func SumRange(ctx context.Context, d Deps, userID int, from, to string) (RangeTo
 	if d.FixedNonWorkWeekdays != nil {
 		fnwRows, err = d.FixedNonWorkWeekdays.ListByUser(ctx, userID)
 		if err != nil {
-			return RangeTotals{}, err
+			return nil, err
 		}
 	}
 	var scheduleBoundRows []model.ScheduleBoundSetting
 	if d.ScheduleBound != nil {
 		scheduleBoundRows, err = d.ScheduleBound.ListByUser(ctx, userID)
 		if err != nil {
-			return RangeTotals{}, err
+			return nil, err
 		}
 	}
 	var whRows []model.WeeklyHours
 	if d.WeeklyHours != nil {
 		whRows, err = d.WeeklyHours.ListByUser(ctx, userID)
 		if err != nil {
-			return RangeTotals{}, err
+			return nil, err
 		}
 	}
 
@@ -80,13 +123,13 @@ func SumRange(ctx context.Context, d Deps, userID int, from, to string) (RangeTo
 	if d.WorkPeriods != nil {
 		wps, err = d.WorkPeriods.ListByUserDateRange(ctx, userID, from, to)
 		if err != nil {
-			return RangeTotals{}, err
+			return nil, err
 		}
 	}
 	if d.Corrections != nil {
 		corrs, err := d.Corrections.ListByUser(ctx, userID, from, to)
 		if err != nil {
-			return RangeTotals{}, err
+			return nil, err
 		}
 		wps = timesummary.ApplyLatestCorrections(wps, corrs)
 	}
@@ -96,30 +139,30 @@ func SumRange(ctx context.Context, d Deps, userID int, from, to string) (RangeTo
 	if d.Absences != nil {
 		absList, err = d.Absences.ListByUserDateRange(ctx, userID, from, to)
 		if err != nil {
-			return RangeTotals{}, err
+			return nil, err
 		}
 	}
 	absByDate := indexFirstAbsenceByDate(absList)
 
 	holidayByDate, err := loadHolidayMap(ctx, d.Holidays, from, to)
 	if err != nil {
-		return RangeTotals{}, err
+		return nil, err
 	}
 	closureByDate, err := loadClosureMap(ctx, d.Closures, from, to)
 	if err != nil {
-		return RangeTotals{}, err
+		return nil, err
 	}
 
 	var schByDate map[string]*model.Schedule
 	if d.Schedules != nil {
 		schRows, err := d.Schedules.ListByUserDateRange(ctx, userID, from, to)
 		if err != nil {
-			return RangeTotals{}, err
+			return nil, err
 		}
 		schByDate = indexSchedulesByDate(schRows)
 	}
 
-	var worked, target float64
+	var out []Day
 	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
 		ds := day.Format("2006-01-02")
 		dayWps := byDate[ds]
@@ -130,7 +173,8 @@ func SumRange(ctx context.Context, d Deps, userID int, from, to string) (RangeTo
 				shiftBounds = daycalc.ShiftBoundsIfBound(sch, bound)
 			}
 		}
-		net := daycalc.NetHours(dayWps, breakRules, shiftBounds)
+		bd := daycalc.NetBreakdownForDay(dayWps, breakRules, shiftBounds)
+		net := bd.Net.Hours()
 
 		fixed := model.FixedNonWorkWeekdaysForDate(fnwRows, ds)
 		var daily float64
@@ -143,15 +187,35 @@ func SumRange(ctx context.Context, d Deps, userID int, from, to string) (RangeTo
 		dayTarget := daycalc.DailyTarget(day, daily, fixed, hol, abs, clo)
 		credit := daycalc.AbsenceCreditHours(day, daily, fixed, hol, abs, clo)
 
-		worked += net + credit
-		target += dayTarget
+		row := Day{
+			Date:                ds,
+			GrossMinutes:        int(bd.Gross.Minutes()),
+			StampedBreakMinutes: int(bd.StampedBreak.Minutes()),
+			DeductionMinutes:    int(bd.Deduction.Minutes()),
+			NetMinutes:          int(bd.Net.Minutes()),
+			OpenPeriod:          bd.OpenPeriod,
+			CreditHours:         round2(credit),
+			TargetHours:         round2(dayTarget),
+			BalanceHours:        round2(net + credit - dayTarget),
+			IsWorkday:           model.IsEmployeeWorkday(day, fixed),
+			netRaw:              net,
+			creditRaw:           credit,
+			targetRaw:           dayTarget,
+		}
+		if abs != nil {
+			t := string(abs.AbsenceType)
+			row.AbsenceType = &t
+			row.HalfDay = abs.HalfDay
+		}
+		if hol != nil {
+			row.HolidayName = hol.Name
+		}
+		if clo != nil {
+			row.ClosureName = clo.Name
+		}
+		out = append(out, row)
 	}
-
-	return RangeTotals{
-		WorkedHours:  round2(worked),
-		TargetHours:  round2(target),
-		BalanceHours: round2(worked - target),
-	}, nil
+	return out, nil
 }
 
 func loadBreakRules(ctx context.Context, s store.SettingsStore) (breakRules []model.BreakRule) {

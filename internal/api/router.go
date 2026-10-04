@@ -151,6 +151,8 @@ func NewRouter(d Deps) http.Handler {
 			r.Use(apimw.AuthJWT(d.Auth))
 			r.Get("/me/times", me.Times)
 			r.Get("/me/balance", me.Balance)
+			r.Get("/me/hours-account", me.HoursAccount)
+			r.Get("/me/days", me.Days)
 			r.Get("/me/vacation", me.Vacation)
 			r.Get("/me/profile", me.Profile)
 			r.Get("/me/schedule-bound", me.GetScheduleBound)
@@ -325,10 +327,16 @@ func NewRouter(d Deps) http.Handler {
 
 		if bootstrap.TestModeEnabled() {
 			tsh := &handler.TestSeedHandler{WorkPeriods: d.WorkPeriods}
+			if us, ok := d.UserStore.(*sqlite.UserStore); ok {
+				tsh.Users = us
+			}
 			r.Group(func(r chi.Router) {
 				r.Use(apimw.AuthJWT(d.Auth))
 				r.Use(apimw.RequireRole(leitung...))
 				r.Post("/test/seed-imported-work-period", tsh.SeedImportedWorkPeriod)
+				if tsh.Users != nil {
+					r.Post("/test/backdate-user", tsh.BackdateUser)
+				}
 			})
 		}
 	})

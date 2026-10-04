@@ -133,7 +133,7 @@ func (s stubAbsenceStore) ListByUserDateRange(ctx context.Context, userID int, f
 
 func TestMonthWithOpening_UsesPartialMonthWeeklyHours(t *testing.T) {
 	ctx := context.Background()
-	mb, err := MonthWithOpening(
+	mb, err := monthFull(
 		ctx,
 		1,
 		2026,
@@ -179,7 +179,7 @@ func TestMonthWithOpening_FourDayWeekTimestampValidFrom(t *testing.T) {
 	fnwRows := []model.FixedNonWorkWeekdays{{
 		UserID: 1, Weekdays: []int{int(time.Friday)}, ValidFrom: "2026-05-27T00:00:00Z",
 	}}
-	mb, err := MonthWithOpening(
+	mb, err := monthFull(
 		ctx,
 		1,
 		2026,
@@ -206,7 +206,7 @@ func TestMonthWithOpening_FourDayWeekTimestampValidFrom(t *testing.T) {
 
 func TestMonthWithOpening_HolidayWithoutWorkNoAutomaticCredit(t *testing.T) {
 	ctx := context.Background()
-	mb, err := MonthWithOpening(
+	mb, err := monthFull(
 		ctx,
 		1,
 		2026,
@@ -234,14 +234,14 @@ func TestMonthWithOpening_HolidayWithoutWorkNoAutomaticCredit(t *testing.T) {
 func TestMonthWithOpening_FullDayVacationOffsetsMissingWork(t *testing.T) {
 	ctx := context.Background()
 	wh := stubWeeklyHoursStore{validFrom: "2026-03-01", hours: 30}
-	mbNoVac, err := MonthWithOpening(
+	mbNoVac, err := monthFull(
 		ctx, 1, 2026, 3, 0,
 		stubFNWStore{}, stubWorkPeriodStore{}, nil, wh, stubHolidayStore{}, stubAbsenceStore{}, nil, nil, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("baseline: %v", err)
 	}
-	mbVac, err := MonthWithOpening(
+	mbVac, err := monthFull(
 		ctx, 1, 2026, 3, 0,
 		stubFNWStore{}, stubWorkPeriodStore{}, nil, wh, stubHolidayStore{},
 		stubAbsenceStore{byRange: []model.Absence{{
@@ -265,7 +265,7 @@ func TestMonthWithOpening_FullDayVacationOffsetsMissingWork(t *testing.T) {
 
 func TestMonthWithOpening_VacationWithoutWeeklyHoursZeroCredit(t *testing.T) {
 	ctx := context.Background()
-	mbNoVac, err := MonthWithOpening(
+	mbNoVac, err := monthFull(
 		ctx, 1, 2026, 3, 0,
 		stubFNWStore{},
 		stubWorkPeriodStore{},
@@ -278,7 +278,7 @@ func TestMonthWithOpening_VacationWithoutWeeklyHoursZeroCredit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("baseline: %v", err)
 	}
-	mbVac, err := MonthWithOpening(
+	mbVac, err := monthFull(
 		ctx, 1, 2026, 3, 0,
 		stubFNWStore{},
 		stubWorkPeriodStore{},

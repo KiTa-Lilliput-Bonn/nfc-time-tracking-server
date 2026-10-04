@@ -383,7 +383,7 @@ func TestOverview_OpeningBalancesApplyOnlyWhenOpeningDateIsInRange(t *testing.T)
 		}
 	}
 	// Stundensoll ab 1.1. → Erstellungsdatum 1.1. liegt im Fenster → +10 h Startsaldo
-	// Zweite Person: Stundensoll erst ab 1.2. → Erstellung vor Fensterbeginn → kein Stunden-Startsaldo (1.2.2026 ist Sonntag → kein Ziel an dem Tag)
+	// Zweite Person: Stundensoll erst ab 1.2. → Startsaldo per Anlage (1.1.) zählt ab Kontobeginn (1.2.2026 ist Sonntag → kein Ziel an dem Tag)
 	if err := whs.Set(ctx, &model.WeeklyHours{UserID: uOut.ID, HoursPerWeek: 40, ValidFrom: "2026-02-01"}); err != nil {
 		t.Fatal(err)
 	}
@@ -415,8 +415,8 @@ func TestOverview_OpeningBalancesApplyOnlyWhenOpeningDateIsInRange(t *testing.T)
 	if byName["Opening In"] != 10 {
 		t.Fatalf("Opening In hours_balance: want 10, got %v", byName["Opening In"])
 	}
-	if byName["Opening Out"] != 0 {
-		t.Fatalf("Opening Out hours_balance: want 0, got %v", byName["Opening Out"])
+	if byName["Opening Out"] != 10 {
+		t.Fatalf("Opening Out hours_balance: want 10 (Startsaldo zählt ab Kontobeginn), got %v", byName["Opening Out"])
 	}
 	for _, r := range rows {
 		if r.VacationCarryover != 0 || r.VacationRemainingTotal != 25 || r.VacationOpeningDays != 5 {

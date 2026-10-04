@@ -307,23 +307,18 @@ func (h *EmployeeHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "user query failed")
 		return
 	}
-	mb, err := saldocalc.MonthWithOpening(
-		r.Context(),
-		uid,
-		y,
-		m,
-		u.OpeningHoursBalance,
-		h.FixedNonWorkWeekdays,
-		h.WorkPeriods,
-		h.Corrections,
-		h.WeeklyHours,
-		h.Holidays,
-		h.Absences,
-		h.Schedules,
-		h.ScheduleBound,
-		h.ClosureDays,
-		h.Settings,
-	)
+	mb, err := saldocalc.Month(r.Context(), saldocalc.Deps{
+		WorkPeriods:          h.WorkPeriods,
+		Corrections:          h.Corrections,
+		Absences:             h.Absences,
+		Holidays:             h.Holidays,
+		Closures:             h.ClosureDays,
+		WeeklyHours:          h.WeeklyHours,
+		FixedNonWorkWeekdays: h.FixedNonWorkWeekdays,
+		ScheduleBound:        h.ScheduleBound,
+		Schedules:            h.Schedules,
+		Settings:             h.Settings,
+	}, u, y, m, time.Now())
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return
@@ -966,6 +961,24 @@ func (h *EmployeeHandler) enforceMutableEntry(w http.ResponseWriter, r *http.Req
 	return false
 }
 
+// validFromNotBeforeCreation: Wochenstunden und Urlaubsanspruch dürfen nicht vor dem Anlagedatum des Kontos beginnen.
+// Das Anlagedatum ist der Stichtag des Startsaldos; alles davor gehört in den Startsaldo.
+func validFromNotBeforeCreation(u *model.User, validFrom string) error {
+	if u == nil || u.CreatedAt.IsZero() {
+		return nil
+	}
+	vf := strings.TrimSpace(validFrom)
+	if len(vf) >= 10 {
+		vf = vf[:10]
+	}
+	created := u.CreatedAt.In(time.Local).Format("2006-01-02")
+	if vf < created {
+		return fmt.Errorf("„Gültig ab“ darf nicht vor dem Anlagedatum des Kontos (%s) liegen. Zeiten und Urlaub davor bitte als Startsaldo eintragen.",
+			u.CreatedAt.In(time.Local).Format("02.01.2006"))
+	}
+	return nil
+}
+
 func (h *EmployeeHandler) PutWeeklyHours(w http.ResponseWriter, r *http.Request) {
 	uid, ok := h.parseEmployeeIDForWrite(w, r)
 	if !ok {
@@ -982,6 +995,15 @@ func (h *EmployeeHandler) PutWeeklyHours(w http.ResponseWriter, r *http.Request)
 	}
 	if body.HoursPerWeek < 0 {
 		response.Error(w, http.StatusBadRequest, "hours_per_week must not be negative")
+		return
+	}
+	target, err := h.Users.GetByID(r.Context(), uid)
+	if err != nil || target == nil {
+		response.Error(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err := validFromNotBeforeCreation(target, body.ValidFrom); err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	wh := &model.WeeklyHours{UserID: uid, HoursPerWeek: body.HoursPerWeek, ValidFrom: body.ValidFrom}
@@ -1072,6 +1094,15 @@ func (h *EmployeeHandler) PutVacationEntitlement(w http.ResponseWriter, r *http.
 	}
 	vfNorm, err := vacationentitlement.ParseValidFromCalendarDay(body.ValidFrom)
 	if err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	target, err := h.Users.GetByID(r.Context(), uid)
+	if err != nil || target == nil {
+		response.Error(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err := validFromNotBeforeCreation(target, vfNorm); err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}

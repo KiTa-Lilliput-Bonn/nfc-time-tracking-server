@@ -40,6 +40,21 @@ export async function seedEmployee(
   }
 }
 
+export async function backdateEmployee(
+  request: APIRequestContext,
+  token: string,
+  employeeId: number,
+  createdAt: string,
+): Promise<void> {
+  const res = await request.post('/api/v1/test/backdate-user', {
+    headers: authHeaders(token),
+    data: { employee_id: employeeId, created_at: createdAt },
+  })
+  if (!res.ok()) {
+    throw new Error(`backdate employee failed: ${res.status()} ${await res.text()}`)
+  }
+}
+
 export async function seedWeeklyHours(
   request: APIRequestContext,
   token: string,
@@ -47,6 +62,8 @@ export async function seedWeeklyHours(
   hoursPerWeek: number,
   validFrom = '2020-01-01',
 ): Promise<void> {
+  // Wochenstunden dürfen nicht vor dem Anlagedatum beginnen: Konto im Testmodus zurückdatieren.
+  await backdateEmployee(request, token, employeeId, validFrom)
   const res = await request.put(`/api/v1/employees/${employeeId}/weekly-hours`, {
     headers: authHeaders(token),
     data: { hours_per_week: hoursPerWeek, valid_from: validFrom },

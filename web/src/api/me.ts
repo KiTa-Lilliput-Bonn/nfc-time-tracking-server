@@ -9,6 +9,8 @@ import type {
   TeamMeeting,
   TimeCorrection,
   ScheduleBoundSetting,
+  HoursAccount,
+  SaldoDay,
   VacationBalance,
   WorkPeriod,
 } from '@/types/api'
@@ -54,6 +56,18 @@ export async function fetchMeTimes(from: string, to: string) {
 export async function fetchMeBalance(month: number, year: number) {
   const { data } = await api.get<MonthBalance>('/me/balance', { params: { month, year } })
   return data
+}
+
+export async function fetchMeHoursAccount() {
+  const { data } = await api.get<HoursAccount>('/me/hours-account')
+  return data
+}
+
+export async function fetchMeDays(from: string, to: string) {
+  const { data } = await api.get<{ days: SaldoDay[] | null; counted_through: string }>('/me/days', {
+    params: { from, to },
+  })
+  return { days: data.days ?? [], counted_through: data.counted_through }
 }
 
 export async function fetchMeVacation() {

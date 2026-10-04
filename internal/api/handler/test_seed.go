@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -13,6 +14,34 @@ import (
 // TestSeedHandler exposes E2E-only helpers (registered only when NFC_TEST_MODE is active).
 type TestSeedHandler struct {
 	WorkPeriods store.WorkPeriodStore
+	Users       interface {
+		SetCreatedAt(ctx context.Context, userID int, createdAt string) error
+	}
+}
+
+type testBackdateUserBody struct {
+	EmployeeID int    `json:"employee_id"`
+	CreatedAt  string `json:"created_at"`
+}
+
+// BackdateUser setzt das Anlagedatum eines Kontos zurück, damit E2E-Tests Wochenstunden in der
+// Vergangenheit anlegen können (Wochenstunden dürfen nicht vor dem Anlagedatum beginnen).
+func (h *TestSeedHandler) BackdateUser(w http.ResponseWriter, r *http.Request) {
+	var body testBackdateUserBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	d, err := time.Parse("2006-01-02", body.CreatedAt)
+	if body.EmployeeID <= 0 || err != nil {
+		response.Error(w, http.StatusBadRequest, "employee_id and created_at (YYYY-MM-DD) required")
+		return
+	}
+	if err := h.Users.SetCreatedAt(r.Context(), body.EmployeeID, d.Format("2006-01-02")+" 00:00:00"); err != nil {
+		response.Error(w, http.StatusInternalServerError, "backdate failed")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type testSeedImportedBody struct {
