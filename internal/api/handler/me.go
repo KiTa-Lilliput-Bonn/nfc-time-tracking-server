@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 	"nfc-time-tracking-server/internal/api/response"
 	"nfc-time-tracking-server/internal/audit"
 	"nfc-time-tracking-server/internal/model"
-	"nfc-time-tracking-server/internal/service/compensationday"
 	"nfc-time-tracking-server/internal/service/daycalc"
 	"nfc-time-tracking-server/internal/service/fixednonwork"
 	"nfc-time-tracking-server/internal/service/saldocalc"
@@ -405,82 +403,4 @@ func (h *MeHandler) ListCorrections(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]interface{}{
 		"from": from, "to": to, "corrections": list,
 	})
-}
-
-// CreateCorrection creates a time correction for a work period owned by the authenticated user.
-// Logic mirrors employees.CreateCorrection, but the target user is always the caller.
-func (h *MeHandler) CreateCorrection(w http.ResponseWriter, r *http.Request) {
-	uid := middleware.UserID(r)
-	if uid == 0 {
-		response.Error(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	var body correctionBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		response.Error(w, http.StatusBadRequest, "invalid json")
-		return
-	}
-	if body.Reason == "" {
-		response.Error(w, http.StatusBadRequest, "reason required")
-		return
-	}
-	if !body.CorrectedOut.After(body.CorrectedIn) {
-		response.Error(w, http.StatusBadRequest, "corrected_out must be after corrected_in")
-		return
-	}
-	c := &model.TimeCorrection{
-		WorkPeriodID: body.WorkPeriodID, CorrectedIn: body.CorrectedIn, CorrectedOut: body.CorrectedOut,
-		Reason: body.Reason, CorrectedBy: uid,
-	}
-	target, err := h.WorkPeriods.GetByID(r.Context(), body.WorkPeriodID)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "query failed")
-		return
-	}
-	if target == nil || target.UserID != uid {
-		response.Error(w, http.StatusBadRequest, "invalid work_period_id")
-		return
-	}
-	day := target.WorkDate
-	dayPeriods, err := h.WorkPeriods.ListByUserDateRange(r.Context(), uid, day, day)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "query failed")
-		return
-	}
-	newStart := body.CorrectedIn.UTC()
-	newEnd := body.CorrectedOut.UTC()
-	for _, p := range dayPeriods {
-		if p.ID == body.WorkPeriodID {
-			continue
-		}
-		start := p.PunchIn.UTC()
-		end := p.PunchOut
-		if corr, err := h.Corrections.GetLatestForPeriod(r.Context(), p.ID); err == nil && corr != nil {
-			start = corr.CorrectedIn.UTC()
-			cend := corr.CorrectedOut.UTC()
-			end = &cend
-		}
-		if end != nil && !end.After(start) {
-			continue
-		}
-		if start.Before(newEnd) && (end == nil || newStart.Before(end.UTC())) {
-			response.Error(w, http.StatusBadRequest, "die korrigierte Zeit überschneidet sich mit einem anderen Eintrag an diesem Tag")
-			return
-		}
-	}
-
-	if err := h.Corrections.Create(r.Context(), c); err != nil {
-		response.Error(w, http.StatusInternalServerError, "create failed")
-		return
-	}
-	if err := compensationday.SyncClaimAfterWorkDayChange(r.Context(), h.FixedNonWorkWeekdays, h.WorkPeriods, h.Corrections, h.CompensationDayClaims, uid, day); err != nil {
-		response.Error(w, http.StatusInternalServerError, "Ausgleichstag-Anspruch konnte nicht aktualisiert werden")
-		return
-	}
-	logAudit(h.Audit, r.Context(), audit.Entry{
-		Action: audit.ActionCreate, EntityType: audit.EntityTimeCorrection, EntityID: auditID(c.ID),
-		TargetUserID: auditTarget(uid),
-		Summary:      audit.JSONSummary(map[string]any{"work_period_id": body.WorkPeriodID, "work_date": day, "self_service": true}),
-	})
-	response.JSON(w, http.StatusCreated, c)
 }

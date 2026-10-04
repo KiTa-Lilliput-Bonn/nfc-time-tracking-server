@@ -61,6 +61,12 @@ const router = createRouter({
           meta: { title: 'Mein Dienstplan' },
         },
         {
+          path: 'my/requests',
+          name: 'my-requests',
+          component: () => import('@/views/my/MyRequestsView.vue'),
+          meta: { title: 'Anträge' },
+        },
+        {
           path: 'my/password',
           name: 'change-password',
           component: () => import('@/views/my/ChangePasswordView.vue'),
@@ -107,6 +113,12 @@ const router = createRouter({
           name: 'corrections',
           component: () => import('@/views/corrections/CorrectionsView.vue'),
           meta: { title: 'Korrekturen', roles: ['leitung', 'superadmin'] },
+        },
+        {
+          path: 'requests',
+          name: 'requests',
+          component: () => import('@/views/leitung/RequestsView.vue'),
+          meta: { title: 'Anträge freigeben', roles: ['leitung', 'superadmin'] },
         },
         {
           path: 'closure-days',

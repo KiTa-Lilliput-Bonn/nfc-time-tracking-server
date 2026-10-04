@@ -181,3 +181,21 @@ type ApiPairingSessionStore interface {
 	CreateSession(ctx context.Context, clientID, tokenHash, expiresAtUTC, createdAtUTC string) error
 	ConsumeSession(ctx context.Context, tokenHash string) (clientID string, err error)
 }
+
+// ChangeRequestFilter narrows ChangeRequestStore.List; zero values mean "no filter".
+type ChangeRequestFilter struct {
+	UserID   *int
+	Statuses []model.ChangeRequestStatus
+	Kind     model.ChangeRequestKind
+	Limit    int
+}
+
+type ChangeRequestStore interface {
+	Create(ctx context.Context, c *model.ChangeRequest) error
+	GetByID(ctx context.Context, id int) (*model.ChangeRequest, error)
+	List(ctx context.Context, f ChangeRequestFilter) ([]model.ChangeRequest, error)
+	CountPending(ctx context.Context) (int, error)
+	SetDecision(ctx context.Context, id int, status model.ChangeRequestStatus, by int, comment string) (bool, error)
+	Withdraw(ctx context.Context, id, userID int) (bool, error)
+	Reopen(ctx context.Context, id int) error
+}

@@ -231,6 +231,7 @@ func main() {
 		Holidays:              holidays,
 		Settings:              settings,
 		ShiftAlertDismissals:  sqlite.NewShiftAlertDismissalStore(db),
+		ChangeRequests:        sqlite.NewChangeRequestStore(db),
 		Stamps:                stampsSvc,
 		Backup:                backupSvc,
 		Audit:                 auditLog,

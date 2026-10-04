@@ -32,6 +32,7 @@ const (
 	EntityShiftAlertDismissal  = "shift_alert_dismissal"
 	EntityAPIPairedClient      = "api_paired_client"
 	EntityLanStampsSync        = "lan_stamps_sync"
+	EntityChangeRequest        = "change_request"
 )
 
 // Event is a persisted audit log row.

@@ -48,6 +48,7 @@ type Deps struct {
 	Holidays              store.HolidayStore
 	Settings              store.SettingsStore
 	ShiftAlertDismissals  store.ShiftAlertDismissalStore
+	ChangeRequests        store.ChangeRequestStore
 
 	ApiPairedClients   store.ApiPairedClientStore
 	ApiPairingSessions store.ApiPairingSessionStore
@@ -63,6 +64,10 @@ type Deps struct {
 
 // loginRateLimitPerMinute begrenzt Login-Versuche pro Client-IP (Brute-Force). IP kommt von chi RealIP / X-Forwarded-For.
 const loginRateLimitPerMinute = 20
+
+// testModeLoginRateLimitPerMinute gilt nur im E2E-Testmodus (NFC_TEST_MODE), in dem die Playwright-Suite
+// sich von einer IP aus viele Male anmeldet.
+const testModeLoginRateLimitPerMinute = 300
 
 // pairRegisterRateLimitPerMinute begrenzt Pairing-Register-Versuche pro Client-IP.
 const pairRegisterRateLimitPerMinute = 10
@@ -110,7 +115,11 @@ func NewRouter(d Deps) http.Handler {
 
 		ah := &handler.AuthHandler{Users: d.UserStore, Auth: d.Auth}
 		r.Route("/auth", func(r chi.Router) {
-			r.With(httprate.LimitByIP(loginRateLimitPerMinute, time.Minute)).Post("/login", ah.Login)
+			loginLimit := loginRateLimitPerMinute
+			if bootstrap.TestModeEnabled() {
+				loginLimit = testModeLoginRateLimitPerMinute
+			}
+			r.With(httprate.LimitByIP(loginLimit, time.Minute)).Post("/login", ah.Login)
 			r.Group(func(r chi.Router) {
 				r.Use(apimw.AuthJWT(d.Auth))
 				r.Post("/change-password", ah.ChangePassword)
@@ -132,6 +141,12 @@ func NewRouter(d Deps) http.Handler {
 			FixedNonWorkWeekdays: d.FixedNonWorkWeekdays, Absences: d.Absences,
 			Audit: d.Audit,
 		}
+		rq := &handler.ChangeRequestHandler{
+			Requests: d.ChangeRequests, Users: d.UserStore, WorkPeriods: d.WorkPeriods, Corrections: d.Corrections,
+			Absences: d.Absences, CompensationDayClaims: d.CompensationDayClaims,
+			FixedNonWorkWeekdays: d.FixedNonWorkWeekdays, Holidays: d.Holidays, ClosureDays: d.ClosureDays,
+			Audit: d.Audit,
+		}
 		r.Group(func(r chi.Router) {
 			r.Use(apimw.AuthJWT(d.Auth))
 			r.Get("/me/times", me.Times)
@@ -144,7 +159,9 @@ func NewRouter(d Deps) http.Handler {
 			r.Get("/me/schedule", me.Schedule)
 			r.Get("/me/absences", me.ListAbsences)
 			r.Get("/me/corrections", me.ListCorrections)
-			r.Post("/me/corrections", me.CreateCorrection)
+			r.Get("/me/requests", rq.ListMine)
+			r.Post("/me/requests", rq.CreateMine)
+			r.Post("/me/requests/{id}/withdraw", rq.WithdrawMine)
 			r.Get("/closure-days", ch.List)
 		})
 
@@ -194,6 +211,10 @@ func NewRouter(d Deps) http.Handler {
 			r.Get("/dashboard/schedule-gaps", dh.ScheduleGaps)
 			r.Get("/dashboard/shift-alerts", dh.ShiftAlerts)
 			r.Post("/dashboard/shift-alerts/dismiss", dh.DismissShiftAlert)
+			r.Get("/requests", rq.List)
+			r.Get("/requests/pending-count", rq.PendingCount)
+			r.Post("/requests/{id}/approve", rq.Approve)
+			r.Post("/requests/{id}/reject", rq.Reject)
 			r.Get("/shift-alert-config", sah.Get)
 			r.Put("/shift-alert-config", sah.Put)
 			r.Get("/employees", eh.List)
