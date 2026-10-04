@@ -37,7 +37,7 @@ type Ledger struct {
 	// SavingsSpentCents: Ausgaben direkt aus dem Ansparkonto (ändern den Kassenstand nicht).
 	SavingsSpentCents int64
 	EndCents          int64
-	Summary      Summary
+	Summary           Summary
 }
 
 // BuildLedger stellt das Kassenbuch für year zusammen. entries müssen chronologisch sortiert sein.
