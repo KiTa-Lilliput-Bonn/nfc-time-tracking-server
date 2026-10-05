@@ -26,6 +26,10 @@ type User struct {
 	OpeningHoursBalance float64 `json:"opening_hours_balance"`
 	// OpeningVacationDays: Urlaub-Startwert (Tage), addiert zu Anspruch − genommen.
 	OpeningVacationDays float64 `json:"opening_vacation_days"`
+	// SSOSubject: feste Kennung ("sub") beim Identity Provider; leer = nicht mit SSO verknüpft.
+	SSOSubject string `json:"-"`
+	// SSOLinked wird beim Laden aus SSOSubject abgeleitet (für die Verwaltung).
+	SSOLinked          bool      `json:"sso_linked"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }

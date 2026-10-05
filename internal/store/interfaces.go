@@ -16,6 +16,12 @@ type UserStore interface {
 	// SetPassword updates password hash and must_change_password flag.
 	SetPassword(ctx context.Context, userID int, passwordHash string, mustChangePassword bool) error
 	Count(ctx context.Context) (int, error)
+	// GetBySSOSubject liefert den mit dieser SSO-Kennung verknüpften Benutzer.
+	GetBySSOSubject(ctx context.Context, subject string) (*model.User, error)
+	// FindByUsernameFold sucht Benutzer ohne Beachtung der Groß-/Kleinschreibung.
+	FindByUsernameFold(ctx context.Context, username string) ([]model.User, error)
+	// SetSSOSubject verknüpft mit einer SSO-Kennung; "" löst die Verknüpfung.
+	SetSSOSubject(ctx context.Context, userID int, subject string) error
 }
 
 type GroupStore interface {

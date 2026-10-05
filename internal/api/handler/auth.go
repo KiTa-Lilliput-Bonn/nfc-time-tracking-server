@@ -14,6 +14,8 @@ import (
 type AuthHandler struct {
 	Users  store.UserStore
 	Auth   *authsvc.Service
+	// PasswordLogin: auth.oidc.password_login ("" bzw. "all" = alle dürfen mit Passwort anmelden).
+	PasswordLogin string
 }
 
 type loginBody struct {
@@ -54,22 +56,41 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
+	if !PasswordLoginAllowed(h.PasswordLogin, u.Role) {
+		response.Error(w, http.StatusForbidden, "password login disabled")
+		return
+	}
 	token, err := h.Auth.IssueToken(u.ID, u.Username, string(u.Role))
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "token error")
 		return
 	}
 	response.JSON(w, http.StatusOK, loginResponse{
-		Token: token,
-		User: userPublic{
-			ID:                 u.ID,
-			Username:           u.Username,
-			DisplayName:        u.DisplayName,
-			Role:               u.Role,
-			MustChangePassword: u.MustChangePassword,
-		},
+		Token:   token,
+		User:    toUserPublic(u),
 		Expires: h.Auth.ExpirySeconds(),
 	})
+}
+
+func toUserPublic(u *model.User) userPublic {
+	return userPublic{
+		ID:                 u.ID,
+		Username:           u.Username,
+		DisplayName:        u.DisplayName,
+		Role:               u.Role,
+		MustChangePassword: u.MustChangePassword,
+	}
+}
+
+// Me liefert den angemeldeten Benutzer (z. B. nach SSO-Login, wenn nur das Token bekannt ist).
+func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.UserID(r)
+	u, err := h.Users.GetByID(r.Context(), uid)
+	if uid == 0 || err != nil || !u.Active {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	response.JSON(w, http.StatusOK, toUserPublic(u))
 }
 
 type changePasswordBody struct {

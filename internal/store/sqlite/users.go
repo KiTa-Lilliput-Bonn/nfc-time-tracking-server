@@ -67,12 +67,21 @@ func scanGroupID(dest **int, gid sql.NullInt64) {
 	}
 }
 
+func scanSSOSubject(u *model.User, sso sql.NullString) {
+	u.SSOSubject = ""
+	if sso.Valid {
+		u.SSOSubject = sso.String
+	}
+	u.SSOLinked = u.SSOSubject != ""
+}
+
 func (s *UserStore) GetByID(ctx context.Context, id int) (*model.User, error) {
 	u := &model.User{}
 	var gid sql.NullInt64
+	var sso sql.NullString
 	err := s.db.DB.QueryRowContext(ctx,
-		`SELECT id, username, password_hash, display_name, group_id, role, active, must_change_password, default_team_meeting_participant, opening_hours_balance, opening_vacation_days, created_at, updated_at FROM users WHERE id = ?`, id).
-		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &gid, &u.Role, &u.Active, &u.MustChangePassword, &u.DefaultTeamMeetingParticipant, &u.OpeningHoursBalance, &u.OpeningVacationDays, &u.CreatedAt, &u.UpdatedAt)
+		`SELECT id, username, password_hash, display_name, group_id, role, active, must_change_password, default_team_meeting_participant, opening_hours_balance, opening_vacation_days, created_at, updated_at, sso_subject FROM users WHERE id = ?`, id).
+		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &gid, &u.Role, &u.Active, &u.MustChangePassword, &u.DefaultTeamMeetingParticipant, &u.OpeningHoursBalance, &u.OpeningVacationDays, &u.CreatedAt, &u.UpdatedAt, &sso)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found: %d", id)
 	}
@@ -80,15 +89,17 @@ func (s *UserStore) GetByID(ctx context.Context, id int) (*model.User, error) {
 		return nil, err
 	}
 	scanGroupID(&u.GroupID, gid)
+	scanSSOSubject(u, sso)
 	return u, nil
 }
 
 func (s *UserStore) GetByUsername(ctx context.Context, username string) (*model.User, error) {
 	u := &model.User{}
 	var gid sql.NullInt64
+	var sso sql.NullString
 	err := s.db.DB.QueryRowContext(ctx,
-		`SELECT id, username, password_hash, display_name, group_id, role, active, must_change_password, default_team_meeting_participant, opening_hours_balance, opening_vacation_days, created_at, updated_at FROM users WHERE username = ?`, username).
-		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &gid, &u.Role, &u.Active, &u.MustChangePassword, &u.DefaultTeamMeetingParticipant, &u.OpeningHoursBalance, &u.OpeningVacationDays, &u.CreatedAt, &u.UpdatedAt)
+		`SELECT id, username, password_hash, display_name, group_id, role, active, must_change_password, default_team_meeting_participant, opening_hours_balance, opening_vacation_days, created_at, updated_at, sso_subject FROM users WHERE username = ?`, username).
+		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &gid, &u.Role, &u.Active, &u.MustChangePassword, &u.DefaultTeamMeetingParticipant, &u.OpeningHoursBalance, &u.OpeningVacationDays, &u.CreatedAt, &u.UpdatedAt, &sso)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found: %s", username)
 	}
@@ -96,11 +107,12 @@ func (s *UserStore) GetByUsername(ctx context.Context, username string) (*model.
 		return nil, err
 	}
 	scanGroupID(&u.GroupID, gid)
+	scanSSOSubject(u, sso)
 	return u, nil
 }
 
 func (s *UserStore) List(ctx context.Context, activeOnly bool) ([]model.User, error) {
-	query := `SELECT id, username, password_hash, display_name, group_id, role, active, must_change_password, default_team_meeting_participant, opening_hours_balance, opening_vacation_days, created_at, updated_at FROM users`
+	query := `SELECT id, username, password_hash, display_name, group_id, role, active, must_change_password, default_team_meeting_participant, opening_hours_balance, opening_vacation_days, created_at, updated_at, sso_subject FROM users`
 	if activeOnly {
 		query += ` WHERE active = 1`
 	}
@@ -116,10 +128,12 @@ func (s *UserStore) List(ctx context.Context, activeOnly bool) ([]model.User, er
 	for rows.Next() {
 		var u model.User
 		var gid sql.NullInt64
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &gid, &u.Role, &u.Active, &u.MustChangePassword, &u.DefaultTeamMeetingParticipant, &u.OpeningHoursBalance, &u.OpeningVacationDays, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		var sso sql.NullString
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &gid, &u.Role, &u.Active, &u.MustChangePassword, &u.DefaultTeamMeetingParticipant, &u.OpeningHoursBalance, &u.OpeningVacationDays, &u.CreatedAt, &u.UpdatedAt, &sso); err != nil {
 			return nil, err
 		}
 		scanGroupID(&u.GroupID, gid)
+		scanSSOSubject(&u, sso)
 		users = append(users, u)
 	}
 	if err := rows.Err(); err != nil {
@@ -162,4 +176,62 @@ func (s *UserStore) Count(ctx context.Context) (int, error) {
 func (s *UserStore) SetCreatedAt(ctx context.Context, userID int, createdAt string) error {
 	_, err := s.db.DB.ExecContext(ctx, `UPDATE users SET created_at = ? WHERE id = ?`, createdAt, userID)
 	return err
+}
+
+// GetBySSOSubject liefert den Benutzer, der mit dieser SSO-Kennung ("sub") verknüpft ist.
+func (s *UserStore) GetBySSOSubject(ctx context.Context, subject string) (*model.User, error) {
+	var id int
+	err := s.db.DB.QueryRowContext(ctx, `SELECT id FROM users WHERE sso_subject = ?`, subject).Scan(&id)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("user not found for sso subject")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.GetByID(ctx, id)
+}
+
+// FindByUsernameFold sucht Benutzer ohne Beachtung der Groß-/Kleinschreibung (ASCII).
+// Mehrere Treffer sind möglich, wenn sich Benutzernamen nur in der Schreibweise unterscheiden.
+func (s *UserStore) FindByUsernameFold(ctx context.Context, username string) ([]model.User, error) {
+	rows, err := s.db.DB.QueryContext(ctx, `SELECT id FROM users WHERE username = ? COLLATE NOCASE ORDER BY id`, username)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]model.User, 0, len(ids))
+	for _, id := range ids {
+		u, err := s.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *u)
+	}
+	return out, nil
+}
+
+// SetSSOSubject verknüpft den Benutzer mit einer SSO-Kennung; "" löst die Verknüpfung.
+func (s *UserStore) SetSSOSubject(ctx context.Context, userID int, subject string) error {
+	var v interface{}
+	if subject != "" {
+		v = subject
+	}
+	_, err := s.db.DB.ExecContext(ctx,
+		`UPDATE users SET sso_subject = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, v, userID)
+	if err != nil {
+		return fmt.Errorf("set sso subject: %w", err)
+	}
+	return nil
 }

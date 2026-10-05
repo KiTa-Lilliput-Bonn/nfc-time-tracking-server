@@ -46,6 +46,12 @@ export async function postEmployeeResetPassword(id: number) {
   return data
 }
 
+/** Löst die Verknüpfung mit dem SSO-Konto (beim nächsten SSO-Login wird neu verknüpft). */
+export async function deleteEmployeeSsoLink(id: number) {
+  const { data } = await api.delete<Employee>(`/employees/${id}/sso`)
+  return data
+}
+
 export async function patchEmployee(
   id: number,
   body: {

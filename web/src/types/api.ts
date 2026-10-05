@@ -184,6 +184,8 @@ export interface Employee {
   role: string
   active: boolean
   must_change_password: boolean
+  /** Mit einem SSO-Konto (OIDC) verknüpft */
+  sso_linked?: boolean
   /** false = nicht per Alle/Gruppe/Excel-Import vorausgewählt; Default ja */
   default_team_meeting_participant?: boolean
   /** Höchstens eine Gruppe; fehlt oder null = keine Zuordnung */

@@ -17,6 +17,14 @@ auth:
   # jwt_secret weglassen: wird automatisch erzeugt und in ./data/jwt.secret gespeichert (neben der DB).
   # Optional: Festlegen über diese Datei oder NFC_AUTH_JWT_SECRET (z. B. mehrere Instanzen / Kubernetes).
   token_expiry_hours: 8
+  # Optional: Anmeldung über SSO (OpenID Connect), Details in docs/sso.md
+  # oidc:
+  #   enabled: true
+  #   issuer: "https://auth.example.de/application/o/zeiterfassung/"
+  #   client_id: "nfc-zeiterfassung"
+  #   client_secret: "..."
+  #   redirect_url: "https://zeit.example.de/api/v1/auth/oidc/callback"
+  #   password_login: "admins"   # all | admins | none
 
 logging:
   level: "info"               # aktuell reserviert (stdlib log hat keine Levels)

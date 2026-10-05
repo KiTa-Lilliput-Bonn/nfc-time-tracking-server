@@ -31,6 +31,11 @@ func AuthJWT(svc *authsvc.Service) func(http.Handler) http.Handler {
 				response.Error(w, http.StatusUnauthorized, "invalid token")
 				return
 			}
+			claims, err = svc.CurrentClaims(r.Context(), claims)
+			if err != nil {
+				response.Error(w, http.StatusUnauthorized, "invalid token")
+				return
+			}
 			ctx := r.Context()
 			ctx = context.WithValue(ctx, CtxUserID, claims.UserID)
 			ctx = context.WithValue(ctx, CtxUsername, claims.Username)

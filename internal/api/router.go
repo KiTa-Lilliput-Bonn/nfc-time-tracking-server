@@ -23,6 +23,7 @@ import (
 	"nfc-time-tracking-server/internal/service/backup"
 	"nfc-time-tracking-server/internal/service/export"
 	"nfc-time-tracking-server/internal/service/lanemployeesync"
+	oidcsvc "nfc-time-tracking-server/internal/service/oidc"
 	"nfc-time-tracking-server/internal/service/stampspoll"
 	"nfc-time-tracking-server/internal/store"
 	"nfc-time-tracking-server/internal/store/sqlite"
@@ -50,6 +51,8 @@ type Deps struct {
 	ShiftAlertDismissals  store.ShiftAlertDismissalStore
 	ChangeRequests        store.ChangeRequestStore
 	GroupCash             store.GroupCashStore
+	// OIDC: SSO-Anmeldung; nil = nicht aktiviert.
+	OIDC *oidcsvc.Service
 
 	ApiPairedClients   store.ApiPairedClientStore
 	ApiPairingSessions store.ApiPairingSessionStore
@@ -115,14 +118,23 @@ func NewRouter(d Deps) http.Handler {
 		})
 
 		ah := &handler.AuthHandler{Users: d.UserStore, Auth: d.Auth}
+		if d.OIDC != nil {
+			ah.PasswordLogin = d.OIDC.Config().PasswordLogin
+		}
+		oh := &handler.OIDCHandler{OIDC: d.OIDC, Users: d.UserStore, Auth: d.Auth, Audit: d.Audit}
 		r.Route("/auth", func(r chi.Router) {
 			loginLimit := loginRateLimitPerMinute
 			if bootstrap.TestModeEnabled() {
 				loginLimit = testModeLoginRateLimitPerMinute
 			}
 			r.With(httprate.LimitByIP(loginLimit, time.Minute)).Post("/login", ah.Login)
+			r.Get("/oidc/config", oh.Config)
+			r.With(httprate.LimitByIP(loginLimit, time.Minute)).Get("/oidc/start", oh.Start)
+			r.With(httprate.LimitByIP(loginLimit, time.Minute)).Get("/oidc/callback", oh.Callback)
+			r.Get("/oidc/logout", oh.Logout)
 			r.Group(func(r chi.Router) {
 				r.Use(apimw.AuthJWT(d.Auth))
+				r.Get("/me", ah.Me)
 				r.Post("/change-password", ah.ChangePassword)
 				r.Post("/refresh", ah.Refresh)
 			})
@@ -241,6 +253,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Post("/employees", eh.Create)
 			r.Patch("/employees/{id}", eh.Patch)
 			r.Post("/employees/{id}/reset-password", eh.ResetPassword)
+			r.Delete("/employees/{id}/sso", eh.UnlinkSSO)
 			r.Get("/groups", gh.List)
 			r.Post("/groups", gh.Create)
 			r.Put("/groups/order", gh.PutOrder)

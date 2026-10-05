@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -20,6 +22,35 @@ type Claims struct {
 type Service struct {
 	jwtSecret   []byte
 	expiryHours int
+	lookup      UserLookup
+}
+
+// UserLookup liefert den aktuellen Stand eines Benutzers (aktiv, Rolle) aus der Datenbank.
+type UserLookup func(ctx context.Context, userID int) (active bool, role string, err error)
+
+// SetUserLookup aktiviert die Prüfung jedes Tokens gegen den aktuellen Benutzerstand:
+// deaktivierte oder gelöschte Konten werden sofort abgewiesen, Rollenänderungen
+// greifen sofort statt erst nach Ablauf des Tokens.
+func (s *Service) SetUserLookup(f UserLookup) {
+	s.lookup = f
+}
+
+// ErrUserInactive: Token gültig, aber das Konto ist deaktiviert oder existiert nicht mehr.
+var ErrUserInactive = errors.New("user inactive")
+
+// CurrentClaims gleicht die Claims mit dem aktuellen Benutzerstand ab (falls ein
+// UserLookup gesetzt ist) und übernimmt die aktuelle Rolle.
+func (s *Service) CurrentClaims(ctx context.Context, c *Claims) (*Claims, error) {
+	if s.lookup == nil {
+		return c, nil
+	}
+	active, role, err := s.lookup(ctx, c.UserID)
+	if err != nil || !active {
+		return nil, ErrUserInactive
+	}
+	out := *c
+	out.Role = role
+	return &out, nil
 }
 
 func New(jwtSecret string, expiryHours int) *Service {

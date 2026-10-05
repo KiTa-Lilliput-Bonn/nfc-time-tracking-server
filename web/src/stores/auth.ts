@@ -13,6 +13,17 @@ export interface AuthUser {
 }
 
 const USER_KEY = 'nfc_user'
+/** Wie die aktuelle Sitzung angemeldet wurde ('sso' oder 'password'). */
+const VIA_KEY = 'nfc_auth_via'
+export type AuthVia = 'sso' | 'password'
+
+function loadVia(): AuthVia {
+  try {
+    return localStorage.getItem(VIA_KEY) === 'sso' ? 'sso' : 'password'
+  } catch {
+    return 'password'
+  }
+}
 
 function loadUser(): AuthUser | null {
   try {
@@ -27,9 +38,19 @@ function loadUser(): AuthUser | null {
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('nfc_token'))
   const user = ref<AuthUser | null>(loadUser())
+  const via = ref<AuthVia>(loadVia())
 
   const isAuthenticated = computed(() => !!token.value && !!user.value)
   const role = computed(() => user.value?.role ?? null)
+
+  function persistVia(v: AuthVia) {
+    via.value = v
+    try {
+      localStorage.setItem(VIA_KEY, v)
+    } catch {
+      /* ignore */
+    }
+  }
 
   function persistUser(u: AuthUser | null) {
     user.value = u
@@ -46,7 +67,23 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = data.token
     setStoredToken(data.token)
     persistUser(data.user)
+    persistVia('password')
     return data
+  }
+
+  /** Übernimmt das App-Token nach SSO-Login und lädt den Benutzer. */
+  async function loginWithToken(newToken: string) {
+    setStoredToken(newToken)
+    try {
+      const { data } = await api.get<AuthUser>('/auth/me')
+      token.value = newToken
+      persistUser(data)
+      persistVia('sso')
+      return data
+    } catch (e) {
+      setStoredToken(null)
+      throw e
+    }
   }
 
   async function refreshToken() {
@@ -67,10 +104,14 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function logout() {
+  /** Meldet lokal ab. Liefert true, wenn die Sitzung über SSO angemeldet war. */
+  function logout(): boolean {
+    const wasSso = via.value === 'sso'
     token.value = null
     setStoredToken(null)
     persistUser(null)
+    persistVia('password')
+    return wasSso
   }
 
   return {
@@ -78,7 +119,9 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     role,
     isAuthenticated,
+    via,
     login,
+    loginWithToken,
     logout,
     refreshToken,
     changePassword,

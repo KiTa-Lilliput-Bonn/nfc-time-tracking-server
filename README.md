@@ -40,6 +40,10 @@ Alternativ koennen wichtige Werte auch per Umgebungsvariablen gesetzt werden, z.
 - `NFC_LOGGING_MAX_AGE_DAYS`
 - `NFC_BACKUP_TARGET_PATH` (setzt `backup_target_path` beim ersten Start, wenn noch leer; Docker-Image: `/backup`)
 
+### Anmeldung über SSO (Authentik, Authelia, Pocket ID)
+
+Optional per OpenID Connect (`auth.oidc` in `config.yaml` bzw. `NFC_OIDC_*`). Einrichtung, automatische Verknüpfung der Konten und Beispiele für Authentik und Authelia: [`docs/sso.md`](docs/sso.md).
+
 ### Docker
 
 Container mit Volumes `/data` und `/backup`: siehe [`docker-compose.yml`](docker-compose.yml) und [`docs/entwicklung-und-release.md`](docs/entwicklung-und-release.md#docker-linux-amd64-ghcr).
