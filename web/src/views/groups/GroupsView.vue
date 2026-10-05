@@ -14,6 +14,7 @@ import { fetchEmployees } from '@/api/employees'
 import { createGroup, deleteGroup, fetchGroups, patchGroup, putGroupOrder } from '@/api/groups'
 import { patchEmployee } from '@/api/management'
 import type { Employee, UserGroup } from '@/types/api'
+import { getApiErrorMessage } from '@/utils/apiError'
 import { canManageEmployeeByRole } from '@/utils/roles'
 import { useAuthStore } from '@/stores/auth'
 
@@ -138,8 +139,8 @@ async function remove(g: UserGroup) {
     }
     toast.add({ severity: 'success', summary: 'Gelöscht', life: 10000 })
     await load()
-  } catch {
-    toast.add({ severity: 'error', summary: 'Löschen fehlgeschlagen', life: 10000 })
+  } catch (e) {
+    toast.add({ severity: 'error', summary: 'Löschen fehlgeschlagen', detail: getApiErrorMessage(e), life: 10000 })
   } finally {
     saving.value = false
   }

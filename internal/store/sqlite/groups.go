@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"nfc-time-tracking-server/internal/model"
+	"nfc-time-tracking-server/internal/store"
 )
 
 type GroupStore struct {
@@ -88,6 +89,22 @@ func (s *GroupStore) Delete(ctx context.Context, id int) error {
 	}
 	defer tx.Rollback()
 
+	var cashEntries int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM cash_entries WHERE group_id = ?`, id).Scan(&cashEntries); err != nil {
+		return fmt.Errorf("count cash entries: %w", err)
+	}
+	if cashEntries > 0 {
+		return store.ErrGroupHasCashEntries
+	}
+	for _, q := range []string{
+		`DELETE FROM cash_keepers WHERE group_id = ?`,
+		`DELETE FROM cash_allowances WHERE group_id = ?`,
+		`DELETE FROM cash_openings WHERE group_id = ?`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, id); err != nil {
+			return fmt.Errorf("clear group cash: %w", err)
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE users SET group_id = NULL WHERE group_id = ?`, id); err != nil {
 		return fmt.Errorf("clear users group: %w", err)
 	}

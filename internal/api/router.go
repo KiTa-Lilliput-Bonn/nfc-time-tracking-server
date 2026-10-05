@@ -49,6 +49,7 @@ type Deps struct {
 	Settings              store.SettingsStore
 	ShiftAlertDismissals  store.ShiftAlertDismissalStore
 	ChangeRequests        store.ChangeRequestStore
+	GroupCash             store.GroupCashStore
 
 	ApiPairedClients   store.ApiPairedClientStore
 	ApiPairingSessions store.ApiPairingSessionStore
@@ -163,6 +164,25 @@ func NewRouter(d Deps) http.Handler {
 			r.Post("/me/requests", rq.CreateMine)
 			r.Post("/me/requests/{id}/withdraw", rq.WithdrawMine)
 			r.Get("/closure-days", ch.List)
+
+			// Gruppenkassen: Lesen für Kassenwarte der Gruppe und Leitung, Schreiben nur für Kassenwarte
+			// (Prüfung im Handler). Kassenwarte zuweisen darf nur die Leitung.
+			gc := &handler.GroupCashHandler{Cash: d.GroupCash, Groups: d.GroupStore, Users: d.UserStore, Audit: d.Audit}
+			r.Get("/cash-boxes", gc.List)
+			r.Get("/cash-boxes/{groupId}", gc.Get)
+			r.With(apimw.RequireRole(string(model.RoleLeitung), string(model.RoleSuperadmin))).
+				Put("/cash-boxes/{groupId}/keepers", gc.PutKeepers)
+			r.Get("/cash-boxes/{groupId}/export", gc.Export)
+			r.Put("/cash-boxes/{groupId}/opening", gc.PutOpening)
+			r.Delete("/cash-boxes/{groupId}/opening", gc.DeleteOpening)
+			r.Put("/cash-boxes/{groupId}/allowances", gc.PutAllowance)
+			r.Delete("/cash-boxes/{groupId}/allowances/{allowanceId}", gc.DeleteAllowance)
+			r.Post("/cash-boxes/{groupId}/entries", gc.CreateEntry)
+			r.Put("/cash-boxes/{groupId}/entries/{entryId}", gc.UpdateEntry)
+			r.Delete("/cash-boxes/{groupId}/entries/{entryId}", gc.DeleteEntry)
+			r.Post("/cash-boxes/{groupId}/entries/{entryId}/receipts", gc.UploadReceipts)
+			r.Get("/cash-boxes/{groupId}/receipts/{receiptId}", gc.GetReceipt)
+			r.Delete("/cash-boxes/{groupId}/receipts/{receiptId}", gc.DeleteReceipt)
 		})
 
 		leitung := []string{string(model.RoleLeitung), string(model.RoleSuperadmin)}

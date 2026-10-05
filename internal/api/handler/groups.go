@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -103,6 +104,10 @@ func (h *GroupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Groups.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, store.ErrGroupHasCashEntries) {
+			response.Error(w, http.StatusConflict, "Die Gruppenkasse dieser Gruppe hat Buchungen; die Gruppe kann daher nicht gelöscht werden.")
+			return
+		}
 		response.Error(w, http.StatusNotFound, "not found")
 		return
 	}
