@@ -42,7 +42,7 @@ Alternativ koennen wichtige Werte auch per Umgebungsvariablen gesetzt werden, z.
 
 ### Anmeldung über SSO (Authentik, Authelia, Pocket ID)
 
-Optional per OpenID Connect (`auth.oidc` in `config.yaml` bzw. `NFC_OIDC_*`). Einrichtung, automatische Verknüpfung der Konten und Beispiele für Authentik und Authelia: [`docs/sso.md`](docs/sso.md).
+Optional per OpenID Connect (`auth.oidc` in `config.yaml` bzw. `NFC_OIDC_*`). Einrichtung, automatische Verknüpfung der Konten und Beispiele für Authentik und Authelia: [`docs/sso.md`](docs/sso.md), Schritt-für-Schritt für Authentik: [`docs/sso-authentik.md`](docs/sso-authentik.md).
 
 ### Docker
 

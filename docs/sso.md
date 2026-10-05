@@ -49,6 +49,8 @@ Oder per Umgebungsvariablen (z. B. in `docker-compose.yml`): `NFC_OIDC_ENABLED`,
 
 ## Authentik
 
+Ausführliche Schritt-für-Schritt-Anleitung mit Fehlersuche: [`sso-authentik.md`](sso-authentik.md). Kurzfassung:
+
 1. **Applications → Providers → Create → OAuth2/OpenID Provider**
    - Client type: **Confidential**
    - Redirect URIs: `https://zeit.example.de/api/v1/auth/oidc/callback` (strict)
