@@ -12,7 +12,8 @@ import Tag from 'primevue/tag'
 import { useToast } from 'primevue/usetoast'
 
 import { createAdminUser, fetchAdminUsers, patchAdminUser } from '@/api/admin'
-import { postEmployeeResetPassword } from '@/api/management'
+import { deleteEmployeeSsoLink, postEmployeeResetPassword } from '@/api/management'
+import { fetchSsoConfig } from '@/api/sso'
 import type { Employee } from '@/types/api'
 import { toastDetailAfterPasswordClipboard } from '@/utils/clipboard'
 import { useAuthStore } from '@/stores/auth'
@@ -45,7 +46,33 @@ async function load() {
   }
 }
 
-onMounted(load)
+const ssoEnabled = ref(false)
+
+onMounted(() => {
+  void load()
+  void fetchSsoConfig().then((c) => (ssoEnabled.value = c.enabled))
+})
+
+const unlinking = ref(false)
+async function unlinkSso() {
+  if (!editRow.value || unlinking.value) return
+  unlinking.value = true
+  try {
+    const u = await deleteEmployeeSsoLink(editRow.value.id)
+    editRow.value = { ...editRow.value, sso_linked: u.sso_linked }
+    toast.add({
+      severity: 'success',
+      summary: 'SSO-Verknüpfung gelöst',
+      detail: 'Beim nächsten SSO-Login wird das Konto erneut über den Benutzernamen verknüpft.',
+      life: 10000,
+    })
+    await load()
+  } catch {
+    toast.add({ severity: 'error', summary: 'Lösen fehlgeschlagen', life: 10000 })
+  } finally {
+    unlinking.value = false
+  }
+}
 
 const showCreate = ref(false)
 const creating = ref(false)
@@ -219,6 +246,12 @@ const selfId = () => auth.user?.id
               <Tag :severity="data.active ? 'success' : 'secondary'" :value="data.active ? 'Ja' : 'Nein'" />
             </template>
           </Column>
+          <Column v-if="ssoEnabled" header="SSO">
+            <template #body="{ data }">
+              <Tag v-if="data.sso_linked" severity="info" value="verknüpft" />
+              <span v-else class="muted">–</span>
+            </template>
+          </Column>
           <Column header="">
             <template #body="{ data }">
               <Button label="Bearbeiten" size="small" text @click="openEdit(data)" />
@@ -311,6 +344,20 @@ const selfId = () => auth.user?.id
           <span>Aktiv</span>
           <input v-model="editActive" type="checkbox" class="cb" />
         </label>
+        <div v-if="ssoEnabled || editRow.sso_linked" class="sso-row" data-testid="user-sso-status">
+          <span>SSO: {{ editRow.sso_linked ? 'verknüpft' : 'noch nicht verknüpft' }}</span>
+          <Button
+            v-if="editRow.sso_linked"
+            label="Verknüpfung lösen"
+            icon="pi pi-link"
+            severity="secondary"
+            text
+            size="small"
+            type="button"
+            :loading="unlinking"
+            @click="unlinkSso"
+          />
+        </div>
         <div class="pw-reset-wrap">
           <Button
             label="Passwort zurücksetzen"
@@ -448,6 +495,16 @@ const selfId = () => auth.user?.id
   border-radius: 6px;
   font-size: 0.85rem;
   margin: 0 0 0.5rem;
+}
+.sso-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+.muted {
+  color: #94a3b8;
 }
 .pw-reset-wrap {
   margin-top: 0.75rem;

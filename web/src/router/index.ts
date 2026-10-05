@@ -20,6 +20,12 @@ const router = createRouter({
           name: 'login',
           component: () => import('@/views/LoginView.vue'),
         },
+        {
+          path: 'sso',
+          name: 'login-sso',
+          component: () => import('@/views/SsoCallbackView.vue'),
+          meta: { public: true },
+        },
       ],
     },
     {
@@ -187,6 +193,7 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
+  if (to.meta.public) return true
   if (to.name === 'login') {
     if (auth.isAuthenticated) return { name: 'dashboard' }
     return true

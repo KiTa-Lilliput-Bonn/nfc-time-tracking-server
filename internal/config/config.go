@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -33,8 +34,34 @@ type DatabaseConfig struct {
 }
 
 type AuthConfig struct {
-	JWTSecret        string `yaml:"jwt_secret"`
-	TokenExpiryHours int    `yaml:"token_expiry_hours"`
+	JWTSecret        string     `yaml:"jwt_secret"`
+	TokenExpiryHours int        `yaml:"token_expiry_hours"`
+	OIDC             OIDCConfig `yaml:"oidc"`
+}
+
+// OIDCConfig: Anmeldung über einen OpenID-Connect-Provider (z. B. Authentik, Authelia, Pocket ID).
+type OIDCConfig struct {
+	Enabled      bool   `yaml:"enabled"`
+	Issuer       string `yaml:"issuer"`
+	ClientID     string `yaml:"client_id"`
+	ClientSecret string `yaml:"client_secret"`
+	// RedirectURL: öffentliche Adresse des Callbacks, z. B. https://zeit.example.de/api/v1/auth/oidc/callback.
+	RedirectURL string   `yaml:"redirect_url"`
+	Scopes      []string `yaml:"scopes"`
+	// UsernameClaim: Claim, dessen Wert beim ersten Login mit dem App-Benutzernamen verglichen wird.
+	UsernameClaim string `yaml:"username_claim"`
+	// AutoLink: beim ersten SSO-Login automatisch über den Benutzernamen verknüpfen (Standard: true).
+	AutoLink *bool `yaml:"auto_link"`
+	// PasswordLogin: "all" (Standard) = alle dürfen sich weiter mit Passwort anmelden,
+	// "admins" = nur Leitung und Superadmin (Fallback), "none" = niemand.
+	PasswordLogin string `yaml:"password_login"`
+	// ButtonLabel: Beschriftung des Buttons auf der Login-Seite.
+	ButtonLabel string `yaml:"button_label"`
+}
+
+// AutoLinkEnabled ist true, wenn auto_link nicht ausdrücklich auf false steht.
+func (o OIDCConfig) AutoLinkEnabled() bool {
+	return o.AutoLink == nil || *o.AutoLink
 }
 
 type LoggingConfig struct {
@@ -103,6 +130,7 @@ func (c *Config) ApplyBootstrapEnv() {
 			c.Auth.TokenExpiryHours = h
 		}
 	}
+	applyOIDCEnv(&c.Auth.OIDC)
 	if v := os.Getenv("NFC_LOGGING_FILE"); v != "" {
 		c.Logging.File = v
 	}
@@ -113,6 +141,43 @@ func (c *Config) ApplyBootstrapEnv() {
 	}
 	if v := os.Getenv("NFC_BACKUP_TARGET_PATH"); v != "" {
 		c.BackupTargetPath = v
+	}
+}
+
+func applyOIDCEnv(o *OIDCConfig) {
+	if v := os.Getenv("NFC_OIDC_ENABLED"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			o.Enabled = b
+		}
+	}
+	if v := os.Getenv("NFC_OIDC_ISSUER"); v != "" {
+		o.Issuer = v
+	}
+	if v := os.Getenv("NFC_OIDC_CLIENT_ID"); v != "" {
+		o.ClientID = v
+	}
+	if v := os.Getenv("NFC_OIDC_CLIENT_SECRET"); v != "" {
+		o.ClientSecret = v
+	}
+	if v := os.Getenv("NFC_OIDC_REDIRECT_URL"); v != "" {
+		o.RedirectURL = v
+	}
+	if v := os.Getenv("NFC_OIDC_SCOPES"); v != "" {
+		o.Scopes = strings.Fields(strings.ReplaceAll(v, ",", " "))
+	}
+	if v := os.Getenv("NFC_OIDC_USERNAME_CLAIM"); v != "" {
+		o.UsernameClaim = v
+	}
+	if v := os.Getenv("NFC_OIDC_AUTO_LINK"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			o.AutoLink = &b
+		}
+	}
+	if v := os.Getenv("NFC_OIDC_PASSWORD_LOGIN"); v != "" {
+		o.PasswordLogin = v
+	}
+	if v := os.Getenv("NFC_OIDC_BUTTON_LABEL"); v != "" {
+		o.ButtonLabel = v
 	}
 }
 

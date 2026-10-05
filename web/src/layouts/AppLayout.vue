@@ -6,6 +6,7 @@ import type { MenuItem } from 'primevue/menuitem'
 import { useAuthStore } from '@/stores/auth'
 import { usePendingRequests } from '@/stores/pendingRequests'
 import { fetchCashBoxes } from '@/api/groupCash'
+import { SSO_LOGOUT_URL } from '@/api/sso'
 
 const route = useRoute()
 const router = useRouter()
@@ -98,7 +99,11 @@ function isActiveNav(targetPath: string): boolean {
 }
 
 function logout() {
-  auth.logout()
+  if (auth.logout()) {
+    // Auch beim SSO-Provider abmelden, sonst wäre man beim nächsten Klick sofort wieder drin.
+    window.location.href = SSO_LOGOUT_URL
+    return
+  }
   router.push('/login')
 }
 
@@ -199,7 +204,13 @@ watch(
         >
           Gruppenkasse
         </RouterLink>
-        <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/my/password') }" to="/my/password">
+        <RouterLink
+          v-if="auth.via !== 'sso'"
+          class="nav-item"
+          active-class=""
+          :class="{ 'nav-item--active': isActiveNav('/my/password') }"
+          to="/my/password"
+        >
           Passwort ändern
         </RouterLink>
 

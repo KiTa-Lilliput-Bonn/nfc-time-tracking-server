@@ -221,6 +221,29 @@ func (h *EmployeeHandler) ResetPassword(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// UnlinkSSO löst die Verknüpfung mit dem SSO-Konto. Beim nächsten SSO-Login wird
+// (bei auto_link) erneut über den Benutzernamen verknüpft.
+func (h *EmployeeHandler) UnlinkSSO(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.parseEmployeeIDForWrite(w, r)
+	if !ok {
+		return
+	}
+	if err := h.Users.SetSSOSubject(r.Context(), id, ""); err != nil {
+		response.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	logAudit(h.Audit, r.Context(), audit.Entry{
+		Action: audit.ActionUpdate, EntityType: audit.EntityEmployee, EntityID: auditID(id),
+		TargetUserID: auditTarget(id), Summary: `{"sso_linked":false}`,
+	})
+	u, err := h.Users.GetByID(r.Context(), id)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	response.JSON(w, http.StatusOK, u)
+}
+
 func (h *EmployeeHandler) Times(w http.ResponseWriter, r *http.Request) {
 	uid, ok := h.parseEmployeeID(w, r)
 	if !ok {

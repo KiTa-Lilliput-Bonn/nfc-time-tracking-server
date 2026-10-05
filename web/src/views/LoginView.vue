@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
 import Card from 'primevue/card'
@@ -9,11 +9,38 @@ import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 
 import { useAuthStore } from '@/stores/auth'
+import { SSO_START_URL, fetchSsoConfig, ssoErrorMessage, type SsoConfig } from '@/api/sso'
 
 const router = useRouter()
 const route = useRoute()
 const toast = useToast()
 const auth = useAuthStore()
+
+const sso = ref<SsoConfig | null>(null)
+/** Passwortformular: bei SSO ggf. nur als ausklappbarer Fallback für die Leitung. */
+const showPasswordForm = ref(true)
+const passwordLoginOffered = computed(() => !sso.value?.enabled || sso.value.password_login !== 'none')
+const passwordFormCollapsible = computed(() => !!sso.value?.enabled && sso.value.password_login === 'admins')
+const ssoError = computed(() => {
+  const code = route.query.sso_error
+  return typeof code === 'string' && code ? ssoErrorMessage(code) : ''
+})
+
+onMounted(async () => {
+  sso.value = await fetchSsoConfig()
+  showPasswordForm.value = !passwordFormCollapsible.value
+})
+
+function startSso() {
+  const redir = route.query.redirect
+  try {
+    if (typeof redir === 'string' && redir.startsWith('/')) sessionStorage.setItem('nfc_sso_redirect', redir)
+    else sessionStorage.removeItem('nfc_sso_redirect')
+  } catch {
+    /* ignore */
+  }
+  window.location.href = SSO_START_URL
+}
 
 const username = ref('')
 const password = ref('')
@@ -35,8 +62,13 @@ async function onSubmit() {
       return
     }
     await redirectAfterLogin()
-  } catch {
-    toast.add({ severity: 'error', summary: 'Anmeldung fehlgeschlagen', detail: 'Benutzername oder Passwort ungültig.', life: 10000 })
+  } catch (e: unknown) {
+    const status = (e as { response?: { status?: number } })?.response?.status
+    const detail =
+      status === 403
+        ? 'Die Anmeldung mit Passwort ist für dieses Konto abgeschaltet. Bitte über SSO anmelden.'
+        : 'Benutzername oder Passwort ungültig.'
+    toast.add({ severity: 'error', summary: 'Anmeldung fehlgeschlagen', detail, life: 10000 })
   } finally {
     loading.value = false
   }
@@ -75,7 +107,28 @@ async function submitPasswordChange() {
     <template #title>Anmeldung</template>
     <template #subtitle>NFC Zeiterfassung</template>
     <template #content>
-      <form class="form" @submit.prevent="onSubmit">
+      <p v-if="ssoError" class="sso-error" role="alert" data-testid="sso-error">{{ ssoError }}</p>
+      <template v-if="sso?.enabled">
+        <Button
+          type="button"
+          :label="sso.button_label || 'Mit SSO anmelden'"
+          icon="pi pi-sign-in"
+          class="w-full"
+          data-testid="login-sso"
+          @click="startSso"
+        />
+        <button
+          v-if="passwordLoginOffered && passwordFormCollapsible"
+          type="button"
+          class="pw-toggle"
+          data-testid="login-password-toggle"
+          @click="showPasswordForm = !showPasswordForm"
+        >
+          {{ showPasswordForm ? 'Passwort-Anmeldung ausblenden' : 'Mit Passwort anmelden (Leitung)' }}
+        </button>
+        <div v-else-if="passwordLoginOffered" class="divider"><span>oder mit Passwort</span></div>
+      </template>
+      <form v-if="passwordLoginOffered && showPasswordForm" class="form" @submit.prevent="onSubmit">
         <div class="field">
           <label for="user">Benutzername</label>
           <InputText id="user" v-model="username" class="w-full" autocomplete="username" data-testid="login-user" />
@@ -140,6 +193,38 @@ async function submitPasswordChange() {
 }
 .w-full {
   width: 100%;
+}
+.sso-error {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 0.9rem;
+}
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.1rem 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid #e2e8f0;
+}
+.pw-toggle {
+  display: block;
+  margin: 0.9rem auto 0.9rem;
+  background: none;
+  border: none;
+  color: #475569;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
 }
 .mb-3 {
   margin-bottom: 0.75rem;

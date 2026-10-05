@@ -21,6 +21,7 @@ import (
 	"nfc-time-tracking-server/internal/service/export"
 	"nfc-time-tracking-server/internal/service/holidaysync"
 	"nfc-time-tracking-server/internal/service/lanemployeesync"
+	oidcsvc "nfc-time-tracking-server/internal/service/oidc"
 	"nfc-time-tracking-server/internal/service/stampspoll"
 	"nfc-time-tracking-server/internal/store/sqlite"
 	"nfc-time-tracking-server/internal/web"
@@ -208,6 +209,22 @@ func main() {
 		}
 	}()
 
+	// Jedes Token wird gegen den aktuellen Benutzerstand geprüft (deaktiviert, Rolle).
+	authService.SetUserLookup(func(ctx context.Context, id int) (bool, string, error) {
+		u, err := users.GetByID(ctx, id)
+		if err != nil {
+			return false, "", err
+		}
+		return u.Active, string(u.Role), nil
+	})
+	oidcService, err := oidcsvc.New(cfg.Auth.OIDC)
+	if err != nil {
+		log.Fatalf("SSO-Konfiguration: %v", err)
+	}
+	if oidcService != nil {
+		log.Printf("SSO (OIDC) aktiv: issuer=%s, password_login=%s", cfg.Auth.OIDC.Issuer, oidcService.Config().PasswordLogin)
+	}
+
 	apiHandler := api.NewRouter(api.Deps{
 		UserStore:          users,
 		GroupStore:         sqlite.NewGroupStore(db),
@@ -233,6 +250,7 @@ func main() {
 		ShiftAlertDismissals:  sqlite.NewShiftAlertDismissalStore(db),
 		ChangeRequests:        sqlite.NewChangeRequestStore(db),
 		GroupCash:             sqlite.NewGroupCashStore(db),
+		OIDC:                  oidcService,
 		Stamps:                stampsSvc,
 		Backup:                backupSvc,
 		Audit:                 auditLog,

@@ -14,6 +14,7 @@ import { useToast } from 'primevue/usetoast'
 import {
   createEmployeeAbsence,
   deleteEmployeeAbsence,
+  deleteEmployeeSsoLink,
   fetchClosureDays,
   fetchEmployeeAbsences,
   fetchEmployeeBalance,
@@ -69,6 +70,26 @@ const canManageEmployee = computed(() =>
 )
 
 const employee = ref<Employee | null>(null)
+
+const unlinkingSso = ref(false)
+async function unlinkSso() {
+  if (!employee.value || unlinkingSso.value) return
+  unlinkingSso.value = true
+  try {
+    const u = await deleteEmployeeSsoLink(employee.value.id)
+    employee.value = { ...employee.value, sso_linked: u.sso_linked }
+    toast.add({
+      severity: 'success',
+      summary: 'SSO-Verknüpfung gelöst',
+      detail: 'Beim nächsten SSO-Login wird das Konto erneut über den Benutzernamen verknüpft.',
+      life: 10000,
+    })
+  } catch {
+    toast.add({ severity: 'error', summary: 'Lösen fehlgeschlagen', life: 10000 })
+  } finally {
+    unlinkingSso.value = false
+  }
+}
 const weeklyHoursList = ref<WeeklyHours[]>([])
 const fnwList = ref<FixedNonWorkWeekdays[]>([])
 const scheduleBoundList = ref<ScheduleBoundSetting[]>([])
@@ -593,6 +614,23 @@ async function submitVacationEdit() {
             </dd>
             <dt>Passwortwechsel nötig</dt>
             <dd>{{ employee.must_change_password ? 'Ja' : 'Nein' }}</dd>
+            <dt>SSO</dt>
+            <dd data-testid="employee-sso-status">
+              <template v-if="employee.sso_linked">
+                <Tag severity="info" value="verknüpft" />
+                <Button
+                  v-if="canManageEmployee"
+                  label="Lösen"
+                  icon="pi pi-link"
+                  severity="secondary"
+                  text
+                  size="small"
+                  :loading="unlinkingSso"
+                  @click="unlinkSso"
+                />
+              </template>
+              <span v-else>nicht verknüpft</span>
+            </dd>
           </dl>
           <RouterLink v-if="canManageEmployee" :to="`/employees/${employee.id}/edit`">
             <Button label="Stammdaten bearbeiten" icon="pi pi-pencil" class="mt" />
