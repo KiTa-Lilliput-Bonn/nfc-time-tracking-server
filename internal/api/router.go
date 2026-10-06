@@ -219,6 +219,8 @@ func NewRouter(d Deps) http.Handler {
 			CompensationDayClaims: d.CompensationDayClaims,
 			Audit:                 d.Audit,
 			FixedNonWorkWeekdays:  d.FixedNonWorkWeekdays,
+			WeeklyHours:           d.WeeklyHours,
+			Settings:              d.Settings,
 		}
 		ex := &handler.ExportHandler{Users: d.UserStore, ExportData: d.Export}
 		dh := &handler.DashboardHandler{
@@ -288,6 +290,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Get("/employees/{id}/nfc-tags", eh.ListNFCTags)
 
 			r.Get("/schedules", sh.ListWeek)
+			r.Get("/schedules/planning", sh.PlanningWeek)
 			r.Put("/schedules/week-notes", sh.PutWeekNotes)
 			r.Get("/schedules/export-defaults", sh.ExportDefaults)
 			r.Get("/schedules/export-excel", sh.ExportExcel)
