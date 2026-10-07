@@ -38,6 +38,7 @@ const (
 	EntityCashOpening          = "cash_opening"
 	EntityCashEntry            = "cash_entry"
 	EntityCashReceipt          = "cash_receipt"
+	EntityKibizPlanning        = "kibiz_planning"
 )
 
 // Event is a persisted audit log row.

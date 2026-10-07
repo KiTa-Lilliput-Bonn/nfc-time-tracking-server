@@ -237,3 +237,17 @@ type GroupCashStore interface {
 	CreateReceipt(ctx context.Context, r *model.CashReceipt, data []byte) error
 	DeleteReceipt(ctx context.Context, id int) error
 }
+
+// KibizStore verwaltet Qualifikationen, KiBiz-Tabelle und Kinderzahlen für die Dienstplanung.
+type KibizStore interface {
+	ListQualifications(ctx context.Context) (map[int]model.Qualification, error)
+	SetQualification(ctx context.Context, userID int, q model.Qualification) error
+	ListRates(ctx context.Context) ([]model.KibizRate, error)
+	PutRates(ctx context.Context, rates []model.KibizRate) error
+	ListChildPatterns(ctx context.Context) ([]model.ChildPattern, error)
+	PutChildPattern(ctx context.Context, p model.ChildPattern) error
+	DeleteChildPattern(ctx context.Context, groupID int, validFrom string) error
+	ListChildDays(ctx context.Context, from, to string) ([]model.ChildCountDay, error)
+	PutChildDays(ctx context.Context, groupID int, dates []string, counts []model.ChildCount) error
+	DeleteChildDays(ctx context.Context, groupID int, dates []string) error
+}

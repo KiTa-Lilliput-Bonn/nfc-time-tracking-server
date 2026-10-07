@@ -12,13 +12,28 @@ import { fetchGroups } from '@/api/groups'
 import {
   createSchedule,
   deleteSchedule,
+  fetchKibizWeek,
   fetchSchedulePlanning,
+  putChildDays,
   fetchSchedulesForWeek,
   updateSchedule,
 } from '@/api/management'
+import ChildCountSheet from '@/components/schedule/ChildCountSheet.vue'
 import CompactTime from '@/components/schedule/CompactTime.vue'
+import KibizSummary from '@/components/schedule/KibizSummary.vue'
 import ShiftEditSheet, { type ShiftSheetDay } from '@/components/schedule/ShiftEditSheet.vue'
-import type { Absence, Employee, Holiday, Schedule, SchedulePlanning, TeamMeeting, UserGroup } from '@/types/api'
+import type {
+  Absence,
+  ChildCount,
+  Employee,
+  Holiday,
+  KibizGroup,
+  KibizWeek,
+  Schedule,
+  SchedulePlanning,
+  TeamMeeting,
+  UserGroup,
+} from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { addDays, formatGermanDate, isoWeekAndYear, mondayOfISOWeek, shiftISOWeek, toISODateLocal } from '@/utils/dates'
 import { clearRouteQueryKeys, queryPositiveInt } from '@/utils/leitungDeepLink'
@@ -104,17 +119,24 @@ function goToday() {
 
 const planEmployees = computed(() => employees.value.filter((e) => e.active && e.role !== 'superadmin'))
 
-const sections = computed((): { title: string; employees: Employee[] }[] => {
+interface Section {
+  title: string
+  /** null = ohne Gruppe */
+  groupId: number | null
+  employees: Employee[]
+}
+
+const sections = computed((): Section[] => {
   const list = planEmployees.value
   const known = new Set(groups.value.map((g) => g.id))
-  const out: { title: string; employees: Employee[] }[] = []
+  const out: Section[] = []
   const byName = (a: Employee, b: Employee) => a.display_name.localeCompare(b.display_name, 'de')
   for (const g of groups.value) {
     const emps = list.filter((e) => e.group_id === g.id).sort(byName)
-    if (emps.length) out.push({ title: g.name, employees: emps })
+    if (emps.length) out.push({ title: g.name, groupId: g.id, employees: emps })
   }
   const orphan = list.filter((e) => e.group_id == null || !known.has(e.group_id)).sort(byName)
-  if (orphan.length) out.push({ title: groups.value.length ? 'Ohne Gruppe' : '', employees: orphan })
+  if (orphan.length) out.push({ title: groups.value.length ? 'Ohne Gruppe' : '', groupId: null, employees: orphan })
   return out
 })
 
@@ -254,6 +276,95 @@ function plannedLabel(uid: number): { planned: number; target: number; over: boo
 }
 
 const weekHasShifts = computed(() => schedules.value.length > 0)
+
+// ---------- KiBiz: Kinder und Fachkraft-/Personalstunden je Gruppe ----------
+
+const kibiz = ref<KibizWeek | null>(null)
+let kibizSeq = 0
+let kibizTimer: ReturnType<typeof setTimeout> | null = null
+
+async function loadKibiz() {
+  const seq = ++kibizSeq
+  try {
+    const k = await fetchKibizWeek(weekYear.value, week.value)
+    if (seq === kibizSeq) kibiz.value = k
+  } catch {
+    // Die KiBiz-Zeile ist eine Zusatzinfo; der Plan bleibt ohne sie nutzbar.
+    if (seq === kibizSeq) kibiz.value = null
+  }
+}
+
+// Nach jeder Änderung am Plan (auch Rückgängig, Vorwoche übernehmen) neu rechnen.
+watch(
+  schedules,
+  () => {
+    if (kibizTimer) clearTimeout(kibizTimer)
+    kibizTimer = setTimeout(() => void loadKibiz(), 300)
+  },
+  { deep: true },
+)
+
+function kibizGroup(gid: number | null): KibizGroup | null {
+  if (gid == null) return null
+  return kibiz.value?.groups.find((g) => g.group_id === gid) ?? null
+}
+
+/** Kinder der Woche: eine Zahl oder „18–20“, wenn die geöffneten Tage abweichen. */
+function weekChildrenLabel(g: KibizGroup): string {
+  const open = g.days.filter((d) => d.open).map((d) => d.children_total)
+  if (!open.length) return String(g.pattern_total)
+  const lo = Math.min(...open)
+  const hi = Math.max(...open)
+  return lo === hi ? String(lo) : `${lo}–${hi}`
+}
+
+const unqualifiedPeople = computed(() => {
+  const ids = new Set(kibiz.value?.unqualified_user_ids ?? [])
+  return employees.value.filter((e) => ids.has(e.id)).map((e) => ({ id: e.id, name: shortName(e.display_name) }))
+})
+
+const childSheetVisible = ref(false)
+const childSheetGroupId = ref<number | null>(null)
+const childSheetDayMode = ref(false)
+const childSheetSaving = ref(false)
+const childSheetGroup = computed(() => kibizGroup(childSheetGroupId.value))
+const childSheetDay = computed(() => childSheetGroup.value?.days.find((d) => d.date === selectedDate.value) ?? null)
+const childSheetCounts = computed((): ChildCount[] => {
+  const g = childSheetGroup.value
+  if (!g) return []
+  if (childSheetDayMode.value) return childSheetDay.value?.children ?? g.pattern
+  return g.days.find((d) => d.open)?.children ?? g.pattern
+})
+const childSheetAdjusted = computed(() => {
+  const g = childSheetGroup.value
+  if (!g) return false
+  return childSheetDayMode.value ? Boolean(childSheetDay.value?.adjusted) : g.days.some((d) => d.adjusted)
+})
+const childSheetDayLabel = computed(() =>
+  childSheetDayMode.value ? `${WEEKDAYS[dayIndex.value]} ${formatGermanDate(selectedDate.value).slice(0, 6)}` : '',
+)
+
+function openChildSheet(gid: number | null, dayMode: boolean) {
+  if (gid == null || !kibizGroup(gid)) return
+  childSheetGroupId.value = gid
+  childSheetDayMode.value = dayMode
+  childSheetVisible.value = true
+}
+
+async function saveChildren(counts: ChildCount[] | null, scope: 'day' | 'week') {
+  const gid = childSheetGroupId.value
+  if (gid == null) return
+  childSheetSaving.value = true
+  try {
+    await putChildDays(gid, scope === 'day' ? [selectedDate.value] : [...dates.value], counts)
+    childSheetVisible.value = false
+    await loadKibiz()
+  } catch (e) {
+    toast.add({ severity: 'error', summary: getApiErrorMessage(e) ?? 'Kinderzahl konnte nicht gespeichert werden.', life: 5000 })
+  } finally {
+    childSheetSaving.value = false
+  }
+}
 
 // ---------- Laden ----------
 
@@ -607,6 +718,11 @@ const person = computed(() => employees.value.find((e) => e.id === personId.valu
 const menuRef = ref<InstanceType<typeof Menu> | null>(null)
 const menuItems = computed(() => [
   { label: 'Vorwoche übernehmen', icon: 'pi pi-copy', command: () => askCopyPreviousWeek() },
+  {
+    label: 'Planungsgrundlagen (Kinder, Qualifikation, KiBiz)',
+    icon: 'pi pi-sliders-h',
+    command: () => void router.push({ name: 'schedule-basis' }),
+  },
   { label: 'Zur aktuellen Woche', icon: 'pi pi-calendar', command: () => goToday(), visible: !isCurrentWeek.value },
   {
     label: 'Tabellen-Ansicht (Notizen, Teamsitzungen, Excel)',
@@ -752,8 +868,25 @@ const saveHint = computed(() => {
         In dieser Woche ist noch nichts geplant.
         <Button label="Vorwoche übernehmen" size="small" @click="askCopyPreviousWeek" />
       </p>
+      <p v-if="unqualifiedPeople.length" class="kb-hint" data-testid="kibiz-unqualified">
+        Ohne Qualifikation, zählt nicht für KiBiz:
+        <template v-for="(u, i) in unqualifiedPeople" :key="u.id"
+          ><template v-if="i">, </template><span :data-testid="'unqualified-' + u.id">{{ u.name }}</span></template
+        >.
+        <RouterLink :to="{ name: 'schedule-basis', query: { tab: 'people' } }">Eintragen</RouterLink>
+      </p>
       <section v-for="(sec, si) in sections" :key="'w-' + si" class="sec">
         <h3 v-if="sec.title" class="grp">{{ sec.title }}</h3>
+        <KibizSummary
+          v-if="kibizGroup(sec.groupId)"
+          :totals="kibizGroup(sec.groupId)!.week"
+          :children-total="kibizGroup(sec.groupId)!.pattern_total"
+          :children-label="weekChildrenLabel(kibizGroup(sec.groupId)!)"
+          :adjusted="kibizGroup(sec.groupId)!.days.some((d) => d.adjusted)"
+          :has-pattern="kibizGroup(sec.groupId)!.has_pattern"
+          :testid="'kibiz-week-' + sec.groupId"
+          @children="openChildSheet(sec.groupId, false)"
+        />
         <table class="wk">
           <colgroup>
             <col class="c-name" />
@@ -825,6 +958,15 @@ const saveHint = computed(() => {
           {{ sec.title || 'Alle' }}
           <i>{{ presentCount(sec.employees) }} von {{ sec.employees.length }} eingeplant</i>
         </h3>
+        <KibizSummary
+          v-if="kibizGroup(sec.groupId)?.days[dayIndex]?.open"
+          :totals="kibizGroup(sec.groupId)!.days[dayIndex]!"
+          :children-total="kibizGroup(sec.groupId)!.days[dayIndex]!.children_total"
+          :adjusted="kibizGroup(sec.groupId)!.days[dayIndex]!.adjusted"
+          :has-pattern="kibizGroup(sec.groupId)!.has_pattern"
+          :testid="'kibiz-day-' + sec.groupId"
+          @children="openChildSheet(sec.groupId, true)"
+        />
         <div class="cov" :aria-label="`Besetzung ${sec.title}`">
           <div class="bars">
             <span
@@ -938,6 +1080,19 @@ const saveHint = computed(() => {
       </template>
     </div>
 
+    <ChildCountSheet
+      v-if="childSheetGroup"
+      v-model:visible="childSheetVisible"
+      :group-name="childSheetGroup.name"
+      :day-label="childSheetDayLabel"
+      :counts="childSheetCounts"
+      :pattern="childSheetGroup.pattern"
+      :adjusted="childSheetAdjusted"
+      :saving="childSheetSaving"
+      @save="(c, scope) => saveChildren(c, scope)"
+      @reset="(scope) => saveChildren(null, scope)"
+    />
+
     <ShiftEditSheet
       v-if="sheetEmployee"
       v-model:visible="sheetVisible"
@@ -991,6 +1146,18 @@ const saveHint = computed(() => {
 </template>
 
 <style scoped>
+.kb-hint {
+  font-size: 0.8rem;
+  background: #fffbeb;
+  color: #92400e;
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  margin: 0 0 0.6rem;
+}
+.kb-hint a {
+  color: #92400e;
+  font-weight: 600;
+}
 .msp {
   margin: -0.75rem -0.75rem 0;
   padding-bottom: 5rem;

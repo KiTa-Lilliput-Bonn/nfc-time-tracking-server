@@ -35,8 +35,9 @@ function setPreferTable(v: boolean) {
 <template>
   <ScheduleMobileView v-if="narrow && !preferTable" @open-table="setPreferTable(true)" />
   <template v-else>
-    <div v-if="narrow" class="to-mobile">
+    <div class="to-mobile">
       <Button
+        v-if="narrow"
         label="Zur Handy-Ansicht"
         icon="pi pi-mobile"
         size="small"
@@ -44,13 +45,25 @@ function setPreferTable(v: boolean) {
         data-testid="schedule-to-mobile"
         @click="setPreferTable(false)"
       />
+      <RouterLink :to="{ name: 'schedule-basis' }" class="basis-link" data-testid="schedule-basis-link">
+        <i class="pi pi-sliders-h" /> Planungsgrundlagen (Kinder, Qualifikation, KiBiz)
+      </RouterLink>
     </div>
     <ScheduleEditorView />
   </template>
 </template>
 
 <style scoped>
+.basis-link {
+  font-size: 0.85rem;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
 .to-mobile {
   margin: -0.5rem 0 0.5rem;
+  display: flex;
+  align-items: center;
 }
 </style>

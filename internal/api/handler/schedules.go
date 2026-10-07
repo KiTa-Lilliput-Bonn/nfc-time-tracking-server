@@ -33,6 +33,7 @@ type ScheduleHandler struct {
 	FixedNonWorkWeekdays  store.FixedNonWorkWeekdaysStore
 	WeeklyHours           store.WeeklyHoursStore
 	Settings              store.SettingsStore
+	Kibiz                 store.KibizStore
 	Audit                 *audit.Logger
 }
 

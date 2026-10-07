@@ -648,3 +648,80 @@ export interface CashEntryInput {
   amount_cents: number
   description: string
 }
+
+// ---------- KiBiz-Rechnung im Dienstplan ----------
+
+export type Qualification = 'fachkraft' | 'ergaenzungskraft' | 'sonstige'
+export type GroupForm = 'I' | 'II' | 'III'
+export type CareHours = 25 | 35 | 45
+
+/** Zeile der KiBiz-Tabelle (Anlage zu § 33 KiBiz), Stunden je Gruppe und Woche. */
+export interface KibizRate {
+  group_form: GroupForm
+  care_hours: CareHours
+  children: number
+  leitung_hours: number
+  total_hours: number
+  fachkraft_min_hours: number
+}
+
+export interface ChildCount {
+  group_form: GroupForm
+  care_hours: CareHours
+  count: number
+}
+
+export interface ChildPattern {
+  group_id: number
+  valid_from: string
+  counts: ChildCount[]
+}
+
+export interface KibizOptions {
+  count_leitung: boolean
+  count_team_meetings: boolean
+}
+
+export interface KibizPlanningBasis {
+  qualifications: { user_id: number; qualification: Qualification }[]
+  rates: KibizRate[]
+  child_patterns: ChildPattern[]
+  options: KibizOptions
+}
+
+/** Minuten */
+export interface KibizTotals {
+  need_total_min: number
+  need_fachkraft_min: number
+  planned_fachkraft_min: number
+  planned_ergaenzung_min: number
+  planned_other_min: number
+}
+
+export interface KibizDay extends KibizTotals {
+  date: string
+  open: boolean
+  children: ChildCount[]
+  children_total: number
+  adjusted: boolean
+}
+
+export interface KibizGroup {
+  group_id: number
+  name: string
+  has_pattern: boolean
+  pattern: ChildCount[]
+  pattern_total: number
+  days: KibizDay[]
+  week: KibizTotals
+  missing_rates: string[]
+}
+
+export interface KibizWeek {
+  from: string
+  to: string
+  groups: KibizGroup[]
+  unqualified_user_ids: number[]
+  options: KibizOptions
+  rates_configured: boolean
+}
