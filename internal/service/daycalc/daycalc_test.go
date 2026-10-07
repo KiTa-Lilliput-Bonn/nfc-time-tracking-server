@@ -210,3 +210,35 @@ func TestNetHours_CeilPartialMinute(t *testing.T) {
 		t.Fatalf("expected %v, got %v", want, got)
 	}
 }
+
+func TestAbsenceCreditHours_HolidayAndClosureBalanceTarget(t *testing.T) {
+	daily := 6.8
+	day := time.Date(2026, 8, 10, 0, 0, 0, 0, time.Local) // Montag
+	vac := &model.Absence{AbsenceType: model.AbsenceVacation}
+	clo := &model.ClosureDay{ClosureDate: "2026-08-10", Name: "Sommerschließung"}
+	hol := &model.Holiday{HolidayDate: "2026-08-10", Name: "Feiertag"}
+
+	cases := []struct {
+		name string
+		hol  *model.Holiday
+		abs  *model.Absence
+		clo  *model.ClosureDay
+	}{
+		{"Schließtag mit automatischem Urlaub", nil, vac, clo},
+		{"Schließtag ohne Abwesenheit", nil, nil, clo},
+		{"Feiertag", hol, nil, nil},
+	}
+	for _, tc := range cases {
+		target := daycalc.DailyTarget(day, daily, nil, tc.hol, tc.abs, tc.clo)
+		credit := daycalc.AbsenceCreditHours(day, daily, nil, tc.hol, tc.abs, tc.clo)
+		if target != daily || credit != daily {
+			t.Fatalf("%s: expected target=credit=%v, got target=%v credit=%v", tc.name, daily, target, credit)
+		}
+	}
+
+	// Am Wochenende bleibt ein Schließtag ohne Gutschrift.
+	sat := time.Date(2026, 8, 15, 0, 0, 0, 0, time.Local)
+	if c := daycalc.AbsenceCreditHours(sat, daily, nil, nil, vac, clo); c != 0 {
+		t.Fatalf("expected no credit on weekend closure, got %v", c)
+	}
+}
