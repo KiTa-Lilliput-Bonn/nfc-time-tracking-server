@@ -700,6 +700,13 @@ function coverage(emps: Employee[]): { fk: number; ek: number; other: number; ma
   return slots.map((n) => ({ ...n, max }))
 }
 
+const SLOT_COUNT = (SCHEDULE_TIMELINE_END_H - SCHEDULE_TIMELINE_START_H) * 2
+
+/** Halbstunden-Säule genau an ihrer Uhrzeit, gleiche Skala wie die Zeitbalken der Personen. */
+function slotStyle(i: number): Record<string, string> {
+  return { left: `${(100 * i) / SLOT_COUNT}%`, width: `${100 / SLOT_COUNT}%` }
+}
+
 function coverageTitle(c: { fk: number; ek: number; other: number }): string {
   const parts = [`${c.fk} Fachkraft`, `${c.ek} Ergänzung`]
   if (c.other) parts.push(`${c.other} zählt nicht`)
@@ -994,7 +1001,13 @@ const saveHint = computed(() => {
           </span>
           <div class="cov-trk">
           <div class="bars">
-            <span v-for="(c, i) in coverage(sec.employees)" :key="i" class="slot" :title="coverageTitle(c)">
+            <span
+              v-for="(c, i) in coverage(sec.employees)"
+              :key="i"
+              class="slot"
+              :style="slotStyle(i)"
+              :title="coverageTitle(c)"
+            >
               <i v-if="c.other" class="k-other" :style="{ height: `${(100 * c.other) / c.max}%` }" />
               <i v-if="c.ek" class="k-ek" :style="{ height: `${(100 * c.ek) / c.max}%` }" />
               <i v-if="c.fk" class="k-fk" :style="{ height: `${(100 * c.fk) / c.max}%` }" />
@@ -1471,16 +1484,24 @@ const saveHint = computed(() => {
   flex: none;
 }
 .bars {
-  display: flex;
-  gap: 1px;
+  position: relative;
   height: 22px;
+  /* dieselben Stundenlinien wie in .trk */
+  background-image: repeating-linear-gradient(90deg, #e2e8f0 0 1px, transparent 1px calc(100% / 7));
 }
 .slot {
-  flex: 1;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: 0 0.5px;
   display: flex;
   flex-direction: column-reverse;
-  border-radius: 2px;
-  overflow: hidden;
+}
+.slot i:first-child {
+  border-radius: 0 0 2px 2px;
+}
+.slot i:last-child {
+  border-radius: 2px 2px 0 0;
 }
 .slot i {
   display: block;
@@ -1504,9 +1525,6 @@ const saveHint = computed(() => {
 .hours span {
   position: absolute;
   transform: translateX(-50%);
-}
-.hours span:first-child {
-  transform: none;
 }
 .p {
   width: 100%;
