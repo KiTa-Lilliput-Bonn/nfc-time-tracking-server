@@ -15,21 +15,29 @@ export function minutesToClock(total: number): string {
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
 }
 
-const FRACTIONS: Record<number, string> = { 15: '¼', 30: '½', 45: '¾' }
-
-/** Kurze Uhrzeit für die kompakte Wochenansicht: 07:00 → „7“, 07:30 → „7½“, 07:10 → „7:10“. */
-export function shortClock(s: string): string {
-  const m = clockToMinutes(s)
-  if (m == null) return s.trim()
-  const h = Math.floor(m / 60)
-  const min = m % 60
-  if (min === 0) return String(h)
-  const frac = FRACTIONS[min]
-  if (frac) return `${h}${frac}`
-  return `${h}:${String(min).padStart(2, '0')}`
+/** Stunde und Minuten einer Uhrzeit für die kompakte Anzeige: 07:00 → {h:"7", m:""}, 07:30 → {h:"7", m:"30"}. */
+export function clockParts(s: string): { h: string; m: string } {
+  const t = clockToMinutes(s)
+  if (t == null) return { h: s.trim(), m: '' }
+  const min = t % 60
+  return { h: String(Math.floor(t / 60)), m: min === 0 ? '' : String(min).padStart(2, '0') }
 }
 
-/** „7–14“, „7½–13½“; leer, wenn eine Seite fehlt. */
+/** Dauer für die kompakte Anzeige: 1800 → {h:"30", m:""}, 1830 → {h:"30", m:"30"}. */
+export function durationParts(minutes: number): { h: string; m: string } {
+  const sign = minutes < 0 ? '−' : ''
+  const t = Math.abs(Math.round(minutes))
+  const min = t % 60
+  return { h: `${sign}${Math.floor(t / 60)}`, m: min === 0 ? '' : String(min).padStart(2, '0') }
+}
+
+/** Kurze Uhrzeit als Klartext (für Vorlesen und Hinweise): 07:00 → „7“, 07:30 → „7:30“. */
+export function shortClock(s: string): string {
+  const { h, m } = clockParts(s)
+  return m ? `${h}:${m}` : h
+}
+
+/** „7–14“, „7:30–13:30“; leer, wenn eine Seite fehlt. */
 export function shortShiftLabel(start: string, end: string): string {
   if (!start.trim() || !end.trim()) return ''
   return `${shortClock(start)}–${shortClock(end)}`
@@ -79,14 +87,6 @@ export function formatHoursMinutes(minutes: number): string {
   const h = Math.floor(m / 60)
   const r = m % 60
   return r === 0 ? `${sign}${h} h` : `${sign}${h}:${String(r).padStart(2, '0')} h`
-}
-
-/** Kompakt für Namenszeilen: 1800 → „30“, 1830 → „30½“, 1810 → „30,2“. */
-export function formatHoursShort(minutes: number): string {
-  const m = Math.round(minutes)
-  if (m % 60 === 0) return String(m / 60)
-  if (m % 30 === 0) return `${Math.floor(m / 60)}½`
-  return (m / 60).toLocaleString('de-DE', { maximumFractionDigits: 1 })
 }
 
 /** Regulärer Arbeitstag (Mo–Fr ohne fix freie Wochentage); getDay()-Zählung 1=Mo … 5=Fr. */

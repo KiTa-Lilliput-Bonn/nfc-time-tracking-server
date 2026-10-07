@@ -40,7 +40,7 @@ test('Dienstplan am Handy: Schicht anlegen, rückgängig machen, Soll und Krankm
   await page.getByTestId('shift-save').click()
   await expect(sheet).toBeHidden()
   await expect(cell).toHaveText('8–14')
-  await expect(page.getByTestId(`planned-${emp.id}`)).toHaveText(/^\d+(½|,\d)? \/ \d+(½|,\d)? h$/)
+  await expect(page.getByTestId(`planned-${emp.id}`)).toHaveText(/^\d+ \/ \d+ h$/)
 
   // Bleibt nach dem Neuladen erhalten
   await page.reload()

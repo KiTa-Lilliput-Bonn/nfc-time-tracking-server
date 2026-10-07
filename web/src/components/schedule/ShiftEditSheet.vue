@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import Drawer from 'primevue/drawer'
 
+import CompactTime from '@/components/schedule/CompactTime.vue'
 import type { BreakRule, TeamMeeting } from '@/types/api'
 import {
   clockToMinutes,
@@ -10,7 +11,6 @@ import {
   minutesToClock,
   shiftGrossMinutes,
   shiftNetMinutes,
-  shortShiftLabel,
   type ShiftPattern,
 } from '@/utils/schedulePlanning'
 import { teamMeetingBarLabel } from '@/utils/teamMeetingLabel'
@@ -163,7 +163,7 @@ defineExpose({ changed, valid })
         <p class="sub">
           <template v-if="day.note">{{ day.note }} · </template>
           <template v-if="!hasShift && !day.blocked">Noch nichts geplant</template>
-          <template v-else-if="hasShift">Geplant {{ shortShiftLabel(start, end) }}</template>
+          <template v-else-if="hasShift">Geplant <CompactTime :start="start" :end="end" /></template>
           <template v-if="weekTargetMinutes > 0 && !day.blocked">
             · Woche ohne diesen Tag {{ formatHoursMinutes(weekOtherMinutes) }} von
             {{ formatHoursMinutes(weekTargetMinutes) }}
@@ -220,7 +220,7 @@ defineExpose({ changed, valid })
                 data-testid="shift-pick"
                 @click="pick(p)"
               >
-                {{ shortShiftLabel(p.start, p.end) }}
+                <CompactTime :start="p.start" :end="p.end" />
               </button>
               <button
                 v-if="lastWeek && !quickPicks.some((p) => p.start === lastWeek!.start && p.end === lastWeek!.end)"
@@ -229,7 +229,7 @@ defineExpose({ changed, valid })
                 :class="{ on: isPicked(lastWeek) }"
                 @click="pick(lastWeek)"
               >
-                wie {{ lastWeekLabel }} ({{ shortShiftLabel(lastWeek.start, lastWeek.end) }})
+                wie {{ lastWeekLabel }} (<CompactTime :start="lastWeek.start" :end="lastWeek.end" />)
               </button>
             </div>
           </template>

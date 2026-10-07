@@ -16,6 +16,7 @@ import {
   fetchSchedulesForWeek,
   updateSchedule,
 } from '@/api/management'
+import CompactTime from '@/components/schedule/CompactTime.vue'
 import ShiftEditSheet, { type ShiftSheetDay } from '@/components/schedule/ShiftEditSheet.vue'
 import type { Absence, Employee, Holiday, Schedule, SchedulePlanning, TeamMeeting, UserGroup } from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
@@ -30,7 +31,6 @@ import {
   absenceLabel,
   clockToMinutes,
   formatHoursMinutes,
-  formatHoursShort,
   frequentShifts,
   plannableDayTargetMinutes,
   shiftNetMinutes,
@@ -177,8 +177,10 @@ type CellKind = 'holiday' | 'fixed' | 'blocked-absence' | 'absence' | 'shift' | 
 
 interface CellInfo {
   kind: CellKind
-  /** Text in der Wochenzelle */
+  /** Klartext der Wochenzelle (Vorlesen; Abwesenheiten werden so angezeigt) */
   label: string
+  /** Schicht, die in der Wochenzelle kompakt mit hochgestellten Minuten erscheint */
+  shift: { start: string; end: string } | null
   /** Hinweis für Tagesansicht und Bearbeiten-Fenster */
   note: string
   blocked: boolean
@@ -193,22 +195,23 @@ function cellInfo(uid: number, date: string): CellInfo {
   const closure = closureByDate.value.get(date)
   const fixed = planningByUser.value.get(uid)?.fixed ?? []
   const shiftLabel = sch ? shortShiftLabel(sch.shift_start, sch.shift_end) : ''
-  if (hol) return { kind: 'holiday', label: 'Feiertag', note: `Feiertag · ${hol}`, blocked: true, schedule: null, absence: abs }
+  const shift = shiftLabel && sch ? { start: sch.shift_start, end: sch.shift_end } : null
+  if (hol) return { kind: 'holiday', label: 'Feiertag', shift: null, note: `Feiertag · ${hol}`, blocked: true, schedule: null, absence: abs }
   if (fixed.includes(weekdayOf(date))) {
-    return { kind: 'fixed', label: 'frei', note: 'Regulär frei (fester freier Tag)', blocked: true, schedule: null, absence: abs }
+    return { kind: 'fixed', label: 'frei', shift: null, note: 'Regulär frei (fester freier Tag)', blocked: true, schedule: null, absence: abs }
   }
   if (abs && !abs.half_day && (abs.absence_type === 'vacation' || abs.absence_type === 'compensation_day')) {
-    return { kind: 'blocked-absence', label: absenceLabel(abs), note: absenceLabel(abs), blocked: true, schedule: null, absence: abs }
+    return { kind: 'blocked-absence', label: absenceLabel(abs), shift: null, note: absenceLabel(abs), blocked: true, schedule: null, absence: abs }
   }
   const closureNote = closure ? `Schließtag · ${closure}` : ''
   if (abs) {
     const note = [absenceLabel(abs), closureNote].filter(Boolean).join(' · ')
     // Krank/sonstige ganztägig: Abwesenheit zeigen, eine noch geplante Schicht bleibt sichtbar zum Austragen.
     const label = abs.half_day && shiftLabel ? shiftLabel : absenceLabel(abs)
-    return { kind: 'absence', label, note, blocked: false, schedule: sch, absence: abs }
+    return { kind: 'absence', label, shift: abs.half_day ? shift : null, note, blocked: false, schedule: sch, absence: abs }
   }
-  if (sch && shiftLabel) return { kind: 'shift', label: shiftLabel, note: closureNote, blocked: false, schedule: sch, absence: null }
-  return { kind: 'empty', label: closure ? 'zu' : '', note: closureNote, blocked: false, schedule: null, absence: null }
+  if (sch && shiftLabel) return { kind: 'shift', label: shiftLabel, shift, note: closureNote, blocked: false, schedule: sch, absence: null }
+  return { kind: 'empty', label: closure ? 'zu' : '', shift: null, note: closureNote, blocked: false, schedule: null, absence: null }
 }
 
 function cellNetMinutes(uid: number, date: string): number {
@@ -239,14 +242,14 @@ function weekTargetMinutes(uid: number): number {
   }, 0)
 }
 
-function plannedLabel(uid: number): { text: string; over: boolean; under: boolean } {
+function plannedLabel(uid: number): { planned: number; target: number; over: boolean; under: boolean } {
   const planned = weekPlannedMinutes(uid)
   const target = weekTargetMinutes(uid)
-  if (target <= 0) return { text: planned > 0 ? `${formatHoursShort(planned)} h` : '', over: false, under: false }
   return {
-    text: `${formatHoursShort(planned)} / ${formatHoursShort(target)} h`,
-    over: planned - target >= 1,
-    under: target - planned >= 1,
+    planned,
+    target,
+    over: target > 0 && planned - target >= 1,
+    under: target > 0 && target - planned >= 1,
   }
 }
 
@@ -779,7 +782,12 @@ const saveHint = computed(() => {
                 <small
                   :class="{ over: plannedLabel(emp.id).over, under: plannedLabel(emp.id).under }"
                   :data-testid="'planned-' + emp.id"
-                >{{ plannedLabel(emp.id).text }}</small>
+                ><template v-if="plannedLabel(emp.id).target > 0"
+                    ><CompactTime :minutes="plannedLabel(emp.id).planned" /> /
+                    <CompactTime :minutes="plannedLabel(emp.id).target" /> h</template
+                  ><template v-else-if="plannedLabel(emp.id).planned > 0"
+                    ><CompactTime :minutes="plannedLabel(emp.id).planned" /> h</template
+                  ></small>
               </td>
               <td
                 v-for="d in dates"
@@ -792,7 +800,12 @@ const saveHint = computed(() => {
                 @click="openSheet(emp.id, d)"
                 @keydown.enter="openSheet(emp.id, d)"
               >
-                {{ cellInfo(emp.id, d).label || '+' }}
+                <CompactTime
+                  v-if="cellInfo(emp.id, d).shift"
+                  :start="cellInfo(emp.id, d).shift!.start"
+                  :end="cellInfo(emp.id, d).shift!.end"
+                />
+                <template v-else>{{ cellInfo(emp.id, d).label || '+' }}</template>
               </td>
             </tr>
           </tbody>
@@ -862,7 +875,7 @@ const saveHint = computed(() => {
               class="bar"
               :style="barStyle(cellInfo(emp.id, selectedDate).schedule)"
             >
-              {{ formatHoursShort(cellNetMinutes(emp.id, selectedDate)) }} h
+              <CompactTime :minutes="cellNetMinutes(emp.id, selectedDate)" />&nbsp;h
             </span>
             <span
               v-for="(m, mi) in meetingStyles(emp.id)"
