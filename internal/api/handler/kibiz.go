@@ -19,22 +19,14 @@ import (
 	sqlitesched "nfc-time-tracking-server/internal/store/sqlite"
 )
 
-const (
-	settingKibizCountLeitung      = "kibiz_count_leitung"
-	settingKibizCountTeamMeetings = "kibiz_count_team_meetings"
-)
+const settingKibizCountTeamMeetings = "kibiz_count_team_meetings"
 
 func loadKibizOptions(ctx context.Context, settings store.SettingsStore) (kibizcalc.Options, error) {
 	var o kibizcalc.Options
 	if settings == nil {
 		return o, nil
 	}
-	v, err := settings.Get(ctx, settingKibizCountLeitung)
-	if err != nil {
-		return o, err
-	}
-	o.CountLeitung = strings.TrimSpace(v) == "true"
-	v, err = settings.Get(ctx, settingKibizCountTeamMeetings)
+	v, err := settings.Get(ctx, settingKibizCountTeamMeetings)
 	if err != nil {
 		return o, err
 	}
@@ -275,14 +267,9 @@ func (h *KibizHandler) PutOptions(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	for k, v := range map[string]bool{
-		settingKibizCountLeitung:      body.CountLeitung,
-		settingKibizCountTeamMeetings: body.CountTeamMeetings,
-	} {
-		if err := h.Settings.Set(r.Context(), k, strconv.FormatBool(v)); err != nil {
-			response.Error(w, http.StatusInternalServerError, err.Error())
-			return
-		}
+	if err := h.Settings.Set(r.Context(), settingKibizCountTeamMeetings, strconv.FormatBool(body.CountTeamMeetings)); err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	h.audit(r, audit.ActionUpdate, "options", map[string]any{"options": body})
 	response.JSON(w, http.StatusOK, body)

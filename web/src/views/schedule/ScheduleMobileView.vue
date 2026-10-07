@@ -36,6 +36,7 @@ import type {
 } from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { addDays, formatGermanDate, isoWeekAndYear, mondayOfISOWeek, shiftISOWeek, toISODateLocal } from '@/utils/dates'
+import { effectiveQualification } from '@/utils/kibiz'
 import { clearRouteQueryKeys, queryPositiveInt } from '@/utils/leitungDeepLink'
 import {
   horizontalBarPercentages,
@@ -669,14 +670,13 @@ function meetingStyles(uid: number): { style: Record<string, string>; title: str
 }
 
 /** Anwesende je halbe Stunde zwischen Beginn und Ende der Zeitleiste. */
-/** Wie eine Person für KiBiz zählt: Fachkraft, Ergänzungskraft oder gar nicht (sonstige, Leitung, ohne Angabe). */
+/** Wie eine Person für KiBiz zählt: Fachkraft, Ergänzungskraft oder gar nicht (Leitung, Hauswirtschaft, Sonstige, ohne Angabe). */
 type StaffKind = 'fk' | 'ek' | 'other'
 
 function staffKind(e: Employee): StaffKind {
   const k = kibiz.value
   if (!k) return 'other'
-  if (e.role === 'leitung' && !k.options.count_leitung) return 'other'
-  const q = k.qualifications[String(e.id)]
+  const q = effectiveQualification(e, k.qualifications)
   return q === 'fachkraft' ? 'fk' : q === 'ergaenzungskraft' ? 'ek' : 'other'
 }
 

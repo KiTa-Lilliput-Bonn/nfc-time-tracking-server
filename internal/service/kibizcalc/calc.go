@@ -5,8 +5,9 @@
 // (Stunden der KiBiz-Tabelle ÷ Kinderzahl), verteilt auf die fünf Wochentage. Das ergibt die
 // Personalstunden insgesamt und davon mindestens Fachkraftstunden; den Rest dürfen Ergänzungskräfte
 // abdecken. Leitungsstunden der Tabelle zählen nicht dazu. An Feiertagen und Schließtagen ist nichts nötig.
-// Geplant: Schichten der Stammgruppe nach Qualifikation, nach Pflichtpause, ohne ganztägig abwesende
-// Personen, fix freie Tage, Feier- und Schließtage. Leitung und Teamsitzungen zählen nur per Schalter.
+// Geplant: Schichten der Stammgruppe nach Kraft, nach Pflichtpause, ohne ganztägig abwesende
+// Personen, fix freie Tage, Feier- und Schließtage. Es zählen nur Fach- und Ergänzungskräfte, unabhängig
+// von der Kontorolle; Leitungskonten ohne Eintrag gelten als Leitung. Teamsitzungen zählen nur per Schalter.
 package kibizcalc
 
 import (
@@ -21,8 +22,6 @@ import (
 
 // Options sind die Schalter der Leitung.
 type Options struct {
-	// CountLeitung: Schichten von Personen mit Rolle Leitung zählen als Betreuung.
-	CountLeitung bool `json:"count_leitung"`
 	// CountTeamMeetings: Teamsitzungen innerhalb einer Schicht zählen als Betreuung.
 	CountTeamMeetings bool `json:"count_team_meetings"`
 }
@@ -55,7 +54,7 @@ type Totals struct {
 	NeedFachkraft     int `json:"need_fachkraft_min"`
 	PlannedFachkraft  int `json:"planned_fachkraft_min"`
 	PlannedErgaenzung int `json:"planned_ergaenzung_min"`
-	// PlannedOther: sonstige Qualifikation oder noch keine hinterlegt; zählt nicht.
+	// PlannedOther: Leitung, Hauswirtschaft, Sonstige oder noch keine Kraft hinterlegt; zählt nicht.
 	PlannedOther int `json:"planned_other_min"`
 }
 
@@ -243,9 +242,6 @@ func Compute(in Input) Result {
 		if !ok || u.GroupID == nil || u.Role == model.RoleSuperadmin {
 			continue
 		}
-		if u.Role == model.RoleLeitung && !in.Options.CountLeitung {
-			continue
-		}
 		gi, ok := groupIdx[*u.GroupID]
 		if !ok {
 			continue
@@ -271,20 +267,23 @@ func Compute(in Input) Result {
 		}
 		day := &out.Groups[gi].Days[di]
 		week := &out.Groups[gi].Week
-		switch in.Qualifications[u.ID] {
+		q, hasQ := in.Qualifications[u.ID]
+		if !hasQ && u.Role == model.RoleLeitung {
+			q, hasQ = model.QualificationLeitung, true
+		}
+		switch q {
 		case model.QualificationFachkraft:
 			day.PlannedFachkraft += mins
 			week.PlannedFachkraft += mins
 		case model.QualificationErgaenzungskraft:
 			day.PlannedErgaenzung += mins
 			week.PlannedErgaenzung += mins
-		case model.QualificationSonstige:
-			day.PlannedOther += mins
-			week.PlannedOther += mins
 		default:
 			day.PlannedOther += mins
 			week.PlannedOther += mins
-			unqualified[u.ID] = true
+			if !hasQ {
+				unqualified[u.ID] = true
+			}
 		}
 	}
 	for uid := range unqualified {

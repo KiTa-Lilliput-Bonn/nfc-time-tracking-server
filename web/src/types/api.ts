@@ -651,7 +651,8 @@ export interface CashEntryInput {
 
 // ---------- KiBiz-Rechnung im Dienstplan ----------
 
-export type Qualification = 'fachkraft' | 'ergaenzungskraft' | 'sonstige'
+/** Kraft je Person, unabhängig von der Kontorolle; nur Fachkraft und Ergänzungskraft zählen für KiBiz. */
+export type Qualification = 'fachkraft' | 'ergaenzungskraft' | 'leitung' | 'hauswirtschaft' | 'sonstige'
 export type GroupForm = 'I' | 'II' | 'III'
 export type CareHours = 25 | 35 | 45
 
@@ -678,7 +679,6 @@ export interface ChildPattern {
 }
 
 export interface KibizOptions {
-  count_leitung: boolean
   count_team_meetings: boolean
 }
 

@@ -35,6 +35,7 @@ import {
   childCategoryLabel,
   childKey,
   childTotal,
+  effectiveQualification,
   normalizeChildCounts,
 } from '@/utils/kibiz'
 
@@ -62,7 +63,7 @@ const groups = ref<UserGroup[]>([])
 const qualifications = ref<Record<number, Qualification>>({})
 const rates = ref<KibizRate[]>([])
 const patterns = ref<ChildPattern[]>([])
-const options = ref<KibizOptions>({ count_leitung: false, count_team_meetings: false })
+const options = ref<KibizOptions>({ count_team_meetings: false })
 
 async function load() {
   loading.value = true
@@ -104,7 +105,7 @@ const peopleSections = computed(() => {
 })
 
 const missingCount = computed(
-  () => employees.value.filter((e) => e.active && e.role !== 'superadmin' && e.group_id != null && !qualifications.value[e.id]).length,
+  () => employees.value.filter((e) => e.active && e.role !== 'superadmin' && e.group_id != null && !effectiveQualification(e, qualifications.value)).length,
 )
 
 async function setQualification(uid: number, value: string) {
@@ -272,7 +273,8 @@ async function saveOptions() {
     <!-- Personen -->
     <template v-else-if="tab === 'people'">
       <p class="intro">
-        Fachkräfte und Ergänzungskräfte zählen für ihre Stammgruppe. „Sonstige“ (z. B. Praktikum) zählt nicht.
+        Fachkräfte und Ergänzungskräfte zählen für ihre Stammgruppe, unabhängig vom Konto. Wer mit Leitungskonto in der
+        Gruppe arbeitet, bekommt „Fachkraft“. Leitung, Hauswirtschaft und Sonstige (z. B. Praktikum) zählen nicht.
         <template v-if="missingCount"><br /><b>{{ missingCount }} Personen</b> in Gruppen haben noch keine Angabe.</template>
       </p>
       <section v-for="sec in peopleSections" :key="sec.title" class="card">
@@ -280,11 +282,11 @@ async function saveOptions() {
         <label v-for="e in sec.employees" :key="e.id" class="row">
           <span class="name">
             {{ e.display_name }}
-            <small v-if="e.role === 'leitung'">Leitung</small>
+            <small v-if="e.role === 'leitung'">Leitungskonto</small>
           </span>
           <select
-            :value="qualifications[e.id] ?? ''"
-            :class="{ missing: !qualifications[e.id] && e.group_id != null }"
+            :value="effectiveQualification(e, qualifications) ?? ''"
+            :class="{ missing: !effectiveQualification(e, qualifications) && e.group_id != null }"
             :data-testid="'qualification-' + e.id"
             @change="setQualification(e.id, ($event.target as HTMLSelectElement).value)"
           >
@@ -413,13 +415,6 @@ async function saveOptions() {
     <!-- Optionen -->
     <template v-else>
       <section class="card">
-        <label class="opt">
-          <input v-model="options.count_leitung" type="checkbox" data-testid="opt-count-leitung" @change="saveOptions" />
-          <span>
-            <b>Schichten der Leitung als Betreuung zählen</b>
-            <small>Aus: Leitungszeit ist eigene Zeit und zählt nicht für die Gruppe.</small>
-          </span>
-        </label>
         <label class="opt">
           <input v-model="options.count_team_meetings" type="checkbox" @change="saveOptions" />
           <span>

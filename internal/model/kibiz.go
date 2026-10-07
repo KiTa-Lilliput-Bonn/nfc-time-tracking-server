@@ -2,22 +2,32 @@ package model
 
 import "fmt"
 
-// Qualification ist die Einstufung einer Person für die KiBiz-Rechnung (Personalkraftstunden).
+// Qualification ist die Kraft einer Person für die KiBiz-Rechnung (Personalkraftstunden). Sie ist
+// unabhängig von der Kontorolle: Eine Person mit Leitungskonto, die in der Gruppe arbeitet, ist Fachkraft.
 type Qualification string
 
 const (
 	QualificationFachkraft        Qualification = "fachkraft"
 	QualificationErgaenzungskraft Qualification = "ergaenzungskraft"
+	// QualificationLeitung: freigestellte Leitung; zählt nicht zu den Gruppenstunden.
+	QualificationLeitung Qualification = "leitung"
+	// QualificationHauswirtschaft: zählt nicht.
+	QualificationHauswirtschaft Qualification = "hauswirtschaft"
 	// QualificationSonstige: z. B. Praktikum, Auszubildende; zählt nicht zu Fach- oder Ergänzungskraftstunden.
 	QualificationSonstige Qualification = "sonstige"
 )
 
 func (q Qualification) Valid() bool {
 	switch q {
-	case QualificationFachkraft, QualificationErgaenzungskraft, QualificationSonstige:
+	case QualificationFachkraft, QualificationErgaenzungskraft, QualificationLeitung, QualificationHauswirtschaft, QualificationSonstige:
 		return true
 	}
 	return false
+}
+
+// Counts: nur Fach- und Ergänzungskräfte zählen für KiBiz.
+func (q Qualification) Counts() bool {
+	return q == QualificationFachkraft || q == QualificationErgaenzungskraft
 }
 
 // GroupForm ist die KiBiz-Gruppenform: I = 2 Jahre bis Schule, II = unter 3, III = ab 3 Jahren.

@@ -19,11 +19,14 @@ func baseInput() Input {
 			{ID: 11, Role: model.RoleUser, GroupID: intp(1)},
 			{ID: 12, Role: model.RoleLeitung, GroupID: intp(1)},
 			{ID: 13, Role: model.RoleUser, GroupID: intp(1)},
+			{ID: 14, Role: model.RoleLeitung, GroupID: intp(1)},
+			{ID: 15, Role: model.RoleUser, GroupID: intp(1)},
 		},
 		Qualifications: map[int]model.Qualification{
 			10: model.QualificationFachkraft,
 			11: model.QualificationErgaenzungskraft,
 			12: model.QualificationFachkraft,
+			15: model.QualificationHauswirtschaft,
 		},
 		Rates: []model.KibizRate{
 			{GroupForm: model.GroupFormIII, CareHours: 35, Children: 20, LeitungHours: 7, TotalHours: 75, FachkraftMinHours: 50},
@@ -76,7 +79,9 @@ func TestPlannedByQualification(t *testing.T) {
 	in.Schedules = []model.Schedule{
 		{UserID: 10, ScheduleDate: "2026-10-05", ShiftStart: "07:00", ShiftEnd: "15:00"}, // 8 h − 30 = 450
 		{UserID: 11, ScheduleDate: "2026-10-05", ShiftStart: "08:00", ShiftEnd: "12:00"}, // 240
-		{UserID: 12, ScheduleDate: "2026-10-05", ShiftStart: "08:00", ShiftEnd: "12:00"}, // Leitung: zählt nicht
+		{UserID: 12, ScheduleDate: "2026-10-05", ShiftStart: "08:00", ShiftEnd: "12:00"}, // Leitungskonto als Fachkraft: zählt
+		{UserID: 14, ScheduleDate: "2026-10-05", ShiftStart: "08:00", ShiftEnd: "09:00"}, // Leitungskonto ohne Eintrag: Leitung
+		{UserID: 15, ScheduleDate: "2026-10-05", ShiftStart: "08:00", ShiftEnd: "11:00"}, // Hauswirtschaft: zählt nicht
 		{UserID: 13, ScheduleDate: "2026-10-05", ShiftStart: "08:00", ShiftEnd: "10:00"}, // ohne Qualifikation
 		{UserID: 10, ScheduleDate: "2026-10-06", ShiftStart: "07:00", ShiftEnd: "15:00"}, // krank
 	}
@@ -85,7 +90,7 @@ func TestPlannedByQualification(t *testing.T) {
 	res := Compute(in)
 	g := res.Groups[0]
 	// Teamsitzung 14–15 Uhr in der Schicht: 450 − 60
-	if g.Days[0].PlannedFachkraft != 390 || g.Days[0].PlannedErgaenzung != 240 || g.Days[0].PlannedOther != 120 {
+	if g.Days[0].PlannedFachkraft != 390+240 || g.Days[0].PlannedErgaenzung != 240 || g.Days[0].PlannedOther != 120+60+180 {
 		t.Fatalf("day0 planned: %+v", g.Days[0].Totals)
 	}
 	if g.Days[1].PlannedFachkraft != 0 {
@@ -95,7 +100,7 @@ func TestPlannedByQualification(t *testing.T) {
 		t.Fatalf("unqualified: %v", res.Unqualified)
 	}
 
-	in.Options = Options{CountLeitung: true, CountTeamMeetings: true}
+	in.Options = Options{CountTeamMeetings: true}
 	g = Compute(in).Groups[0]
 	if g.Days[0].PlannedFachkraft != 450+240 {
 		t.Fatalf("with options: %+v", g.Days[0].Totals)

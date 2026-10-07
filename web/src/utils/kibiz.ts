@@ -1,4 +1,4 @@
-import type { CareHours, ChildCount, GroupForm, KibizTotals, Qualification } from '@/types/api'
+import type { CareHours, ChildCount, Employee, GroupForm, KibizTotals, Qualification } from '@/types/api'
 
 export const GROUP_FORMS: GroupForm[] = ['I', 'II', 'III']
 export const CARE_HOURS: CareHours[] = [25, 35, 45]
@@ -12,7 +12,17 @@ export const GROUP_FORM_LABELS: Record<GroupForm, string> = {
 export const QUALIFICATION_LABELS: Record<Qualification, string> = {
   fachkraft: 'Fachkraft',
   ergaenzungskraft: 'Ergänzungskraft',
+  leitung: 'Leitung (zählt nicht)',
+  hauswirtschaft: 'Hauswirtschaft (zählt nicht)',
   sonstige: 'Sonstige (zählt nicht)',
+}
+
+/** Kraft einer Person wie in der Rechnung: Leitungskonten ohne Eintrag gelten als Leitung. */
+export function effectiveQualification(
+  e: Pick<Employee, 'id' | 'role'>,
+  qualifications: Record<string | number, Qualification | undefined>,
+): Qualification | undefined {
+  return qualifications[e.id] ?? (e.role === 'leitung' ? 'leitung' : undefined)
 }
 
 /** „III · 35 h“ */
