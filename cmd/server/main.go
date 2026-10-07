@@ -250,6 +250,7 @@ func main() {
 		ShiftAlertDismissals:  sqlite.NewShiftAlertDismissalStore(db),
 		ChangeRequests:        sqlite.NewChangeRequestStore(db),
 		GroupCash:             sqlite.NewGroupCashStore(db),
+		Kibiz:                 sqlite.NewKibizStore(db),
 		OIDC:                  oidcService,
 		Stamps:                stampsSvc,
 		Backup:                backupSvc,

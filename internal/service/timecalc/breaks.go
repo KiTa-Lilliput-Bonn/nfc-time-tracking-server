@@ -60,3 +60,8 @@ func progressiveRequiredBreak(grossWork time.Duration, rules []model.BreakRule) 
 	}
 	return required
 }
+
+// RequiredBreakMinutes returns the progressive required break (minutes) for a planned shift of grossWork.
+func RequiredBreakMinutes(grossWork time.Duration, rules []model.BreakRule) int {
+	return progressiveRequiredBreak(grossWork, rules)
+}

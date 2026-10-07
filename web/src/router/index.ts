@@ -121,6 +121,12 @@ const router = createRouter({
           meta: { title: 'Dienstplan', roles: ['leitung', 'superadmin'] },
         },
         {
+          path: 'schedule/basis',
+          name: 'schedule-basis',
+          component: () => import('@/views/schedule/PlanningBasisView.vue'),
+          meta: { title: 'Planungsgrundlagen', roles: ['leitung', 'superadmin'] },
+        },
+        {
           path: 'absences',
           name: 'absences',
           component: () => import('@/views/absences/AbsencesView.vue'),

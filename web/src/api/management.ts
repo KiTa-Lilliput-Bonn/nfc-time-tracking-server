@@ -1,6 +1,13 @@
 import { api } from '@/api/client'
 import type {
   Absence,
+  ChildCount,
+  ChildPattern,
+  KibizOptions,
+  KibizPlanningBasis,
+  KibizRate,
+  KibizWeek,
+  Qualification,
   AbsenceCredit,
   AndroidLanHealthStatus,
   AndroidLanSyncStampsRangeBody,
@@ -513,4 +520,51 @@ export async function postAndroidLanSyncStampsRange(
 ): Promise<AndroidLanSyncStampsRangeResult> {
   const { data } = await api.post<AndroidLanSyncStampsRangeResult>('/android-lan/sync-stamps-range', body)
   return data
+}
+
+export async function fetchKibizWeek(year: number, week: number): Promise<KibizWeek> {
+  const { data } = await api.get<KibizWeek>('/schedules/kibiz', { params: { year, week } })
+  return {
+    ...data,
+    groups: data.groups ?? [],
+    unqualified_user_ids: data.unqualified_user_ids ?? [],
+    qualifications: data.qualifications ?? {},
+  }
+}
+
+export async function fetchKibizPlanningBasis(): Promise<KibizPlanningBasis> {
+  const { data } = await api.get<KibizPlanningBasis>('/planning/kibiz')
+  return {
+    ...data,
+    qualifications: data.qualifications ?? [],
+    rates: data.rates ?? [],
+    child_patterns: data.child_patterns ?? [],
+  }
+}
+
+export async function putQualification(userId: number, qualification: Qualification | '') {
+  await api.put(`/planning/qualifications/${userId}`, { qualification })
+}
+
+export async function putKibizRates(rates: KibizRate[]): Promise<KibizRate[]> {
+  const { data } = await api.put<{ rates: KibizRate[] }>('/planning/kibiz-rates', { rates })
+  return data.rates ?? []
+}
+
+export async function putKibizOptions(options: KibizOptions): Promise<KibizOptions> {
+  const { data } = await api.put<KibizOptions>('/planning/kibiz-options', options)
+  return data
+}
+
+export async function putChildPattern(p: ChildPattern): Promise<void> {
+  await api.put('/planning/child-patterns', p)
+}
+
+export async function deleteChildPattern(groupId: number, validFrom: string): Promise<void> {
+  await api.delete('/planning/child-patterns', { params: { group_id: groupId, valid_from: validFrom } })
+}
+
+/** Kinderzahl für einzelne Tage setzen; counts = null setzt die Tage auf das Muster zurück. */
+export async function putChildDays(groupId: number, dates: string[], counts: ChildCount[] | null): Promise<void> {
+  await api.put('/planning/child-days', counts ? { group_id: groupId, dates, counts } : { group_id: groupId, dates, reset: true })
 }

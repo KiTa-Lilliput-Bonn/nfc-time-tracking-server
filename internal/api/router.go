@@ -51,6 +51,7 @@ type Deps struct {
 	ShiftAlertDismissals  store.ShiftAlertDismissalStore
 	ChangeRequests        store.ChangeRequestStore
 	GroupCash             store.GroupCashStore
+	Kibiz                 store.KibizStore
 	// OIDC: SSO-Anmeldung; nil = nicht aktiviert.
 	OIDC *oidcsvc.Service
 
@@ -221,7 +222,9 @@ func NewRouter(d Deps) http.Handler {
 			FixedNonWorkWeekdays:  d.FixedNonWorkWeekdays,
 			WeeklyHours:           d.WeeklyHours,
 			Settings:              d.Settings,
+			Kibiz:                 d.Kibiz,
 		}
+		kh := &handler.KibizHandler{Kibiz: d.Kibiz, Users: d.UserStore, Groups: d.GroupStore, Settings: d.Settings, Audit: d.Audit}
 		ex := &handler.ExportHandler{Users: d.UserStore, ExportData: d.Export}
 		dh := &handler.DashboardHandler{
 			Users: d.UserStore, WorkPeriods: d.WorkPeriods, Corrections: d.Corrections,
@@ -291,6 +294,14 @@ func NewRouter(d Deps) http.Handler {
 
 			r.Get("/schedules", sh.ListWeek)
 			r.Get("/schedules/planning", sh.PlanningWeek)
+			r.Get("/schedules/kibiz", sh.KibizWeek)
+			r.Get("/planning/kibiz", kh.Get)
+			r.Put("/planning/qualifications/{userId}", kh.PutQualification)
+			r.Put("/planning/kibiz-rates", kh.PutRates)
+			r.Put("/planning/kibiz-options", kh.PutOptions)
+			r.Put("/planning/child-patterns", kh.PutChildPattern)
+			r.Delete("/planning/child-patterns", kh.DeleteChildPattern)
+			r.Put("/planning/child-days", kh.PutChildDays)
 			r.Put("/schedules/week-notes", sh.PutWeekNotes)
 			r.Get("/schedules/export-defaults", sh.ExportDefaults)
 			r.Get("/schedules/export-excel", sh.ExportExcel)
