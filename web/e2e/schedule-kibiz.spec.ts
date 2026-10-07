@@ -70,6 +70,7 @@ test('Dienstplan am Handy: KiBiz-Stunden je Gruppe und Kinderzahl für einen Tag
 
   // Planungsgrundlagen: Qualifikation nachtragen
   await page.goto('/schedule/basis?tab=people')
+  await expect(page.getByTestId(`qualification-${ek.id}`).locator('option[value="hauswirtschaft"]')).toHaveCount(1)
   const saved = page.waitForResponse((r) => r.url().includes(`/planning/qualifications/${ek.id}`) && r.ok())
   await page.getByTestId(`qualification-${ek.id}`).selectOption('ergaenzungskraft')
   await saved

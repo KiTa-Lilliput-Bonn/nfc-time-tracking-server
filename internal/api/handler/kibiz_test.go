@@ -50,9 +50,11 @@ func TestKibizWeekAndChildDays(t *testing.T) {
 		fn(rr, req)
 		return rr
 	}
-	if rr := put(kh.PutQualification, "/planning/qualifications/x", map[string]string{"qualification": "fachkraft"},
-		map[string]string{"userId": itoa(anna.ID)}); rr.Code != http.StatusOK {
-		t.Fatalf("qualification %d %s", rr.Code, rr.Body.String())
+	for _, q := range []string{"hauswirtschaft", "leitung", "fachkraft"} {
+		if rr := put(kh.PutQualification, "/planning/qualifications/x", map[string]string{"qualification": q},
+			map[string]string{"userId": itoa(anna.ID)}); rr.Code != http.StatusOK {
+			t.Fatalf("qualification %s: %d %s", q, rr.Code, rr.Body.String())
+		}
 	}
 	if rr := put(kh.PutQualification, "/planning/qualifications/x", map[string]string{"qualification": "chef"},
 		map[string]string{"userId": itoa(anna.ID)}); rr.Code != http.StatusBadRequest {
