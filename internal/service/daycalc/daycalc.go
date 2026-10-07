@@ -9,7 +9,7 @@ import (
 )
 
 // DailyTarget returns expected working hours for a calendar day (non-work weekdays incl. weekend → 0;
-// holidays/closures → full daily; sick/vacation/other absences → full or half daily).
+// holidays/closures → full daily, credited by AbsenceCreditHours; sick/vacation/other absences → full or half daily).
 func DailyTarget(day time.Time, daily float64, fixedNonWork []int, hol *model.Holiday, abs *model.Absence, clo *model.ClosureDay) float64 {
 	if !model.IsEmployeeWorkday(day, fixedNonWork) {
 		return 0
@@ -29,14 +29,16 @@ func DailyTarget(day time.Time, daily float64, fixedNonWork []int, hol *model.Ho
 	return daily
 }
 
-// AbsenceCreditHours returns hours credited as "worked" due to an absence (vacation/sick/other).
-// This allows days where someone is absent AND still works to count both.
+// AbsenceCreditHours returns hours credited as "worked" for a holiday, closure day or absence (vacation/sick/other).
+// Holidays and closure days credit the full daily target, so they balance the target like vacation does
+// (also when a closure day carries the automatically booked vacation). This allows days where someone is
+// absent AND still works to count both.
 func AbsenceCreditHours(day time.Time, daily float64, fixedNonWork []int, hol *model.Holiday, abs *model.Absence, clo *model.ClosureDay) float64 {
 	if !model.IsEmployeeWorkday(day, fixedNonWork) {
 		return 0
 	}
 	if hol != nil || clo != nil {
-		return 0
+		return daily
 	}
 	if abs == nil {
 		return 0

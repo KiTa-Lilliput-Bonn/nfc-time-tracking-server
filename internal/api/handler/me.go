@@ -155,7 +155,11 @@ func buildAbsenceCredits(ctx context.Context, userID int, from, to string, fnw s
 				hol = h
 			}
 		}
-		credit := daycalc.AbsenceCreditHours(d, daily, fixedNonWork, hol, abs, nil)
+		// Am Feiertag kommt die Gutschrift aus buildHolidayCredits; die Abwesenheit zählt dann nicht zusätzlich.
+		var credit float64
+		if hol == nil {
+			credit = daycalc.AbsenceCreditHours(d, daily, fixedNonWork, nil, abs, nil)
+		}
 		out = append(out, absenceCredit{
 			AbsenceDate: ds,
 			AbsenceType: string(abs.AbsenceType),
