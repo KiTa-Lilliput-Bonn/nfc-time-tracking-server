@@ -524,7 +524,12 @@ export async function postAndroidLanSyncStampsRange(
 
 export async function fetchKibizWeek(year: number, week: number): Promise<KibizWeek> {
   const { data } = await api.get<KibizWeek>('/schedules/kibiz', { params: { year, week } })
-  return { ...data, groups: data.groups ?? [], unqualified_user_ids: data.unqualified_user_ids ?? [] }
+  return {
+    ...data,
+    groups: data.groups ?? [],
+    unqualified_user_ids: data.unqualified_user_ids ?? [],
+    qualifications: data.qualifications ?? {},
+  }
 }
 
 export async function fetchKibizPlanningBasis(): Promise<KibizPlanningBasis> {

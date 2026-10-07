@@ -155,6 +155,7 @@ func (h *ScheduleHandler) KibizWeek(w http.ResponseWriter, r *http.Request) {
 		"from": from, "to": to,
 		"groups":               res.Groups,
 		"unqualified_user_ids": res.Unqualified,
+		"qualifications":       in.Qualifications,
 		"options":              in.Options,
 		"rates_configured":     len(in.Rates) > 0,
 	})

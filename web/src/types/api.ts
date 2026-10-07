@@ -722,6 +722,8 @@ export interface KibizWeek {
   to: string
   groups: KibizGroup[]
   unqualified_user_ids: number[]
+  /** Qualifikation je Person (Schlüssel: user_id) */
+  qualifications: Record<string, Qualification>
   options: KibizOptions
   rates_configured: boolean
 }
