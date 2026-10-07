@@ -6,6 +6,7 @@ import type {
   AndroidLanSyncStampsRangeBody,
   AndroidLanSyncStampsRangeResult,
   ClosureDay,
+  SchedulePlanning,
   CompensationDayClaim,
   CompensationDayClaimStatus,
   Employee,
@@ -394,6 +395,17 @@ export async function fetchScheduleExportExcel(
 export async function putScheduleWeekNotes(year: number, week: number, notes: string) {
   const { data } = await api.put<{ notes: string }>('/schedules/week-notes', { year, week, notes })
   return data.notes
+}
+
+export async function fetchSchedulePlanning(year: number, week: number) {
+  const { data } = await api.get<SchedulePlanning>('/schedules/planning', { params: { year, week } })
+  return {
+    ...data,
+    users: data.users ?? [],
+    absences: data.absences ?? [],
+    closure_days: data.closure_days ?? [],
+    break_rules: data.break_rules ?? [],
+  }
 }
 
 export async function createSchedule(body: {

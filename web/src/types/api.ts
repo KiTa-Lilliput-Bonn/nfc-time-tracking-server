@@ -72,6 +72,25 @@ export interface VacationBalance {
   free: number
 }
 
+/** GET /schedules/planning: Zusatzdaten für die Handy-Planung einer Woche. */
+export interface SchedulePlanningUser {
+  user_id: number
+  /** Wochenstunden Stand Montag der Woche; 0 = nicht hinterlegt */
+  hours_per_week: number
+  /** Mo–Fr wie Date.getDay() (1=Mo … 5=Fr), Stand Montag */
+  fixed_non_work_weekdays: number[]
+}
+
+export interface SchedulePlanning {
+  from: string
+  to: string
+  users: SchedulePlanningUser[]
+  /** Alle Abwesenheiten der Woche, auch krank und sonstige */
+  absences: Absence[]
+  closure_days: ClosureDay[]
+  break_rules: BreakRule[]
+}
+
 export interface Schedule {
   id: number
   user_id: number

@@ -31,6 +31,8 @@ type ScheduleHandler struct {
 	Closures              store.ClosureDayStore
 	CompensationDayClaims store.CompensationDayClaimStore
 	FixedNonWorkWeekdays  store.FixedNonWorkWeekdaysStore
+	WeeklyHours           store.WeeklyHoursStore
+	Settings              store.SettingsStore
 	Audit                 *audit.Logger
 }
 

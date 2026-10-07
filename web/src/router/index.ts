@@ -117,7 +117,7 @@ const router = createRouter({
         {
           path: 'schedule',
           name: 'schedule',
-          component: () => import('@/views/schedule/ScheduleEditorView.vue'),
+          component: () => import('@/views/schedule/ScheduleView.vue'),
           meta: { title: 'Dienstplan', roles: ['leitung', 'superadmin'] },
         },
         {
