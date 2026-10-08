@@ -46,6 +46,8 @@ type attendanceActor struct {
 	groupAccountID int
 	groups         []model.Group
 	canManage      bool
+	// defaultGroupID: Gruppe des Gruppenaccounts bzw. der Person; 0 = keine (Ansicht „Alle Gruppen“).
+	defaultGroupID int
 }
 
 func (a *attendanceActor) hasGroup(id int) bool {
@@ -66,7 +68,9 @@ func (a *attendanceActor) group(id int) *model.Group {
 	return nil
 }
 
-// actor ermittelt die sichtbaren Gruppen. Schreibt die Fehlerantwort und liefert nil ohne Zugriff.
+// actor ermittelt die sichtbaren Gruppen. Alle mit Zugriff (auch Gruppenaccounts) sehen und bearbeiten
+// alle Gruppen; die eigene Gruppe ist nur die Startansicht. Schreibt die Fehlerantwort und liefert nil
+// ohne Zugriff.
 func (h *AttendanceHandler) actor(w http.ResponseWriter, r *http.Request) *attendanceActor {
 	ctx := r.Context()
 	if gaID := middleware.GroupAccountID(r); gaID != 0 {
@@ -75,12 +79,12 @@ func (h *AttendanceHandler) actor(w http.ResponseWriter, r *http.Request) *atten
 			response.Error(w, http.StatusUnauthorized, "unauthorized")
 			return nil
 		}
-		g, err := h.Groups.GetByID(ctx, ga.GroupID)
-		if err != nil || g == nil {
-			response.Error(w, http.StatusForbidden, "forbidden")
+		groups, err := h.Groups.List(ctx)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, "query failed")
 			return nil
 		}
-		return &attendanceActor{groupAccountID: ga.ID, groups: []model.Group{*g}}
+		return &attendanceActor{groupAccountID: ga.ID, groups: groups, defaultGroupID: ga.GroupID}
 	}
 	u, err := h.Users.GetByID(ctx, middleware.UserID(r))
 	if err != nil || !u.Active {
@@ -106,7 +110,11 @@ func (h *AttendanceHandler) actor(w http.ResponseWriter, r *http.Request) *atten
 		response.Error(w, http.StatusInternalServerError, "query failed")
 		return nil
 	}
-	return &attendanceActor{groups: groups, canManage: isLeitungRole(string(u.Role))}
+	a := &attendanceActor{groups: groups, canManage: isLeitungRole(string(u.Role))}
+	if u.GroupID != nil && a.hasGroup(*u.GroupID) {
+		a.defaultGroupID = *u.GroupID
+	}
+	return a
 }
 
 func (h *AttendanceHandler) audit(r *http.Request, action, entity, id string, summary map[string]any) {
@@ -136,6 +144,7 @@ func (h *AttendanceHandler) Access(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]any{
 		"groups":           groups,
 		"can_manage":       a.canManage,
+		"default_group_id": a.defaultGroupID,
 		"is_group_account": a.groupAccountID != 0,
 		"today":            h.today(),
 	})
@@ -503,7 +512,16 @@ func (h *AttendanceHandler) Evacuation(w http.ResponseWriter, r *http.Request) {
 	}
 	groups := []evacuationGroup{}
 	idx := map[int]int{}
+	ordered := make([]model.Group, 0, len(a.groups))
+	if g := a.group(a.defaultGroupID); g != nil {
+		ordered = append(ordered, *g)
+	}
 	for _, g := range a.groups {
+		if g.ID != a.defaultGroupID {
+			ordered = append(ordered, g)
+		}
+	}
+	for _, g := range ordered {
 		if onlyGroup != 0 && g.ID != onlyGroup {
 			continue
 		}

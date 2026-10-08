@@ -44,6 +44,8 @@ export interface AttendanceDay {
 export interface AttendanceAccess {
   groups: { id: number; name: string }[]
   can_manage: boolean
+  /** Startansicht: eigene Gruppe; 0 = alle Gruppen */
+  default_group_id: number
   is_group_account: boolean
   today: string
 }

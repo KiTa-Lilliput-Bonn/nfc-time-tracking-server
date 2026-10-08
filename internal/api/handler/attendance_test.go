@@ -172,15 +172,20 @@ func TestAttendance_Access(t *testing.T) {
 		t.Fatalf("Hauswirtschaft: %d", rr.Code)
 	}
 
+	// Gruppenaccounts sehen und bearbeiten alle Gruppen; ihre eigene ist nur die Startansicht.
 	out := decodeAtt(t, f.asGroup(t, http.MethodGet, "/attendance", nil))
-	if len(out.Groups) != 1 || out.Groups[0].ID != f.mice.ID || len(out.Groups[0].Children) != 2 {
+	if len(out.Groups) != 2 {
 		t.Fatalf("group account sees: %+v", out.Groups)
 	}
-	if rr := f.asGroup(t, http.MethodGet, "/attendance?group_id="+itoa(f.bears.ID), nil); rr.Code != http.StatusForbidden {
-		t.Fatalf("other group list: %d", rr.Code)
-	}
-	if rr := f.asGroup(t, http.MethodPut, "/attendance/children/"+itoa(f.carl.ID)+"/days/"+attToday, map[string]any{"arrived_at": "08:00"}); rr.Code != http.StatusNotFound {
+	if rr := f.asGroup(t, http.MethodPut, "/attendance/children/"+itoa(f.carl.ID)+"/days/"+attToday, map[string]any{"arrived_at": "08:00"}); rr.Code != http.StatusOK {
 		t.Fatalf("other group child: %d", rr.Code)
+	}
+	rr := f.asGroup(t, http.MethodGet, "/attendance/access", nil)
+	if !strings.Contains(rr.Body.String(), `"default_group_id":`+itoa(f.mice.ID)) {
+		t.Fatalf("default group: %s", rr.Body.String())
+	}
+	if rr := f.asUser(t, f.lead, http.MethodGet, "/attendance/access", nil); !strings.Contains(rr.Body.String(), `"default_group_id":0`) {
+		t.Fatalf("lead without group: %s", rr.Body.String())
 	}
 
 	// Gesperrter Gruppenaccount verliert den Zugriff sofort.
@@ -322,7 +327,8 @@ func TestAttendance_Evacuation(t *testing.T) {
 		Staff []map[string]any `json:"staff"`
 	}
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-	if len(resp.Groups) != 1 || len(resp.Groups[0].Children) != 1 || resp.Groups[0].Children[0].FirstName != "Anna" {
+	// Eigene Gruppe zuerst, dann die übrigen.
+	if len(resp.Groups) != 2 || resp.Groups[0].ID != f.mice.ID || len(resp.Groups[0].Children) != 1 || resp.Groups[0].Children[0].FirstName != "Anna" {
 		t.Fatalf("children: %s", rr.Body.String())
 	}
 	if len(resp.Staff) != 2 {

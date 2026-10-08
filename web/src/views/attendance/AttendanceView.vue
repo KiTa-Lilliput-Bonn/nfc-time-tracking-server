@@ -32,24 +32,8 @@ const loadError = ref('')
 const date = ref(localYmd())
 const today = computed(() => day.value?.today ?? access.value?.today ?? localYmd())
 
-const GROUP_KEY = 'nfc_attendance_group'
-/** 0 = alle Gruppen */
-const groupId = ref<number>(readGroup())
-
-function readGroup(): number {
-  try {
-    return Number(localStorage.getItem(GROUP_KEY)) || 0
-  } catch {
-    return 0
-  }
-}
-watch(groupId, (v) => {
-  try {
-    localStorage.setItem(GROUP_KEY, String(v))
-  } catch {
-    /* ignore */
-  }
-})
+/** 0 = alle Gruppen. Start immer in der eigenen Gruppe (Gruppenaccount bzw. zugewiesene Gruppe). */
+const groupId = ref(0)
 
 type Filter = 'all' | 'present' | 'expected' | 'gone' | 'absent'
 const filter = ref<Filter>('all')
@@ -113,6 +97,7 @@ onMounted(async () => {
   try {
     access.value = await fetchAttendanceAccess()
     date.value = access.value.today
+    groupId.value = access.value.default_group_id
   } catch (e) {
     loadError.value = getApiErrorMessage(e) ?? 'Kein Zugriff'
     return
@@ -230,9 +215,10 @@ function actionLabel(c: AttendanceChild): string {
         <button type="button" class="nav-btn" aria-label="Tag vor" data-testid="att-next" @click="shiftDay(1)">
           <span class="pi pi-chevron-right" aria-hidden="true" />
         </button>
-        <button v-if="!isToday" type="button" class="today-btn" @click="date = today">Heute</button>
+        <button v-if="!isToday" type="button" class="today-btn today-inline" @click="date = today">Heute</button>
       </div>
       <div class="bar-right">
+        <button v-if="!isToday" type="button" class="today-btn today-side" @click="date = today">Heute</button>
         <Button
           v-if="access?.can_manage"
           icon="pi pi-users"
@@ -362,7 +348,7 @@ function actionLabel(c: AttendanceChild): string {
 .date-nav {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.75rem;
 }
 .nav-btn,
 .today-btn {
@@ -384,8 +370,10 @@ function actionLabel(c: AttendanceChild): string {
   font-weight: 700;
   font-size: 1.05rem;
   padding: 0 0.4rem;
-  min-width: 9.5rem;
+  /* Feste Breite, damit die Pfeile beim Blättern nicht springen („Heute“ vs. „Morgen“). */
+  width: 12.5rem;
   text-align: center;
+  white-space: nowrap;
   cursor: pointer;
 }
 .date-input {
@@ -399,6 +387,9 @@ function actionLabel(c: AttendanceChild): string {
   display: flex;
   gap: 0.4rem;
   align-items: center;
+}
+.today-side {
+  display: none;
 }
 .groups {
   display: flex;
@@ -616,6 +607,21 @@ function actionLabel(c: AttendanceChild): string {
 @media (max-width: 600px) {
   .manage-btn :deep(.p-button-label) {
     display: none;
+  }
+  /* Handy: Pfeile links und rechts außen, Datum dazwischen. */
+  .date-nav {
+    width: 100%;
+    gap: 0.5rem;
+  }
+  .date-label {
+    flex: 1;
+    width: auto;
+  }
+  .today-inline {
+    display: none;
+  }
+  .today-side {
+    display: inline-block;
   }
   .bar-right {
     margin-left: auto;
