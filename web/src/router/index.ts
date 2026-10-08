@@ -73,6 +73,24 @@ const router = createRouter({
           meta: { title: 'Anträge' },
         },
         {
+          path: 'attendance',
+          name: 'attendance',
+          component: () => import('@/views/attendance/AttendanceView.vue'),
+          meta: { title: 'Anwesenheit' },
+        },
+        {
+          path: 'attendance/evacuation',
+          name: 'attendance-evacuation',
+          component: () => import('@/views/attendance/EvacuationView.vue'),
+          meta: { title: 'Evakuierung' },
+        },
+        {
+          path: 'attendance/manage',
+          name: 'attendance-manage',
+          component: () => import('@/views/attendance/AttendanceManageView.vue'),
+          meta: { title: 'Kinder verwalten', roles: ['leitung', 'superadmin'] },
+        },
+        {
           path: 'cash-boxes',
           name: 'cash-boxes',
           component: () => import('@/views/cash/CashBoxListView.vue'),
@@ -201,11 +219,15 @@ router.beforeEach((to) => {
   const auth = useAuthStore()
   if (to.meta.public) return true
   if (to.name === 'login') {
-    if (auth.isAuthenticated) return { name: 'dashboard' }
+    if (auth.isAuthenticated) return { name: auth.role === 'gruppe' ? 'attendance' : 'dashboard' }
     return true
   }
   if (!auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
+  }
+  // Gruppenaccounts (Gerät im Flur) sehen nur die Anwesenheitsliste.
+  if (auth.role === 'gruppe') {
+    return to.name === 'attendance' || to.name === 'attendance-evacuation' ? true : { name: 'attendance' }
   }
   const allowed = to.meta.roles as string[] | undefined
   if (allowed?.length && auth.role && !allowed.includes(auth.role)) {

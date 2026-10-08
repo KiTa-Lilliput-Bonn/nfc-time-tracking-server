@@ -49,6 +49,8 @@ type testSeedImportedBody struct {
 	WorkDate   string    `json:"work_date"`
 	PunchIn    time.Time `json:"punch_in"`
 	PunchOut   time.Time `json:"punch_out"`
+	// Open: nur eingestempelt (ohne punch_out), z. B. für die Evakuierungsliste.
+	Open bool `json:"open"`
 }
 
 func (h *TestSeedHandler) SeedImportedWorkPeriod(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +63,7 @@ func (h *TestSeedHandler) SeedImportedWorkPeriod(w http.ResponseWriter, r *http.
 		response.Error(w, http.StatusBadRequest, "employee_id and work_date required")
 		return
 	}
-	if !body.PunchOut.After(body.PunchIn) {
+	if !body.Open && !body.PunchOut.After(body.PunchIn) {
 		response.Error(w, http.StatusBadRequest, "punch_out must be after punch_in")
 		return
 	}
@@ -69,6 +71,9 @@ func (h *TestSeedHandler) SeedImportedWorkPeriod(w http.ResponseWriter, r *http.
 		PunchIn:  body.PunchIn,
 		PunchOut: &body.PunchOut,
 		IsBreak:  false,
+	}
+	if body.Open {
+		wp.PunchOut = nil
 	}
 	if err := h.WorkPeriods.ReplaceForUserDate(r.Context(), body.EmployeeID, body.WorkDate, []model.WorkPeriod{wp}); err != nil {
 		response.Error(w, http.StatusInternalServerError, "seed failed")

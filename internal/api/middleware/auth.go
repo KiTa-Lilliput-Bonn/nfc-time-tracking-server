@@ -15,9 +15,21 @@ const (
 	CtxUserID   ctxKey = "userID"
 	CtxUsername ctxKey = "username"
 	CtxRole     ctxKey = "role"
+	// CtxGroupAccountID ist bei Gruppenaccounts gesetzt (nur auf Routen mit AuthJWTAllowGroup).
+	CtxGroupAccountID ctxKey = "groupAccountID"
 )
 
+// AuthJWT lässt nur Benutzer-Tokens zu; Tokens von Gruppenaccounts werden abgewiesen.
 func AuthJWT(svc *authsvc.Service) func(http.Handler) http.Handler {
+	return authJWT(svc, false)
+}
+
+// AuthJWTAllowGroup lässt zusätzlich Tokens von Gruppenaccounts zu (Anwesenheitsliste, /auth/me).
+func AuthJWTAllowGroup(svc *authsvc.Service) func(http.Handler) http.Handler {
+	return authJWT(svc, true)
+}
+
+func authJWT(svc *authsvc.Service, allowGroup bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := r.Header.Get("Authorization")
@@ -36,7 +48,14 @@ func AuthJWT(svc *authsvc.Service) func(http.Handler) http.Handler {
 				response.Error(w, http.StatusUnauthorized, "invalid token")
 				return
 			}
+			if claims.IsGroupAccount() && !allowGroup {
+				response.Error(w, http.StatusForbidden, "forbidden")
+				return
+			}
 			ctx := r.Context()
+			if claims.IsGroupAccount() {
+				ctx = context.WithValue(ctx, CtxGroupAccountID, claims.GroupAccountID)
+			}
 			ctx = context.WithValue(ctx, CtxUserID, claims.UserID)
 			ctx = context.WithValue(ctx, CtxUsername, claims.Username)
 			ctx = context.WithValue(ctx, CtxRole, claims.Role)
@@ -51,6 +70,12 @@ func UserID(r *http.Request) int {
 		return 0
 	}
 	return v.(int)
+}
+
+// GroupAccountID liefert die ID des angemeldeten Gruppenaccounts oder 0.
+func GroupAccountID(r *http.Request) int {
+	v, _ := r.Context().Value(CtxGroupAccountID).(int)
+	return v
 }
 
 func Role(r *http.Request) string {

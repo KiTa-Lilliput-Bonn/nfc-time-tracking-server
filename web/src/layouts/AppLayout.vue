@@ -6,6 +6,7 @@ import type { MenuItem } from 'primevue/menuitem'
 import { useAuthStore } from '@/stores/auth'
 import { usePendingRequests } from '@/stores/pendingRequests'
 import { fetchCashBoxes } from '@/api/groupCash'
+import { fetchAttendanceAccess } from '@/api/attendance'
 import { SSO_LOGOUT_URL } from '@/api/sso'
 
 const route = useRoute()
@@ -95,6 +96,7 @@ function isActiveNav(targetPath: string): boolean {
   if (targetPath === '/employees' && path.startsWith('/employees/')) return true
   if (targetPath === '/groups' && path.startsWith('/groups')) return true
   if (targetPath === '/cash-boxes' && path.startsWith('/cash-boxes')) return true
+  if (targetPath === '/attendance' && path === '/attendance/manage') return false
   return false
 }
 
@@ -109,6 +111,29 @@ function logout() {
 
 const isLeitung = computed(() => auth.role === 'leitung' || auth.role === 'superadmin')
 const isSuper = computed(() => auth.role === 'superadmin')
+/** Gruppenaccount (Gerät im Flur): nur Anwesenheitsliste und Evakuierung. */
+const isGroup = computed(() => auth.role === 'gruppe')
+
+/** Anwesenheitsliste: Leitung und pädagogisches Personal (Prüfung im Backend). */
+const hasAttendance = ref(false)
+watch(
+  [() => auth.user?.id, () => auth.role],
+  async ([uid, role]) => {
+    hasAttendance.value = role === 'gruppe' || role === 'leitung' || role === 'superadmin'
+    if (!uid || hasAttendance.value) return
+    try {
+      hasAttendance.value = (await fetchAttendanceAccess()).groups.length > 0
+    } catch {
+      hasAttendance.value = false
+    }
+  },
+  { immediate: true },
+)
+
+// Gruppengeräte bleiben angemeldet: Token bei jedem Start erneuern (gilt 30 Tage).
+onMounted(() => {
+  if (isGroup.value) void auth.refreshToken().catch(() => undefined)
+})
 
 const pendingRequests = usePendingRequests()
 watch(
@@ -125,7 +150,7 @@ watch(
   [isLeitung, () => auth.user?.id],
   async ([lead, uid]) => {
     isCashKeeper.value = false
-    if (lead || !uid) return
+    if (lead || !uid || auth.role === 'gruppe') return
     try {
       isCashKeeper.value = (await fetchCashBoxes()).length > 0
     } catch {
@@ -169,7 +194,20 @@ watch(
           ×
         </button>
       </div>
-      <nav id="app-sidebar-nav" class="nav">
+      <nav v-if="isGroup" id="app-sidebar-nav" class="nav">
+        <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/attendance') }" to="/attendance">
+          Anwesenheit
+        </RouterLink>
+        <RouterLink
+          class="nav-item"
+          active-class=""
+          :class="{ 'nav-item--active': isActiveNav('/attendance/evacuation') }"
+          to="/attendance/evacuation"
+        >
+          Evakuierung
+        </RouterLink>
+      </nav>
+      <nav v-else id="app-sidebar-nav" class="nav">
         <RouterLink
           class="nav-item"
           active-class=""
@@ -177,6 +215,16 @@ watch(
           to="/dashboard"
         >
           Dashboard
+        </RouterLink>
+        <RouterLink
+          v-if="hasAttendance"
+          class="nav-item"
+          active-class=""
+          :class="{ 'nav-item--active': isActiveNav('/attendance') || isActiveNav('/attendance/evacuation') }"
+          to="/attendance"
+          data-testid="nav-attendance"
+        >
+          Anwesenheit Kinder
         </RouterLink>
         <span class="nav-group">Persönlich</span>
         <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/my/times') }" to="/my/times">
@@ -225,6 +273,14 @@ watch(
           </RouterLink>
           <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/groups') }" to="/groups">
             Gruppen
+          </RouterLink>
+          <RouterLink
+            class="nav-item"
+            active-class=""
+            :class="{ 'nav-item--active': isActiveNav('/attendance/manage') }"
+            to="/attendance/manage"
+          >
+            Kinder verwalten
           </RouterLink>
           <RouterLink class="nav-item" active-class="" :class="{ 'nav-item--active': isActiveNav('/cash-boxes') }" to="/cash-boxes">
             Gruppenkassen
