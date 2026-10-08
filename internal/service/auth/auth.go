@@ -16,13 +16,35 @@ type Claims struct {
 	UserID   int    `json:"user_id"`
 	Username string `json:"username"`
 	Role     string `json:"role"`
+	// GroupAccountID ist bei Tokens eines Gruppenaccounts gesetzt (UserID ist dann 0).
+	GroupAccountID int `json:"group_account_id,omitempty"`
+	// SessionVersion: Stand des Gruppenaccounts beim Anmelden; Passwort zurücksetzen meldet ab.
+	SessionVersion int `json:"session_version,omitempty"`
 	jwt.RegisteredClaims
 }
+
+// IsGroupAccount ist true für Tokens eines Gruppenaccounts.
+func (c *Claims) IsGroupAccount() bool {
+	return c.GroupAccountID != 0
+}
+
+// GroupTokenExpiry: Gruppengeräte (Tablet im Flur) bleiben länger angemeldet; das Frontend
+// erneuert das Token bei jedem Start. Abmelden erzwingt die Leitung über „Passwort neu setzen“.
+const GroupTokenExpiry = 30 * 24 * time.Hour
 
 type Service struct {
 	jwtSecret   []byte
 	expiryHours int
 	lookup      UserLookup
+	groupLookup GroupAccountLookup
+}
+
+// GroupAccountLookup liefert den aktuellen Stand eines Gruppenaccounts (aktiv, Sitzungsstand).
+type GroupAccountLookup func(ctx context.Context, id int) (active bool, sessionVersion int, err error)
+
+// SetGroupAccountLookup aktiviert Tokens von Gruppenaccounts. Ohne Lookup werden sie abgewiesen.
+func (s *Service) SetGroupAccountLookup(f GroupAccountLookup) {
+	s.groupLookup = f
 }
 
 // UserLookup liefert den aktuellen Stand eines Benutzers (aktiv, Rolle) aus der Datenbank.
@@ -41,6 +63,19 @@ var ErrUserInactive = errors.New("user inactive")
 // CurrentClaims gleicht die Claims mit dem aktuellen Benutzerstand ab (falls ein
 // UserLookup gesetzt ist) und übernimmt die aktuelle Rolle.
 func (s *Service) CurrentClaims(ctx context.Context, c *Claims) (*Claims, error) {
+	if c.IsGroupAccount() {
+		if s.groupLookup == nil {
+			return nil, ErrUserInactive
+		}
+		active, version, err := s.groupLookup(ctx, c.GroupAccountID)
+		if err != nil || !active || version != c.SessionVersion {
+			return nil, ErrUserInactive
+		}
+		out := *c
+		out.UserID = 0
+		out.Role = groupRole
+		return &out, nil
+	}
 	if s.lookup == nil {
 		return c, nil
 	}
@@ -84,6 +119,25 @@ func (s *Service) IssueToken(userID int, username, role string) (string, error) 
 		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(s.expiryHours) * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.jwtSecret)
+}
+
+// groupRole entspricht model.RoleGroupAccount (hier ohne Import, um Zyklen zu vermeiden).
+const groupRole = "gruppe"
+
+// IssueGroupToken stellt ein Token für einen Gruppenaccount aus.
+func (s *Service) IssueGroupToken(groupAccountID int, username string, sessionVersion int) (string, error) {
+	claims := &Claims{
+		Username:       username,
+		Role:           groupRole,
+		GroupAccountID: groupAccountID,
+		SessionVersion: sessionVersion,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(GroupTokenExpiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}

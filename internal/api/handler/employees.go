@@ -30,6 +30,8 @@ import (
 
 type EmployeeHandler struct {
 	Users       store.UserStore
+	// GroupAccounts: Benutzernamen der Gruppenaccounts sind für Mitarbeitende gesperrt; nil = keine Prüfung.
+	GroupAccounts store.AttendanceStore
 	Groups      store.GroupStore
 	Auth        *authsvc.Service
 	WorkPeriods store.WorkPeriodStore
@@ -80,6 +82,10 @@ func (h *EmployeeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.enforceEmployeeRole(r, role); err != nil {
 		response.Error(w, http.StatusForbidden, err.Error())
+		return
+	}
+	if groupAccountNameTaken(r, h.GroupAccounts, body.Username) {
+		response.Error(w, http.StatusBadRequest, "create failed (duplicate username?)")
 		return
 	}
 	pw := authsvc.GenerateRandomPassword(14)

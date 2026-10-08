@@ -52,6 +52,7 @@ type Deps struct {
 	ChangeRequests        store.ChangeRequestStore
 	GroupCash             store.GroupCashStore
 	Kibiz                 store.KibizStore
+	Attendance            store.AttendanceStore
 	// OIDC: SSO-Anmeldung; nil = nicht aktiviert.
 	OIDC *oidcsvc.Service
 
@@ -118,7 +119,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Get("/device/v1/stamps", dsh.Stamps)
 		})
 
-		ah := &handler.AuthHandler{Users: d.UserStore, Auth: d.Auth}
+		ah := &handler.AuthHandler{Users: d.UserStore, Auth: d.Auth, GroupAccounts: d.Attendance, Groups: d.GroupStore}
 		if d.OIDC != nil {
 			ah.PasswordLogin = d.OIDC.Config().PasswordLogin
 		}
@@ -134,7 +135,7 @@ func NewRouter(d Deps) http.Handler {
 			r.With(httprate.LimitByIP(loginLimit, time.Minute)).Get("/oidc/callback", oh.Callback)
 			r.Get("/oidc/logout", oh.Logout)
 			r.Group(func(r chi.Router) {
-				r.Use(apimw.AuthJWT(d.Auth))
+				r.Use(apimw.AuthJWTAllowGroup(d.Auth))
 				r.Get("/me", ah.Me)
 				r.Post("/change-password", ah.ChangePassword)
 				r.Post("/refresh", ah.Refresh)
@@ -161,6 +162,25 @@ func NewRouter(d Deps) http.Handler {
 			FixedNonWorkWeekdays: d.FixedNonWorkWeekdays, Holidays: d.Holidays, ClosureDays: d.ClosureDays,
 			Audit: d.Audit,
 		}
+		// Anwesenheitsliste der Kinder: auch für Gruppenaccounts (Zugriff je Gruppe prüft der Handler).
+		atth := &handler.AttendanceHandler{
+			Attendance: d.Attendance, Groups: d.GroupStore, Users: d.UserStore, Kibiz: d.Kibiz,
+			Auth: d.Auth, Audit: d.Audit,
+		}
+		if d.Attendance != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(apimw.AuthJWTAllowGroup(d.Auth))
+				r.Get("/attendance/access", atth.Access)
+				r.Get("/attendance", atth.List)
+				r.Get("/attendance/evacuation", atth.Evacuation)
+				r.Put("/attendance/children/{id}/days/{date}", atth.PutDay)
+				r.Get("/attendance/children/{id}/notices", atth.ListNotices)
+				r.Post("/attendance/children/{id}/notices", atth.CreateNotice)
+				r.Put("/attendance/notices/{noticeId}", atth.UpdateNotice)
+				r.Delete("/attendance/notices/{noticeId}", atth.DeleteNotice)
+			})
+		}
+
 		r.Group(func(r chi.Router) {
 			r.Use(apimw.AuthJWT(d.Auth))
 			r.Get("/me/times", me.Times)
@@ -200,7 +220,7 @@ func NewRouter(d Deps) http.Handler {
 
 		leitung := []string{string(model.RoleLeitung), string(model.RoleSuperadmin)}
 		eh := &handler.EmployeeHandler{
-			Users: d.UserStore, Groups: d.GroupStore, Auth: d.Auth, WorkPeriods: d.WorkPeriods,
+			Users: d.UserStore, Groups: d.GroupStore, GroupAccounts: d.Attendance, Auth: d.Auth, WorkPeriods: d.WorkPeriods,
 			Corrections: d.Corrections, Absences: d.Absences, CompensationDayClaims: d.CompensationDayClaims,
 			Holidays:    d.Holidays,
 			ClosureDays: d.ClosureDays,
@@ -302,6 +322,17 @@ func NewRouter(d Deps) http.Handler {
 			r.Put("/planning/child-patterns", kh.PutChildPattern)
 			r.Delete("/planning/child-patterns", kh.DeleteChildPattern)
 			r.Put("/planning/child-days", kh.PutChildDays)
+			if d.Attendance != nil {
+				r.Get("/children", atth.ListChildren)
+				r.Post("/children", atth.CreateChild)
+				r.Patch("/children/{id}", atth.UpdateChild)
+				r.Delete("/children/{id}", atth.DeleteChild)
+				r.Get("/group-accounts", atth.ListGroupAccounts)
+				r.Post("/group-accounts", atth.CreateGroupAccount)
+				r.Patch("/group-accounts/{id}", atth.PatchGroupAccount)
+				r.Post("/group-accounts/{id}/reset-password", atth.ResetGroupAccountPassword)
+				r.Delete("/group-accounts/{id}", atth.DeleteGroupAccount)
+			}
 			r.Put("/schedules/week-notes", sh.PutWeekNotes)
 			r.Get("/schedules/export-defaults", sh.ExportDefaults)
 			r.Get("/schedules/export-excel", sh.ExportExcel)
@@ -328,7 +359,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Post("/android-lan/sync-stamps-range", lanRange.Post)
 		})
 
-		uh := &handler.UsersHandler{Users: d.UserStore, Auth: d.Auth, Audit: d.Audit}
+		uh := &handler.UsersHandler{Users: d.UserStore, Auth: d.Auth, Audit: d.Audit, GroupAccounts: d.Attendance}
 		st := &handler.SettingsHandler{Settings: d.Settings, Audit: d.Audit}
 
 		r.Group(func(r chi.Router) {

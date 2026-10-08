@@ -108,6 +108,10 @@ func (h *GroupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusConflict, "Die Gruppenkasse dieser Gruppe hat Buchungen; die Gruppe kann daher nicht gelöscht werden.")
 			return
 		}
+		if errors.Is(err, store.ErrGroupHasChildren) {
+			response.Error(w, http.StatusConflict, "Der Gruppe sind noch Kinder zugeordnet; die Gruppe kann daher nicht gelöscht werden.")
+			return
+		}
 		response.Error(w, http.StatusNotFound, "not found")
 		return
 	}

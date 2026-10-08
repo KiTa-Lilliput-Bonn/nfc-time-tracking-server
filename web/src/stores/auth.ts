@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api, setStoredToken } from '@/api/client'
 
-export type Role = 'user' | 'leitung' | 'superadmin'
+/** 'gruppe' = Gruppenaccount, sieht nur die Anwesenheitsliste seiner Gruppe. */
+export type Role = 'user' | 'leitung' | 'superadmin' | 'gruppe'
 
 export interface AuthUser {
   id: number
@@ -10,6 +11,8 @@ export interface AuthUser {
   display_name: string
   role: Role
   must_change_password: boolean
+  /** Nur bei Gruppenaccounts */
+  group_id?: number
 }
 
 const USER_KEY = 'nfc_user'

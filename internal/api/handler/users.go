@@ -17,6 +17,8 @@ import (
 // UsersHandler is superadmin user management (GET/POST/PATCH /users).
 type UsersHandler struct {
 	Users store.UserStore
+	// GroupAccounts: Benutzernamen der Gruppenaccounts sind gesperrt; nil = keine Prüfung.
+	GroupAccounts store.AttendanceStore
 	Auth  *authsvc.Service
 	Audit *audit.Logger
 }
@@ -44,6 +46,10 @@ func (h *UsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Username == "" || body.DisplayName == "" || body.Role == "" {
 		response.Error(w, http.StatusBadRequest, "username, display_name, role required")
+		return
+	}
+	if groupAccountNameTaken(r, h.GroupAccounts, body.Username) {
+		response.Error(w, http.StatusBadRequest, "create failed")
 		return
 	}
 	pw := authsvc.GenerateRandomPassword(14)

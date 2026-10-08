@@ -217,6 +217,14 @@ func main() {
 		}
 		return u.Active, string(u.Role), nil
 	})
+	attendance := sqlite.NewAttendanceStore(db)
+	authService.SetGroupAccountLookup(func(ctx context.Context, id int) (bool, int, error) {
+		a, err := attendance.GetGroupAccount(ctx, id)
+		if err != nil {
+			return false, 0, err
+		}
+		return a.Active, a.SessionVersion, nil
+	})
 	oidcService, err := oidcsvc.New(cfg.Auth.OIDC)
 	if err != nil {
 		log.Fatalf("SSO-Konfiguration: %v", err)
@@ -251,6 +259,7 @@ func main() {
 		ChangeRequests:        sqlite.NewChangeRequestStore(db),
 		GroupCash:             sqlite.NewGroupCashStore(db),
 		Kibiz:                 sqlite.NewKibizStore(db),
+		Attendance:            attendance,
 		OIDC:                  oidcService,
 		Stamps:                stampsSvc,
 		Backup:                backupSvc,
