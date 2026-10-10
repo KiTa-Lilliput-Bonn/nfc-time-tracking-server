@@ -163,14 +163,13 @@ func (h *AttendanceHandler) Access(w http.ResponseWriter, r *http.Request) {
 }
 
 type attendanceRow struct {
-	ID         int                `json:"id"`
-	GroupID    int                `json:"group_id"`
-	FirstName  string             `json:"first_name"`
-	LastName   string             `json:"last_name"`
-	BirthMonth *string            `json:"birth_month"`
-	ArrivedAt  *string            `json:"arrived_at"`
-	LeftAt     *string            `json:"left_at"`
-	Notice     *model.ChildNotice `json:"notice"`
+	ID        int                `json:"id"`
+	GroupID   int                `json:"group_id"`
+	FirstName string             `json:"first_name"`
+	LastName  string             `json:"last_name"`
+	ArrivedAt *string            `json:"arrived_at"`
+	LeftAt    *string            `json:"left_at"`
+	Notice    *model.ChildNotice `json:"notice"`
 	// Upcoming: Anzahl gemeldeter Abwesenheiten ab morgen (Hinweis in der Liste).
 	Upcoming int `json:"upcoming"`
 }
@@ -265,7 +264,7 @@ func (h *AttendanceHandler) List(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		out[gi].Children = append(out[gi].Children, attendanceRow{
-			ID: c.ID, GroupID: c.GroupID, FirstName: c.FirstName, LastName: c.LastName, BirthMonth: c.BirthMonth,
+			ID: c.ID, GroupID: c.GroupID, FirstName: c.FirstName, LastName: c.LastName,
 			ArrivedAt: rec.ArrivedAt, LeftAt: rec.LeftAt, Notice: noticeBy[c.ID], Upcoming: upcoming[c.ID],
 		})
 	}

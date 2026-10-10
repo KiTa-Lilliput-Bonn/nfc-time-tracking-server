@@ -6,7 +6,6 @@ import { useToast } from 'primevue/usetoast'
 
 import {
   NOTICE_REASON_LABEL,
-  ageLabel,
   childName,
   createChildNotice,
   deleteChildNotice,
@@ -187,9 +186,7 @@ const REASONS: ChildNoticeReason[] = ['sick', 'vacation', 'other']
         <div class="head">
           <div>
             <strong>{{ childName(child) }}</strong>
-            <span class="sub"
-              >{{ groupName }}<template v-if="ageLabel(child.birth_month, date)"> · {{ ageLabel(child.birth_month, date) }}</template>
-              · {{ shortDay(date) }}<template v-if="isToday"> (heute)</template></span>
+            <span class="sub">{{ groupName }} · {{ shortDay(date) }}<template v-if="isToday"> (heute)</template></span>
           </div>
           <button type="button" class="x" aria-label="Schließen" @click="closeCallback">
             <span class="pi pi-times" aria-hidden="true" />

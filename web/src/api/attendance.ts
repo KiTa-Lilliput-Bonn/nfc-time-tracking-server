@@ -22,8 +22,6 @@ export interface AttendanceChild {
   group_id: number
   first_name: string
   last_name: string
-  /** Geburtsmonat YYYY-MM */
-  birth_month: string | null
   arrived_at: string | null
   left_at: string | null
   notice: ChildNotice | null
