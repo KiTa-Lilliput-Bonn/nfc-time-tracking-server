@@ -165,7 +165,7 @@ func NewRouter(d Deps) http.Handler {
 		// Anwesenheitsliste der Kinder: auch für Gruppenaccounts (Zugriff je Gruppe prüft der Handler).
 		atth := &handler.AttendanceHandler{
 			Attendance: d.Attendance, Groups: d.GroupStore, Users: d.UserStore, Kibiz: d.Kibiz,
-			Auth: d.Auth, Audit: d.Audit,
+			Auth: d.Auth, Audit: d.Audit, Settings: d.Settings,
 		}
 		if d.Attendance != nil {
 			r.Group(func(r chi.Router) {
@@ -324,6 +324,8 @@ func NewRouter(d Deps) http.Handler {
 			r.Put("/planning/child-days", kh.PutChildDays)
 			if d.Attendance != nil {
 				r.Get("/children", atth.ListChildren)
+				r.Get("/children/retention", atth.GetRetention)
+				r.Put("/children/retention", atth.PutRetention)
 				r.Post("/children", atth.CreateChild)
 				r.Patch("/children/{id}", atth.UpdateChild)
 				r.Delete("/children/{id}", atth.DeleteChild)

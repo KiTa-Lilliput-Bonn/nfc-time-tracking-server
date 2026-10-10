@@ -39,6 +39,10 @@ type backupPutConfigBody struct {
 	IntervalMinutes int    `json:"interval_minutes"`
 	UseRestic       bool   `json:"use_restic"`
 	TargetPath      string `json:"target_path"`
+	// Aufbewahrung alter Backups; fehlt sie, bleibt die gespeicherte Regel.
+	KeepDaily   *int `json:"keep_daily"`
+	KeepWeekly  *int `json:"keep_weekly"`
+	KeepMonthly *int `json:"keep_monthly"`
 }
 
 func (h *BackupHandler) PutConfig(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +54,23 @@ func (h *BackupHandler) PutConfig(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid json")
 		return
+	}
+	if body.KeepDaily != nil || body.KeepWeekly != nil || body.KeepMonthly != nil {
+		st, err := h.Backup.ReadStatus(r.Context())
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, "read status failed")
+			return
+		}
+		keep := st.Keep
+		for dst, src := range map[*int]*int{&keep.Daily: body.KeepDaily, &keep.Weekly: body.KeepWeekly, &keep.Monthly: body.KeepMonthly} {
+			if src != nil {
+				*dst = *src
+			}
+		}
+		if err := h.Backup.SaveKeep(r.Context(), keep); err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	if err := h.Backup.SaveConfig(r.Context(), body.Enabled, body.IntervalMinutes, body.UseRestic, body.TargetPath); err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())

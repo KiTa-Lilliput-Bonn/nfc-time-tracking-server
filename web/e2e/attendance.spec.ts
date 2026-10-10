@@ -53,7 +53,12 @@ test('Gruppenaccount hakt Kinder ab, meldet Fehlen und prüft bei Evakuierung al
   await page.getByTestId(`manage-add-${groupId}`).fill('Anna Adler\nBen Bär\nCarla Christ')
   await page.getByTestId(`manage-add-btn-${groupId}`).click()
   const section = page.getByTestId(`manage-group-${groupId}`)
-  await expect(section.getByText('Carla Christ')).toBeVisible()
+  await expect(section.getByText('Carla C.')).toBeVisible()
+  // Geburtsmonat reicht für das Alter.
+  await section.getByRole('button', { name: 'Anna A. bearbeiten' }).click()
+  await section.getByTestId('manage-birth').fill('2023-05')
+  await section.getByRole('button', { name: 'Speichern' }).click()
+  await expect(section.getByText(/^\s*\d+ J\./)).toBeVisible()
   const user = `flur-${Date.now()}`
   await page.getByTestId(`manage-account-user-${groupId}`).fill(user)
   await page.getByTestId(`manage-account-create-${groupId}`).click()
@@ -72,41 +77,41 @@ test('Gruppenaccount hakt Kinder ab, meldet Fehlen und prüft bei Evakuierung al
   await expect(page.getByRole('link', { name: 'Mein Saldo' })).toHaveCount(0)
 
   const card = (name: string) => page.locator('[data-testid^="att-child-"]', { hasText: name })
-  await expect(card('Anna Adler')).toHaveAttribute('data-status', 'expected')
-  await card('Anna Adler').getByRole('button', { name: 'Gekommen' }).click()
-  await expect(card('Anna Adler')).toHaveAttribute('data-status', 'present')
-  await expect(card('Anna Adler').getByTestId('att-state')).toContainText('da seit')
+  await expect(card('Anna A.')).toHaveAttribute('data-status', 'expected')
+  await card('Anna A.').getByRole('button', { name: 'Gekommen' }).click()
+  await expect(card('Anna A.')).toHaveAttribute('data-status', 'present')
+  await expect(card('Anna A.').getByTestId('att-state')).toContainText('da seit')
 
   // Versehentlich getippt: rückgängig.
-  await card('Ben Bär').getByRole('button', { name: 'Gekommen' }).click()
-  await expect(card('Ben Bär')).toHaveAttribute('data-status', 'present')
+  await card('Ben B.').getByRole('button', { name: 'Gekommen' }).click()
+  await expect(card('Ben B.')).toHaveAttribute('data-status', 'present')
   await page.getByTestId('att-undo').getByRole('button', { name: 'Rückgängig' }).click()
-  await expect(card('Ben Bär')).toHaveAttribute('data-status', 'expected')
+  await expect(card('Ben B.')).toHaveAttribute('data-status', 'expected')
 
-  await card('Ben Bär').getByRole('button', { name: 'Gekommen' }).click()
-  await card('Ben Bär').getByRole('button', { name: 'Gegangen' }).click()
-  await expect(card('Ben Bär')).toHaveAttribute('data-status', 'gone')
+  await card('Ben B.').getByRole('button', { name: 'Gekommen' }).click()
+  await card('Ben B.').getByRole('button', { name: 'Gegangen' }).click()
+  await expect(card('Ben B.')).toHaveAttribute('data-status', 'gone')
 
   // Carla ist heute krank gemeldet.
-  await card('Carla Christ').getByRole('button', { name: /bearbeiten/ }).click()
+  await card('Carla C.').getByRole('button', { name: /bearbeiten/ }).click()
   const sheet = page.getByTestId('child-sheet')
   await sheet.getByTestId('notice-add').click()
   await sheet.getByTestId('notice-reason-sick').click()
   await sheet.getByTestId('notice-save').click()
   await expect(sheet.getByTestId('sheet-notice')).toContainText('Krank')
   await page.keyboard.press('Escape')
-  await expect(card('Carla Christ')).toHaveAttribute('data-status', 'absent')
-  await expect(card('Carla Christ').getByTestId('att-state')).toHaveText('Krank')
+  await expect(card('Carla C.')).toHaveAttribute('data-status', 'absent')
+  await expect(card('Carla C.').getByTestId('att-state')).toHaveText('Krank')
 
   // Evakuierung: nur Anna (Ben ist gegangen) und die eingestempelte Mitarbeiterin, ohne Stempelzeit.
   await page.getByTestId('att-evacuation').click()
   await page.waitForURL('**/attendance/evacuation')
   await expect(page.getByTestId('evac-total')).toHaveText('2')
-  await expect(page.getByText('Anna Adler')).toBeVisible()
-  await expect(page.getByText('Ben Bär')).toHaveCount(0)
+  await expect(page.getByText('Anna A.')).toBeVisible()
+  await expect(page.getByText('Ben B.')).toHaveCount(0)
   const staffRow = page.getByTestId(`evac-staff-${empId}`)
   await expect(staffRow).toHaveText(staffName)
-  await page.getByText('Anna Adler').click()
+  await page.getByText('Anna A.').click()
   await staffRow.click()
   await expect(page.getByTestId('evac-done')).toHaveText('2')
 
@@ -116,4 +121,25 @@ test('Gruppenaccount hakt Kinder ab, meldet Fehlen und prüft bei Evakuierung al
   const token = await page.evaluate(() => localStorage.getItem('nfc_token'))
   const denied = await request.get('/api/v1/me/times', { headers: authHeaders(token!) })
   expect(denied.status()).toBe(403)
+})
+
+test('Leitung stellt die Löschfristen der Anwesenheitsliste ein', async ({ page, request }) => {
+  const admin = await apiSession(request, E2E_ADMIN_USER, E2E_ADMIN_PASSWORD)
+  await useSession(page, admin, '/attendance/manage')
+  const box = page.getByTestId('manage-retention')
+  await expect(box.getByText('Datenschutz: Löschfristen')).toBeVisible()
+  await expect(page.getByTestId('ret-times')).toHaveValue('3')
+  await expect(page.getByTestId('ret-save')).toBeDisabled()
+  await page.getByTestId('ret-notices').fill('6')
+  await page.getByTestId('ret-save').click()
+  await expect(page.getByText('Löschfristen gespeichert')).toBeVisible()
+  await page.reload()
+  await expect(page.getByTestId('ret-notices')).toHaveValue('6')
+
+  // Zurücksetzen, damit andere Tests die Standardfristen sehen.
+  const res = await request.put('/api/v1/children/retention', {
+    headers: authHeaders(admin.token),
+    data: { times_months: 3, notice_weeks: 4, inactive_months: 3 },
+  })
+  expect(res.ok()).toBeTruthy()
 })

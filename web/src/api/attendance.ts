@@ -48,6 +48,8 @@ export interface AttendanceAccess {
   default_group_id: number
   is_group_account: boolean
   today: string
+  /** Ältester Tag, dessen Kommen/Gehen noch gespeichert ist (Löschfrist) */
+  oldest_day: string
 }
 
 export interface EvacuationData {
@@ -63,6 +65,27 @@ export interface Child {
   first_name: string
   last_name: string
   active: boolean
+  /** Geburtsmonat YYYY-MM (ohne Tag) */
+  birth_month: string | null
+  /** Abmeldung (RFC 3339); nach der Löschfrist wird das Kind samt Daten gelöscht */
+  deactivated_at: string | null
+}
+
+/** Löschfristen der Anwesenheitsliste */
+export interface ChildRetention {
+  times_months: number
+  notice_weeks: number
+  inactive_months: number
+}
+
+export async function fetchChildRetention() {
+  const { data } = await api.get<ChildRetention>('/children/retention')
+  return data
+}
+
+export async function putChildRetention(input: ChildRetention) {
+  const { data } = await api.put<ChildRetention>('/children/retention', input)
+  return data
 }
 
 export interface GroupAccount {
@@ -115,12 +138,12 @@ export async function fetchChildren() {
   return data
 }
 
-export async function createChild(input: { group_id: number; first_name: string; last_name: string }) {
+export async function createChild(input: { group_id: number; first_name: string; last_name: string; birth_month?: string }) {
   const { data } = await api.post<Child>('/children', input)
   return data
 }
 
-export async function patchChild(id: number, input: Partial<Omit<Child, 'id'>>) {
+export async function patchChild(id: number, input: Partial<Omit<Child, 'id' | 'birth_month'>> & { birth_month?: string }) {
   const { data } = await api.patch<Child>(`/children/${id}`, input)
   return data
 }
@@ -178,7 +201,8 @@ export function noticeFullDay(n: ChildNotice): boolean {
 }
 
 export function childName(c: { first_name: string; last_name: string }): string {
-  return c.last_name ? `${c.first_name} ${c.last_name}` : c.first_name
+  // Vom Nachnamen speichert der Server nur den Anfangsbuchstaben.
+  return c.last_name ? `${c.first_name} ${c.last_name}.` : c.first_name
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -209,4 +233,23 @@ export function shortDay(ymd: string): string {
 export function rangeLabel(from: string, to: string): string {
   if (from === to) return shortDay(from)
   return `${shortDay(from)} – ${shortDay(to)}`
+}
+
+/** Alter in vollen Monaten am Tag ymd aus dem Geburtsmonat (YYYY-MM); null ohne Angabe. */
+export function ageMonths(birthMonth: string | null | undefined, ymd: string): number | null {
+  if (!birthMonth) return null
+  const [by, bm] = birthMonth.split('-').map(Number)
+  const [y, m] = ymd.split('-').map(Number)
+  const months = y! * 12 + m! - (by! * 12 + bm!)
+  return months >= 0 ? months : null
+}
+
+/** „2 J. 5 M.“ bzw. „7 M.“ */
+export function ageLabel(birthMonth: string | null | undefined, ymd: string): string {
+  const months = ageMonths(birthMonth, ymd)
+  if (months == null) return ''
+  const y = Math.floor(months / 12)
+  const m = months % 12
+  if (!y) return `${m} M.`
+  return m ? `${y} J. ${m} M.` : `${y} J.`
 }

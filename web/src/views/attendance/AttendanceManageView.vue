@@ -5,17 +5,22 @@ import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 
 import {
+  ageLabel,
   childName,
+  localYmd,
   createChild,
   createGroupAccount,
   deleteChild,
   deleteGroupAccount,
   fetchChildren,
+  fetchChildRetention,
   fetchGroupAccounts,
   patchChild,
   patchGroupAccount,
+  putChildRetention,
   resetGroupAccountPassword,
   type Child,
+  type ChildRetention,
   type GroupAccount,
 } from '@/api/attendance'
 import { fetchGroups } from '@/api/groups'
@@ -31,14 +36,21 @@ const groups = ref<UserGroup[]>([])
 const children = ref<Child[]>([])
 const accounts = ref<GroupAccount[]>([])
 const loading = ref(true)
+const retention = ref<ChildRetention>({ times_months: 3, notice_weeks: 4, inactive_months: 3 })
+const retentionSaved = ref<ChildRetention | null>(null)
+const savingRetention = ref(false)
 
 async function load() {
   try {
-    ;[groups.value, children.value, accounts.value] = await Promise.all([
+    let r: ChildRetention
+    ;[groups.value, children.value, accounts.value, r] = await Promise.all([
       fetchGroups(),
       fetchChildren(),
       fetchGroupAccounts(),
+      fetchChildRetention(),
     ])
+    retention.value = { ...r }
+    retentionSaved.value = r
   } catch (e) {
     fail('Laden fehlgeschlagen', e)
   } finally {
@@ -57,7 +69,7 @@ function childrenOf(gid: number) {
 }
 const inactiveCount = computed(() => children.value.filter((c) => !c.active).length)
 
-/** Eingabe je Gruppe: eine Zeile pro Kind, „Vorname Nachname“. */
+/** Eingabe je Gruppe: eine Zeile pro Kind, „Vorname N.“; vom Nachnamen bleibt nur der Anfangsbuchstabe. */
 const addText = ref<Record<number, string>>({})
 const adding = ref<number | null>(null)
 
@@ -93,17 +105,25 @@ const editId = ref<number | null>(null)
 const eFirst = ref('')
 const eLast = ref('')
 const eGroup = ref(0)
+const eBirth = ref('')
+const todayYmd = localYmd()
 
 function startEdit(c: Child) {
   editId.value = c.id
   eFirst.value = c.first_name
   eLast.value = c.last_name
   eGroup.value = c.group_id
+  eBirth.value = c.birth_month ?? ''
 }
 
 async function saveEdit(c: Child) {
   try {
-    const u = await patchChild(c.id, { first_name: eFirst.value, last_name: eLast.value, group_id: eGroup.value })
+    const u = await patchChild(c.id, {
+      first_name: eFirst.value,
+      last_name: eLast.value,
+      group_id: eGroup.value,
+      birth_month: eBirth.value,
+    })
     Object.assign(c, u)
     editId.value = null
   } catch (e) {
@@ -188,6 +208,35 @@ async function removeAccount(a: GroupAccount) {
   }
 }
 
+const retentionDirty = computed(
+  () =>
+    !!retentionSaved.value &&
+    (Object.keys(retention.value) as (keyof ChildRetention)[]).some((k) => retention.value[k] !== retentionSaved.value![k]),
+)
+
+async function saveRetention() {
+  savingRetention.value = true
+  try {
+    const r = await putChildRetention(retention.value)
+    retention.value = { ...r }
+    retentionSaved.value = r
+    toast.add({ severity: 'success', summary: 'Löschfristen gespeichert', life: 2500 })
+  } catch (e) {
+    fail('Nicht gespeichert', e)
+  } finally {
+    savingRetention.value = false
+  }
+}
+
+/** „wird am 10.01.2027 gelöscht“ für abgemeldete Kinder. */
+function deleteOn(c: Child): string {
+  if (c.active || !c.deactivated_at || !retentionSaved.value) return ''
+  const d = new Date(c.deactivated_at)
+  d.setMonth(d.getMonth() + retentionSaved.value.inactive_months)
+  d.setDate(d.getDate() + 1)
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
 async function copyPassword() {
   if (!shownPassword.value) return
   const ok = await copyTextToClipboard(shownPassword.value.password)
@@ -220,7 +269,24 @@ async function copyPassword() {
               <template v-if="editId === c.id">
                 <div class="edit">
                   <input v-model="eFirst" type="text" placeholder="Vorname" aria-label="Vorname" />
-                  <input v-model="eLast" type="text" placeholder="Nachname" aria-label="Nachname" />
+                  <input
+                    v-model="eLast"
+                    type="text"
+                    maxlength="2"
+                    placeholder="Nachname (Anfangsbuchstabe)"
+                    aria-label="Anfangsbuchstabe Nachname"
+                  />
+                  <label class="birth">
+                    <span>Geburtsmonat</span>
+                    <input
+                      v-model="eBirth"
+                      type="month"
+                      min="2000-01"
+                      :max="todayYmd.slice(0, 7)"
+                      aria-label="Geburtsmonat"
+                      data-testid="manage-birth"
+                    />
+                  </label>
                   <select v-model.number="eGroup" aria-label="Gruppe">
                     <option v-for="og in groups" :key="og.id" :value="og.id">{{ og.name }}</option>
                   </select>
@@ -233,11 +299,22 @@ async function copyPassword() {
                 </div>
               </template>
               <template v-else>
-                <span class="kid-name">{{ childName(c) }}<em v-if="!c.active"> · abgemeldet</em></span>
+                <span class="kid-name"
+                  >{{ childName(c)
+                  }}<small v-if="c.birth_month" class="age"> {{ ageLabel(c.birth_month, todayYmd) }}</small
+                  ><small v-else-if="c.active" class="age missing"> Geburtsmonat fehlt</small
+                  ><em v-if="!c.active">
+                    · abgemeldet<template v-if="deleteOn(c)">, wird am {{ deleteOn(c) }} gelöscht</template></em
+                  ></span
+                >
                 <button
                   type="button"
                   class="link"
-                  :title="c.active ? 'Kind erscheint nicht mehr in der Liste, Daten bleiben' : 'Wieder anmelden'"
+                  :title="
+                    c.active
+                      ? `Kind erscheint nicht mehr in der Liste und wird nach ${retention.inactive_months} Monaten mit allen Daten gelöscht`
+                      : 'Wieder anmelden'
+                  "
                   @click="toggleActive(c)"
                 >
                   {{ c.active ? 'Abmelden' : 'Anmelden' }}
@@ -252,7 +329,7 @@ async function copyPassword() {
             <textarea
               v-model="addText[g.id]"
               rows="2"
-              placeholder="Kinder hinzufügen: eine Zeile pro Kind, z. B. „Mia Schulz“"
+              placeholder="Kinder hinzufügen: eine Zeile pro Kind, z. B. „Mia S.“ (vom Nachnamen nur der Anfangsbuchstabe)"
               :data-testid="`manage-add-${g.id}`"
             />
             <Button
@@ -310,6 +387,47 @@ async function copyPassword() {
             </div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section v-if="!loading" class="group retention" data-testid="manage-retention">
+      <h2>Datenschutz: Löschfristen</h2>
+      <p class="muted small">
+        Die App löscht diese Daten täglich automatisch. Vorher werden Kommen und Gehen zu anonymen Zahlen je Gruppe und
+        halber Stunde zusammengefasst, die für die Dienstplanung erhalten bleiben.
+      </p>
+      <div class="ret-grid">
+        <label>
+          <span>Kommen und Gehen</span>
+          <span class="ret-input">
+            <input v-model.number="retention.times_months" type="number" min="1" max="24" data-testid="ret-times" />
+            Monate
+          </span>
+        </label>
+        <label>
+          <span>Fehlmeldungen nach ihrem letzten Tag</span>
+          <span class="ret-input">
+            <input v-model.number="retention.notice_weeks" type="number" min="1" max="52" data-testid="ret-notices" />
+            Wochen
+          </span>
+        </label>
+        <label>
+          <span>Abgemeldete Kinder mit allen Daten</span>
+          <span class="ret-input">
+            <input v-model.number="retention.inactive_months" type="number" min="1" max="24" data-testid="ret-inactive" />
+            Monate
+          </span>
+        </label>
+      </div>
+      <div class="ret-btns">
+        <Button
+          label="Speichern"
+          size="small"
+          :disabled="!retentionDirty"
+          :loading="savingRetention"
+          data-testid="ret-save"
+          @click="saveRetention"
+        />
       </div>
     </section>
   </div>
@@ -380,6 +498,22 @@ async function copyPassword() {
   font-style: normal;
   font-size: 0.8rem;
 }
+.age {
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-left: 0.3rem;
+}
+.age.missing {
+  color: #b45309;
+}
+.birth {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: #475569;
+}
 .link {
   border: none;
   background: transparent;
@@ -403,7 +537,7 @@ async function copyPassword() {
 .edit {
   width: 100%;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 0.7fr 1.4fr 1fr;
   gap: 0.4rem;
 }
 .edit-btns {
@@ -415,6 +549,7 @@ async function copyPassword() {
   flex: 1;
 }
 input[type='text'],
+input[type='month'],
 select,
 textarea {
   font: inherit;
@@ -493,7 +628,41 @@ textarea {
   font-size: 0.82rem;
   margin: 0;
 }
+.ret-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+.ret-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: #334155;
+}
+.ret-input {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #64748b;
+}
+.ret-input input {
+  width: 5rem;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+.ret-btns {
+  display: flex;
+  justify-content: flex-end;
+}
 @media (max-width: 768px) {
+  .ret-grid {
+    grid-template-columns: 1fr;
+  }
   .cols {
     grid-template-columns: 1fr;
   }

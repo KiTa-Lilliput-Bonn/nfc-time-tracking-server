@@ -17,6 +17,7 @@ import (
 	"nfc-time-tracking-server/internal/model"
 	authsvc "nfc-time-tracking-server/internal/service/auth"
 	"nfc-time-tracking-server/internal/service/backup"
+	"nfc-time-tracking-server/internal/service/childretention"
 	"nfc-time-tracking-server/internal/service/compensationday"
 	"nfc-time-tracking-server/internal/service/export"
 	"nfc-time-tracking-server/internal/service/holidaysync"
@@ -225,6 +226,24 @@ func main() {
 		}
 		return a.Active, a.SessionVersion, nil
 	})
+	// Datenschutz: Kinderdaten nach den Löschfristen entfernen (beim Start und täglich).
+	childRetention := &childretention.Service{Settings: settings, Attendance: attendance, Audit: auditLog}
+	go func() {
+		run := func() {
+			res, err := childRetention.Run(context.Background())
+			if err != nil {
+				log.Printf("child data retention: %v", err)
+			} else if res.AttendanceDays+res.Notices+res.Children > 0 {
+				log.Printf("child data retention: %d Anwesenheitstage, %d Meldungen, %d Kinder gelöscht", res.AttendanceDays, res.Notices, res.Children)
+			}
+		}
+		run()
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			run()
+		}
+	}()
 	oidcService, err := oidcsvc.New(cfg.Auth.OIDC)
 	if err != nil {
 		log.Fatalf("SSO-Konfiguration: %v", err)

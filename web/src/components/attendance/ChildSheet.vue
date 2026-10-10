@@ -289,6 +289,7 @@ const REASONS: ChildNoticeReason[] = ['sick', 'vacation', 'other']
             <label class="one">
               <span>Notiz (optional)</span>
               <input v-model="fNote" type="text" maxlength="500" placeholder="z. B. Arzttermin" />
+              <small class="note-hint">Bitte keine Diagnosen oder Krankheiten eintragen.</small>
             </label>
             <div class="btns">
               <Button label="Abbrechen" severity="secondary" text size="small" @click="editing = null" />
@@ -371,6 +372,10 @@ const REASONS: ChildNoticeReason[] = ['sick', 'vacation', 'other']
 .block h3 {
   margin: 0 0 0.6rem;
   font-size: 0.95rem;
+}
+.note-hint {
+  font-size: 0.75rem;
+  color: #64748b;
 }
 .hint {
   margin: -0.3rem 0 0.6rem;

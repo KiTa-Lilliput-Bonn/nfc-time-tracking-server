@@ -10,20 +10,34 @@ import (
 // Benutzertabelle, haben keine Arbeitszeiten und sehen nur die Anwesenheitsliste ihrer Gruppe.
 const RoleGroupAccount = "gruppe"
 
-// Child ist ein Kind in einer Gruppe (für die Anwesenheitsliste). Inaktive Kinder (abgemeldet)
-// erscheinen nicht mehr in der Liste, ihre Daten bleiben bis zum Löschen erhalten.
+// Child ist ein Kind in einer Gruppe (für die Anwesenheitsliste). Vom Nachnamen wird nur der
+// Anfangsbuchstabe gespeichert. Inaktive Kinder (abgemeldet)
+// erscheinen nicht mehr in der Liste; nach der Löschfrist ab DeactivatedAt werden sie samt Daten gelöscht.
 type Child struct {
 	ID        int    `json:"id"`
 	GroupID   int    `json:"group_id"`
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Active    bool   `json:"active"`
+	// BirthMonth: Geburtsmonat YYYY-MM (ohne Tag); nil = nicht angegeben.
+	BirthMonth *string `json:"birth_month"`
+	// DeactivatedAt: Zeitpunkt der Abmeldung (RFC 3339, UTC); nil solange aktiv.
+	DeactivatedAt *string `json:"deactivated_at"`
 }
 
-// Validate normalisiert die Namen und prüft Pflichtfelder.
+// LastNameInitial kürzt einen Nachnamen auf den ersten Buchstaben (Datensparsamkeit: „Finn D.“).
+func LastNameInitial(s string) string {
+	s = strings.TrimSpace(s)
+	for _, r := range s {
+		return strings.ToUpper(string(r))
+	}
+	return ""
+}
+
+// Validate normalisiert die Namen (Nachname nur als Anfangsbuchstabe) und prüft Pflichtfelder.
 func (c *Child) Validate() error {
 	c.FirstName = strings.TrimSpace(c.FirstName)
-	c.LastName = strings.TrimSpace(c.LastName)
+	c.LastName = LastNameInitial(c.LastName)
 	if c.FirstName == "" {
 		return fmt.Errorf("first_name required")
 	}
@@ -32,6 +46,12 @@ func (c *Child) Validate() error {
 	}
 	if c.GroupID <= 0 {
 		return fmt.Errorf("group_id required")
+	}
+	if c.BirthMonth != nil {
+		t, err := time.Parse("2006-01", *c.BirthMonth)
+		if err != nil || t.Year() < 2000 {
+			return fmt.Errorf("invalid birth_month")
+		}
 	}
 	return nil
 }

@@ -333,6 +333,10 @@ export interface BackupStatus {
   folder_picker_available: boolean
   last_success_utc: string
   last_error: string
+  /** Aufbewahrung alter Backups (0 = diese Stufe aus; alle 0 = nichts löschen) */
+  keep_daily: number
+  keep_weekly: number
+  keep_monthly: number
 }
 
 /** Gepaarter Device-/LAN-API-Client (Secret nur für Superadmin). */

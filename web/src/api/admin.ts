@@ -92,6 +92,9 @@ export async function putBackupConfig(body: {
   interval_minutes: number
   use_restic: boolean
   target_path: string
+  keep_daily?: number
+  keep_weekly?: number
+  keep_monthly?: number
 }) {
   const { data } = await api.put<BackupStatus>('/admin/backup/config', body)
   return data
