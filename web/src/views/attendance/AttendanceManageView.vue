@@ -67,7 +67,7 @@ function childrenOf(gid: number) {
 }
 const inactiveCount = computed(() => children.value.filter((c) => !c.active).length)
 
-/** Eingabe je Gruppe: eine Zeile pro Kind, „Vorname Nachname“. */
+/** Eingabe je Gruppe: eine Zeile pro Kind, „Vorname N.“; vom Nachnamen bleibt nur der Anfangsbuchstabe. */
 const addText = ref<Record<number, string>>({})
 const adding = ref<number | null>(null)
 
@@ -259,7 +259,13 @@ async function copyPassword() {
               <template v-if="editId === c.id">
                 <div class="edit">
                   <input v-model="eFirst" type="text" placeholder="Vorname" aria-label="Vorname" />
-                  <input v-model="eLast" type="text" placeholder="Nachname" aria-label="Nachname" />
+                  <input
+                    v-model="eLast"
+                    type="text"
+                    maxlength="2"
+                    placeholder="Nachname (Anfangsbuchstabe)"
+                    aria-label="Anfangsbuchstabe Nachname"
+                  />
                   <select v-model.number="eGroup" aria-label="Gruppe">
                     <option v-for="og in groups" :key="og.id" :value="og.id">{{ og.name }}</option>
                   </select>
@@ -300,7 +306,7 @@ async function copyPassword() {
             <textarea
               v-model="addText[g.id]"
               rows="2"
-              placeholder="Kinder hinzufügen: eine Zeile pro Kind, z. B. „Mia Schulz“"
+              placeholder="Kinder hinzufügen: eine Zeile pro Kind, z. B. „Mia S.“ (vom Nachnamen nur der Anfangsbuchstabe)"
               :data-testid="`manage-add-${g.id}`"
             />
             <Button

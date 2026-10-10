@@ -4,6 +4,9 @@
 ALTER TABLE children ADD COLUMN deactivated_at TEXT;
 UPDATE children SET deactivated_at = updated_at WHERE active = 0;
 
+-- Datensparsamkeit: vom Nachnamen nur den Anfangsbuchstaben behalten („Finn D.“).
+UPDATE children SET last_name = upper(substr(trim(last_name), 1, 1)) WHERE last_name != '';
+
 -- Anonyme Zahlen, die vor dem Löschen von Kommen/Gehen gebildet werden (für die Dienstplanung):
 -- Kinder je Gruppe, Tag und halber Stunde (slot = Beginn HH:MM); slot '' = Kinder, die an dem Tag da waren.
 CREATE TABLE child_attendance_stats (

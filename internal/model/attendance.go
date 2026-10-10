@@ -10,7 +10,8 @@ import (
 // Benutzertabelle, haben keine Arbeitszeiten und sehen nur die Anwesenheitsliste ihrer Gruppe.
 const RoleGroupAccount = "gruppe"
 
-// Child ist ein Kind in einer Gruppe (für die Anwesenheitsliste). Inaktive Kinder (abgemeldet)
+// Child ist ein Kind in einer Gruppe (für die Anwesenheitsliste). Vom Nachnamen wird nur der
+// Anfangsbuchstabe gespeichert. Inaktive Kinder (abgemeldet)
 // erscheinen nicht mehr in der Liste; nach der Löschfrist ab DeactivatedAt werden sie samt Daten gelöscht.
 type Child struct {
 	ID        int    `json:"id"`
@@ -22,10 +23,19 @@ type Child struct {
 	DeactivatedAt *string `json:"deactivated_at"`
 }
 
-// Validate normalisiert die Namen und prüft Pflichtfelder.
+// LastNameInitial kürzt einen Nachnamen auf den ersten Buchstaben (Datensparsamkeit: „Finn D.“).
+func LastNameInitial(s string) string {
+	s = strings.TrimSpace(s)
+	for _, r := range s {
+		return strings.ToUpper(string(r))
+	}
+	return ""
+}
+
+// Validate normalisiert die Namen (Nachname nur als Anfangsbuchstabe) und prüft Pflichtfelder.
 func (c *Child) Validate() error {
 	c.FirstName = strings.TrimSpace(c.FirstName)
-	c.LastName = strings.TrimSpace(c.LastName)
+	c.LastName = LastNameInitial(c.LastName)
 	if c.FirstName == "" {
 		return fmt.Errorf("first_name required")
 	}

@@ -199,7 +199,8 @@ export function noticeFullDay(n: ChildNotice): boolean {
 }
 
 export function childName(c: { first_name: string; last_name: string }): string {
-  return c.last_name ? `${c.first_name} ${c.last_name}` : c.first_name
+  // Vom Nachnamen speichert der Server nur den Anfangsbuchstaben.
+  return c.last_name ? `${c.first_name} ${c.last_name}.` : c.first_name
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
