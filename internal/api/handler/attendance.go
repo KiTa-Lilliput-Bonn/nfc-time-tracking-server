@@ -16,6 +16,7 @@ import (
 	"nfc-time-tracking-server/internal/audit"
 	"nfc-time-tracking-server/internal/model"
 	authsvc "nfc-time-tracking-server/internal/service/auth"
+	"nfc-time-tracking-server/internal/service/childretention"
 	"nfc-time-tracking-server/internal/store"
 )
 
@@ -28,7 +29,16 @@ type AttendanceHandler struct {
 	Kibiz      store.KibizStore
 	Auth       *authsvc.Service
 	Audit      *audit.Logger
-	Now        func() time.Time
+	// Settings: Löschfristen (childretention); nil = Standardfristen.
+	Settings store.SettingsStore
+	Now      func() time.Time
+}
+
+func (h *AttendanceHandler) retention(r *http.Request) childretention.Config {
+	if h.Settings == nil {
+		return childretention.Default
+	}
+	return childretention.ReadConfig(r.Context(), h.Settings)
 }
 
 func (h *AttendanceHandler) now() time.Time {
@@ -147,6 +157,8 @@ func (h *AttendanceHandler) Access(w http.ResponseWriter, r *http.Request) {
 		"default_group_id": a.defaultGroupID,
 		"is_group_account": a.groupAccountID != 0,
 		"today":            h.today(),
+		// Ältere Tage sind nach der Löschfrist gelöscht und lassen sich nicht mehr bearbeiten.
+		"oldest_day": h.retention(r).TimesFrom(h.now()),
 	})
 }
 
@@ -293,6 +305,10 @@ func (h *AttendanceHandler) PutDay(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, "Kommen und Gehen lassen sich nicht für künftige Tage eintragen.")
 		return
 	}
+	if date < h.retention(r).TimesFrom(h.now()) {
+		response.Error(w, http.StatusBadRequest, "Dieser Tag liegt hinter der Löschfrist und wird nicht mehr gespeichert.")
+		return
+	}
 	var body struct {
 		ArrivedAt *string `json:"arrived_at"`
 		LeftAt    *string `json:"left_at"`
@@ -372,6 +388,10 @@ func (h *AttendanceHandler) decodeNotice(w http.ResponseWriter, r *http.Request,
 			msg = "Der Zeitraum darf höchstens ein Jahr lang sein."
 		}
 		response.Error(w, http.StatusBadRequest, msg)
+		return false
+	}
+	if n.DateTo < h.retention(r).NoticesFrom(h.now()) {
+		response.Error(w, http.StatusBadRequest, "Diese Meldung liegt hinter der Löschfrist und wird nicht mehr gespeichert.")
 		return false
 	}
 	return true
@@ -867,4 +887,30 @@ func groupAccountNameTaken(r *http.Request, accounts store.AttendanceStore, name
 	}
 	_, err := accounts.GetGroupAccountByUsername(r.Context(), name)
 	return err == nil
+}
+
+// GetRetention liefert die Löschfristen (GET /children/retention).
+func (h *AttendanceHandler) GetRetention(w http.ResponseWriter, r *http.Request) {
+	response.JSON(w, http.StatusOK, h.retention(r))
+}
+
+// PutRetention speichert die Löschfristen (PUT /children/retention).
+func (h *AttendanceHandler) PutRetention(w http.ResponseWriter, r *http.Request) {
+	if h.Settings == nil {
+		response.Error(w, http.StatusServiceUnavailable, "settings unavailable")
+		return
+	}
+	var c childretention.Config
+	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := childretention.SaveConfig(r.Context(), h.Settings, c); err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.audit(r, audit.ActionUpdate, audit.EntityChildRetention, "config", map[string]any{
+		"times_months": c.TimesMonths, "notice_weeks": c.NoticeWeeks, "inactive_months": c.InactiveMonths,
+	})
+	response.JSON(w, http.StatusOK, c)
 }

@@ -110,6 +110,7 @@ func (s *GroupStore) Delete(ctx context.Context, id int) error {
 		`DELETE FROM child_patterns WHERE group_id = ?`,
 		`DELETE FROM child_count_days WHERE group_id = ?`,
 		`DELETE FROM group_accounts WHERE group_id = ?`,
+		`DELETE FROM child_attendance_stats WHERE group_id = ?`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, id); err != nil {
 			return fmt.Errorf("clear group cash: %w", err)

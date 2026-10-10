@@ -43,6 +43,7 @@ const (
 	EntityChildAttendance      = "child_attendance"
 	EntityChildNotice          = "child_notice"
 	EntityGroupAccount         = "group_account"
+	EntityChildRetention       = "child_retention"
 )
 
 // Event is a persisted audit log row.

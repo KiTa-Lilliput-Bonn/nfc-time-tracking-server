@@ -37,7 +37,7 @@ func clockPtr(v sql.NullString) *string {
 
 // ListChildren liefert die Kinder sortiert nach Vorname, Nachname.
 func (s *AttendanceStore) ListChildren(ctx context.Context, includeInactive bool) ([]model.Child, error) {
-	q := `SELECT id, group_id, first_name, last_name, active FROM children`
+	q := `SELECT ` + childCols + ` FROM children`
 	if !includeInactive {
 		q += ` WHERE active = 1`
 	}
@@ -49,25 +49,34 @@ func (s *AttendanceStore) ListChildren(ctx context.Context, includeInactive bool
 	defer rows.Close()
 	out := []model.Child{}
 	for rows.Next() {
-		var c model.Child
-		if err := rows.Scan(&c.ID, &c.GroupID, &c.FirstName, &c.LastName, &c.Active); err != nil {
+		c, err := scanChild(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, c)
+		out = append(out, *c)
 	}
 	return out, rows.Err()
 }
 
 func (s *AttendanceStore) GetChild(ctx context.Context, id int) (*model.Child, error) {
-	var c model.Child
-	err := s.db.DB.QueryRowContext(ctx,
-		`SELECT id, group_id, first_name, last_name, active FROM children WHERE id = ?`, id).
-		Scan(&c.ID, &c.GroupID, &c.FirstName, &c.LastName, &c.Active)
+	c, err := scanChild(s.db.DB.QueryRowContext(ctx, `SELECT `+childCols+` FROM children WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
-	if err != nil {
+	return c, err
+}
+
+const childCols = `id, group_id, first_name, last_name, active, deactivated_at`
+
+func scanChild(row interface{ Scan(...any) error }) (*model.Child, error) {
+	var c model.Child
+	var deact sql.NullString
+	if err := row.Scan(&c.ID, &c.GroupID, &c.FirstName, &c.LastName, &c.Active, &deact); err != nil {
 		return nil, err
+	}
+	if deact.Valid && deact.String != "" {
+		v := deact.String
+		c.DeactivatedAt = &v
 	}
 	return &c, nil
 }
@@ -88,15 +97,25 @@ func (s *AttendanceStore) CreateChild(ctx context.Context, c *model.Child) error
 	return nil
 }
 
+// UpdateChild speichert das Kind; beim Abmelden wird der Zeitpunkt gemerkt (Beginn der Löschfrist),
+// beim Wieder-Anmelden entfernt.
 func (s *AttendanceStore) UpdateChild(ctx context.Context, c *model.Child) error {
+	now := nowText()
 	res, err := s.db.DB.ExecContext(ctx,
-		`UPDATE children SET group_id = ?, first_name = ?, last_name = ?, active = ?, updated_at = ? WHERE id = ?`,
-		c.GroupID, c.FirstName, c.LastName, c.Active, nowText(), c.ID)
+		`UPDATE children SET group_id = ?, first_name = ?, last_name = ?, active = ?, updated_at = ?,
+		 deactivated_at = CASE WHEN ? THEN NULL ELSE COALESCE(deactivated_at, ?) END
+		 WHERE id = ?`,
+		c.GroupID, c.FirstName, c.LastName, c.Active, now, c.Active, now, c.ID)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return store.ErrNotFound
+	}
+	if c.Active {
+		c.DeactivatedAt = nil
+	} else if c.DeactivatedAt == nil {
+		c.DeactivatedAt = &now
 	}
 	return nil
 }
@@ -373,4 +392,150 @@ func (s *AttendanceStore) SetGroupAccountPassword(ctx context.Context, id int, h
 func (s *AttendanceStore) DeleteGroupAccount(ctx context.Context, id int) error {
 	_, err := s.db.DB.ExecContext(ctx, `DELETE FROM group_accounts WHERE id = ?`, id)
 	return err
+}
+
+// PurgeChildData löscht Kinderdaten nach den Löschfristen. Kommen/Gehen wird vorher anonym gezählt
+// (Kinder je Gruppe, Tag und halber Stunde) und zu child_attendance_stats addiert. Da Zählen und Löschen
+// in einer Transaktion geschehen, wird jeder Eintrag genau einmal gezählt.
+func (s *AttendanceStore) PurgeChildData(ctx context.Context, p store.ChildPurge) (store.ChildPurgeResult, error) {
+	var res store.ChildPurgeResult
+	tx, err := s.db.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return res, err
+	}
+	defer tx.Rollback()
+
+	// Abgemeldete Kinder nach Ablauf der Frist.
+	var gone []int
+	rows, err := tx.QueryContext(ctx, `SELECT id, deactivated_at FROM children WHERE active = 0 AND deactivated_at IS NOT NULL`)
+	if err != nil {
+		return res, err
+	}
+	for rows.Next() {
+		var id int
+		var at string
+		if err := rows.Scan(&id, &at); err != nil {
+			rows.Close()
+			return res, err
+		}
+		if t := parseText(at); !t.IsZero() && t.Before(p.InactiveBefore) {
+			gone = append(gone, id)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return res, err
+	}
+	goneSet := map[int]bool{}
+	for _, id := range gone {
+		goneSet[id] = true
+	}
+
+	// Kommen/Gehen: alte Tage und alle Tage der zu löschenden Kinder.
+	type key struct {
+		group int
+		day   string
+		slot  string
+	}
+	counts := map[key]int{}
+	type rowKey struct {
+		child int
+		day   string
+	}
+	var drop []rowKey
+	rows, err = tx.QueryContext(ctx,
+		`SELECT a.child_id, c.group_id, a.day, a.arrived_at, a.left_at, c.active
+		 FROM child_attendance a JOIN children c ON c.id = a.child_id
+		 WHERE a.day < ? OR c.active = 0`, p.TimesBefore)
+	if err != nil {
+		return res, err
+	}
+	for rows.Next() {
+		var child, group int
+		var day string
+		var in, out sql.NullString
+		var active bool
+		if err := rows.Scan(&child, &group, &day, &in, &out, &active); err != nil {
+			rows.Close()
+			return res, err
+		}
+		if day >= p.TimesBefore && !goneSet[child] {
+			continue
+		}
+		drop = append(drop, rowKey{child, day})
+		if !in.Valid || in.String == "" {
+			continue
+		}
+		counts[key{group, day, ""}]++
+		for _, slot := range attendanceSlots(in.String, out.String) {
+			counts[key{group, day, slot}]++
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return res, err
+	}
+	for k, n := range counts {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO child_attendance_stats (group_id, day, slot, children) VALUES (?, ?, ?, ?)
+			 ON CONFLICT(group_id, day, slot) DO UPDATE SET children = children + excluded.children`,
+			k.group, k.day, k.slot, n); err != nil {
+			return res, err
+		}
+	}
+	for _, d := range drop {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM child_attendance WHERE child_id = ? AND day = ?`, d.child, d.day); err != nil {
+			return res, err
+		}
+	}
+	res.AttendanceDays = len(drop)
+
+	r, err := tx.ExecContext(ctx, `DELETE FROM child_notices WHERE date_to < ?`, p.NoticesBefore)
+	if err != nil {
+		return res, err
+	}
+	n, _ := r.RowsAffected()
+	res.Notices = int(n)
+	for _, id := range gone {
+		r, err := tx.ExecContext(ctx, `DELETE FROM child_notices WHERE child_id = ?`, id)
+		if err != nil {
+			return res, err
+		}
+		n, _ := r.RowsAffected()
+		res.Notices += int(n)
+		if _, err := tx.ExecContext(ctx, `DELETE FROM children WHERE id = ?`, id); err != nil {
+			return res, err
+		}
+	}
+	res.Children = len(gone)
+	return res, tx.Commit()
+}
+
+// attendanceSlots liefert die halben Stunden (Beginn HH:MM), in denen ein Kind von in bis out da war.
+// Ohne Gehen-Zeit zählt nur die halbe Stunde des Kommens.
+func attendanceSlots(in, out string) []string {
+	start, ok := clockMinutes(in)
+	if !ok {
+		return nil
+	}
+	end, ok := clockMinutes(out)
+	if !ok || end <= start {
+		end = start + 1
+	}
+	var slots []string
+	for m := start - start%30; m < end; m += 30 {
+		slots = append(slots, fmt.Sprintf("%02d:%02d", m/60, m%60))
+	}
+	return slots
+}
+
+func clockMinutes(s string) (int, bool) {
+	var h, m int
+	if len(s) != 5 {
+		return 0, false
+	}
+	if _, err := fmt.Sscanf(s, "%d:%d", &h, &m); err != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+		return 0, false
+	}
+	return h*60 + m, true
 }

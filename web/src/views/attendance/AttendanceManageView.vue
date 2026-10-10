@@ -11,11 +11,14 @@ import {
   deleteChild,
   deleteGroupAccount,
   fetchChildren,
+  fetchChildRetention,
   fetchGroupAccounts,
   patchChild,
   patchGroupAccount,
+  putChildRetention,
   resetGroupAccountPassword,
   type Child,
+  type ChildRetention,
   type GroupAccount,
 } from '@/api/attendance'
 import { fetchGroups } from '@/api/groups'
@@ -31,14 +34,21 @@ const groups = ref<UserGroup[]>([])
 const children = ref<Child[]>([])
 const accounts = ref<GroupAccount[]>([])
 const loading = ref(true)
+const retention = ref<ChildRetention>({ times_months: 3, notice_weeks: 4, inactive_months: 3 })
+const retentionSaved = ref<ChildRetention | null>(null)
+const savingRetention = ref(false)
 
 async function load() {
   try {
-    ;[groups.value, children.value, accounts.value] = await Promise.all([
+    let r: ChildRetention
+    ;[groups.value, children.value, accounts.value, r] = await Promise.all([
       fetchGroups(),
       fetchChildren(),
       fetchGroupAccounts(),
+      fetchChildRetention(),
     ])
+    retention.value = { ...r }
+    retentionSaved.value = r
   } catch (e) {
     fail('Laden fehlgeschlagen', e)
   } finally {
@@ -188,6 +198,35 @@ async function removeAccount(a: GroupAccount) {
   }
 }
 
+const retentionDirty = computed(
+  () =>
+    !!retentionSaved.value &&
+    (Object.keys(retention.value) as (keyof ChildRetention)[]).some((k) => retention.value[k] !== retentionSaved.value![k]),
+)
+
+async function saveRetention() {
+  savingRetention.value = true
+  try {
+    const r = await putChildRetention(retention.value)
+    retention.value = { ...r }
+    retentionSaved.value = r
+    toast.add({ severity: 'success', summary: 'Löschfristen gespeichert', life: 2500 })
+  } catch (e) {
+    fail('Nicht gespeichert', e)
+  } finally {
+    savingRetention.value = false
+  }
+}
+
+/** „wird am 10.01.2027 gelöscht“ für abgemeldete Kinder. */
+function deleteOn(c: Child): string {
+  if (c.active || !c.deactivated_at || !retentionSaved.value) return ''
+  const d = new Date(c.deactivated_at)
+  d.setMonth(d.getMonth() + retentionSaved.value.inactive_months)
+  d.setDate(d.getDate() + 1)
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
 async function copyPassword() {
   if (!shownPassword.value) return
   const ok = await copyTextToClipboard(shownPassword.value.password)
@@ -233,11 +272,20 @@ async function copyPassword() {
                 </div>
               </template>
               <template v-else>
-                <span class="kid-name">{{ childName(c) }}<em v-if="!c.active"> · abgemeldet</em></span>
+                <span class="kid-name"
+                  >{{ childName(c)
+                  }}<em v-if="!c.active">
+                    · abgemeldet<template v-if="deleteOn(c)">, wird am {{ deleteOn(c) }} gelöscht</template></em
+                  ></span
+                >
                 <button
                   type="button"
                   class="link"
-                  :title="c.active ? 'Kind erscheint nicht mehr in der Liste, Daten bleiben' : 'Wieder anmelden'"
+                  :title="
+                    c.active
+                      ? `Kind erscheint nicht mehr in der Liste und wird nach ${retention.inactive_months} Monaten mit allen Daten gelöscht`
+                      : 'Wieder anmelden'
+                  "
                   @click="toggleActive(c)"
                 >
                   {{ c.active ? 'Abmelden' : 'Anmelden' }}
@@ -310,6 +358,47 @@ async function copyPassword() {
             </div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section v-if="!loading" class="group retention" data-testid="manage-retention">
+      <h2>Datenschutz: Löschfristen</h2>
+      <p class="muted small">
+        Die App löscht diese Daten täglich automatisch. Vorher werden Kommen und Gehen zu anonymen Zahlen je Gruppe und
+        halber Stunde zusammengefasst, die für die Dienstplanung erhalten bleiben.
+      </p>
+      <div class="ret-grid">
+        <label>
+          <span>Kommen und Gehen</span>
+          <span class="ret-input">
+            <input v-model.number="retention.times_months" type="number" min="1" max="24" data-testid="ret-times" />
+            Monate
+          </span>
+        </label>
+        <label>
+          <span>Fehlmeldungen nach ihrem letzten Tag</span>
+          <span class="ret-input">
+            <input v-model.number="retention.notice_weeks" type="number" min="1" max="52" data-testid="ret-notices" />
+            Wochen
+          </span>
+        </label>
+        <label>
+          <span>Abgemeldete Kinder mit allen Daten</span>
+          <span class="ret-input">
+            <input v-model.number="retention.inactive_months" type="number" min="1" max="24" data-testid="ret-inactive" />
+            Monate
+          </span>
+        </label>
+      </div>
+      <div class="ret-btns">
+        <Button
+          label="Speichern"
+          size="small"
+          :disabled="!retentionDirty"
+          :loading="savingRetention"
+          data-testid="ret-save"
+          @click="saveRetention"
+        />
       </div>
     </section>
   </div>
@@ -493,7 +582,41 @@ textarea {
   font-size: 0.82rem;
   margin: 0;
 }
+.ret-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+.ret-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: #334155;
+}
+.ret-input {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #64748b;
+}
+.ret-input input {
+  width: 5rem;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+.ret-btns {
+  display: flex;
+  justify-content: flex-end;
+}
 @media (max-width: 768px) {
+  .ret-grid {
+    grid-template-columns: 1fr;
+  }
   .cols {
     grid-template-columns: 1fr;
   }

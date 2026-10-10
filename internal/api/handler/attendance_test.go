@@ -19,8 +19,9 @@ import (
 )
 
 type attFixture struct {
-	router  http.Handler
-	db      *sqlite.DB
+	router   http.Handler
+	db       *sqlite.DB
+	settings *sqlite.SettingsStore
 	store   *sqlite.AttendanceStore
 	mice    *model.Group
 	bears   *model.Group
@@ -48,7 +49,7 @@ func newAttFixture(t *testing.T) *attFixture {
 	users := sqlite.NewUserStore(db)
 	groups := sqlite.NewGroupStore(db)
 	kibiz := sqlite.NewKibizStore(db)
-	f := &attFixture{db: db, store: sqlite.NewAttendanceStore(db), usersBy: map[int]*model.User{}}
+	f := &attFixture{db: db, store: sqlite.NewAttendanceStore(db), settings: sqlite.NewSettingsStore(db), usersBy: map[int]*model.User{}}
 	f.lead = &model.User{Username: "ld", PasswordHash: "x", DisplayName: "Leitung", Role: model.RoleLeitung, Active: true}
 	f.fach = &model.User{Username: "fk", PasswordHash: "x", DisplayName: "Fachkraft", Role: model.RoleUser, Active: true}
 	f.noQual = &model.User{Username: "nq", PasswordHash: "x", DisplayName: "Ohne Kraft", Role: model.RoleUser, Active: true}
@@ -81,7 +82,7 @@ func newAttFixture(t *testing.T) *attFixture {
 		t.Fatal(err)
 	}
 	h := &AttendanceHandler{
-		Attendance: f.store, Groups: groups, Users: users, Kibiz: kibiz, Auth: authsvc.New("s", 8),
+		Attendance: f.store, Groups: groups, Users: users, Kibiz: kibiz, Auth: authsvc.New("s", 8), Settings: f.settings,
 		Now: func() time.Time { return time.Date(2026, 4, 15, 10, 0, 0, 0, time.Local) },
 	}
 	r := chi.NewRouter()
@@ -108,6 +109,8 @@ func newAttFixture(t *testing.T) *attFixture {
 	r.Post("/attendance/children/{id}/notices", h.CreateNotice)
 	r.Put("/attendance/notices/{noticeId}", h.UpdateNotice)
 	r.Delete("/attendance/notices/{noticeId}", h.DeleteNotice)
+	r.Get("/children/retention", h.GetRetention)
+	r.Put("/children/retention", h.PutRetention)
 	f.router = r
 	return f
 }

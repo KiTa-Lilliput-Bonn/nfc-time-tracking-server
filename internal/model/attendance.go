@@ -11,13 +11,15 @@ import (
 const RoleGroupAccount = "gruppe"
 
 // Child ist ein Kind in einer Gruppe (für die Anwesenheitsliste). Inaktive Kinder (abgemeldet)
-// erscheinen nicht mehr in der Liste, ihre Daten bleiben bis zum Löschen erhalten.
+// erscheinen nicht mehr in der Liste; nach der Löschfrist ab DeactivatedAt werden sie samt Daten gelöscht.
 type Child struct {
 	ID        int    `json:"id"`
 	GroupID   int    `json:"group_id"`
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Active    bool   `json:"active"`
+	// DeactivatedAt: Zeitpunkt der Abmeldung (RFC 3339, UTC); nil solange aktiv.
+	DeactivatedAt *string `json:"deactivated_at"`
 }
 
 // Validate normalisiert die Namen und prüft Pflichtfelder.

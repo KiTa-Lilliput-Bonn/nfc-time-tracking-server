@@ -52,6 +52,9 @@ const backupIntervalTooLow = computed(
 )
 const backupIntervalInvalid = computed(() => backupIntervalEmpty.value || backupIntervalTooLow.value)
 const backupUseRestic = ref(false)
+const backupKeepDaily = ref(14)
+const backupKeepWeekly = ref(8)
+const backupKeepMonthly = ref(6)
 const backupTargetPath = ref('')
 const backupLastSuccess = ref('')
 const backupLastError = ref('')
@@ -110,6 +113,9 @@ async function loadBackup() {
     backupEnabled.value = st.enabled
     backupIntervalMinutes.value = st.interval_minutes
     backupUseRestic.value = st.use_restic
+    backupKeepDaily.value = st.keep_daily
+    backupKeepWeekly.value = st.keep_weekly
+    backupKeepMonthly.value = st.keep_monthly
     backupTargetPath.value = st.target_path
     backupLastSuccess.value = st.last_success_utc
     backupLastError.value = st.last_error
@@ -229,6 +235,9 @@ async function saveBackupConfig() {
       interval_minutes: backupIntervalMinutes.value,
       use_restic: backupUseRestic.value,
       target_path: backupTargetPath.value,
+      keep_daily: backupKeepDaily.value ?? 0,
+      keep_weekly: backupKeepWeekly.value ?? 0,
+      keep_monthly: backupKeepMonthly.value ?? 0,
     })
     toast.add({ severity: 'success', summary: 'Backup', detail: 'Konfiguration gespeichert.', life: 8000 })
     await loadBackup()
@@ -446,7 +455,18 @@ function removeRule(i: number) {
               <Checkbox v-model="backupUseRestic" :binary="true" input-id="backup-r" />
               <label for="backup-r" class="chk-lbl">Verschlüsseltes restic-Repository (Zielpfad = Repo-Verzeichnis)</label>
             </div>
+            <label class="lbl">Alte Backups behalten</label>
+            <div class="keep-row" data-testid="backup-keep">
+              <span><InputNumber v-model="backupKeepDaily" :min="0" :max="400" input-class="keep-input" /> Tage täglich</span>
+              <span><InputNumber v-model="backupKeepWeekly" :min="0" :max="400" input-class="keep-input" /> Wochen wöchentlich</span>
+              <span><InputNumber v-model="backupKeepMonthly" :min="0" :max="400" input-class="keep-input" /> Monate monatlich</span>
+            </div>
           </div>
+          <p class="muted small">
+            Ältere Backups löscht der Server einmal am Tag, damit gelöschte Daten (z. B. der Anwesenheitsliste) nicht
+            unbegrenzt in Backups bleiben. Die Backups der letzten zwei Tage bleiben immer erhalten. Alle Werte 0 = nichts
+            löschen.
+          </p>
           <p class="muted small">
             restic-Binary: {{ backupResticBinaryPresent ? 'gefunden (tools/restic)' : 'nicht gefunden' }} · Repo
             initialisiert: {{ backupResticInitialized ? 'ja' : 'nein' }} · Passwort gespeichert:
@@ -575,6 +595,21 @@ function removeRule(i: number) {
 }
 .interval-hint {
   margin: 0.35rem 0 0;
+}
+.keep-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  font-size: 0.9rem;
+  color: #475569;
+}
+.keep-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.keep-row :deep(.keep-input) {
+  width: 4.5rem;
 }
 .chk-row {
   display: flex;

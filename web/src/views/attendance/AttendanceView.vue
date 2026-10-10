@@ -31,6 +31,8 @@ const loading = ref(false)
 const loadError = ref('')
 const date = ref(localYmd())
 const today = computed(() => day.value?.today ?? access.value?.today ?? localYmd())
+/** Ältere Tage sind nach der Löschfrist gelöscht. */
+const atOldest = computed(() => !!access.value?.oldest_day && date.value <= access.value.oldest_day)
 
 /** 0 = alle Gruppen. Start immer in der eigenen Gruppe (Gruppenaccount bzw. zugewiesene Gruppe). */
 const groupId = ref(0)
@@ -205,7 +207,15 @@ function actionLabel(c: AttendanceChild): string {
   <div class="att">
     <div class="bar">
       <div class="date-nav">
-        <button type="button" class="nav-btn" aria-label="Tag zurück" data-testid="att-prev" @click="shiftDay(-1)">
+        <button
+          type="button"
+          class="nav-btn"
+          aria-label="Tag zurück"
+          data-testid="att-prev"
+          :disabled="atOldest"
+          :title="atOldest ? 'Ältere Tage sind nach der Löschfrist gelöscht.' : undefined"
+          @click="shiftDay(-1)"
+        >
           <span class="pi pi-chevron-left" aria-hidden="true" />
         </button>
         <label class="date-label">
@@ -360,6 +370,10 @@ function actionLabel(c: AttendanceChild): string {
   cursor: pointer;
   color: #0f172a;
   font: inherit;
+}
+.nav-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .today-btn {
   padding: 0 0.8rem;

@@ -48,6 +48,8 @@ export interface AttendanceAccess {
   default_group_id: number
   is_group_account: boolean
   today: string
+  /** Ältester Tag, dessen Kommen/Gehen noch gespeichert ist (Löschfrist) */
+  oldest_day: string
 }
 
 export interface EvacuationData {
@@ -63,6 +65,25 @@ export interface Child {
   first_name: string
   last_name: string
   active: boolean
+  /** Abmeldung (RFC 3339); nach der Löschfrist wird das Kind samt Daten gelöscht */
+  deactivated_at: string | null
+}
+
+/** Löschfristen der Anwesenheitsliste */
+export interface ChildRetention {
+  times_months: number
+  notice_weeks: number
+  inactive_months: number
+}
+
+export async function fetchChildRetention() {
+  const { data } = await api.get<ChildRetention>('/children/retention')
+  return data
+}
+
+export async function putChildRetention(input: ChildRetention) {
+  const { data } = await api.put<ChildRetention>('/children/retention', input)
+  return data
 }
 
 export interface GroupAccount {

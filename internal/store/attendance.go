@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"nfc-time-tracking-server/internal/model"
 )
@@ -34,6 +35,8 @@ type AttendanceStore interface {
 
 	ListPresentStaff(ctx context.Context, date string) ([]int, error)
 
+	PurgeChildData(ctx context.Context, p ChildPurge) (ChildPurgeResult, error)
+
 	ListGroupAccounts(ctx context.Context) ([]model.GroupAccount, error)
 	GetGroupAccount(ctx context.Context, id int) (*model.GroupAccount, error)
 	GetGroupAccountByGroup(ctx context.Context, groupID int) (*model.GroupAccount, error)
@@ -42,4 +45,21 @@ type AttendanceStore interface {
 	UpdateGroupAccount(ctx context.Context, a *model.GroupAccount) error
 	SetGroupAccountPassword(ctx context.Context, id int, hash string) error
 	DeleteGroupAccount(ctx context.Context, id int) error
+}
+
+// ChildPurge legt fest, welche Kinderdaten gelöscht werden (Datenschutz-Löschfristen).
+type ChildPurge struct {
+	// TimesBefore: Kommen/Gehen an Tagen vor diesem Datum (YYYY-MM-DD) wird anonym gezählt und gelöscht.
+	TimesBefore string
+	// NoticesBefore: Meldungen, deren letzter Tag vor diesem Datum liegt, werden gelöscht.
+	NoticesBefore string
+	// InactiveBefore: Kinder, die vor diesem Zeitpunkt abgemeldet wurden, werden samt Daten gelöscht.
+	InactiveBefore time.Time
+}
+
+// ChildPurgeResult zählt, was gelöscht wurde.
+type ChildPurgeResult struct {
+	AttendanceDays int `json:"attendance_days"`
+	Notices        int `json:"notices"`
+	Children       int `json:"children"`
 }

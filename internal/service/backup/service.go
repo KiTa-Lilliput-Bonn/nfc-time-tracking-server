@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +32,21 @@ const (
 	SettingResticInitialized = "backup_restic_initialized"
 	SettingLastSuccessUTC    = "backup_last_success_utc"
 	SettingLastError         = "backup_last_error"
+	SettingKeepDaily         = "backup_keep_daily"
+	SettingKeepWeekly        = "backup_keep_weekly"
+	SettingKeepMonthly       = "backup_keep_monthly"
+	SettingLastPruneUTC      = "backup_last_prune_utc"
+)
+
+// Aufbewahrung alter Backups (Datenschutz: gelöschte Daten sollen nicht unbegrenzt in Backups bleiben).
+// Standard: tägliche 14 Tage, wöchentliche 8 Wochen, monatliche 6 Monate; alle 0 = nichts löschen.
+const (
+	DefaultKeepDaily   = 14
+	DefaultKeepWeekly  = 8
+	DefaultKeepMonthly = 6
+	MaxKeep            = 400
+	// Backups der letzten zwei Tage bleiben immer vollständig erhalten.
+	keepWithin = 48 * time.Hour
 )
 
 const MinIntervalMinutes = 15
@@ -121,9 +137,200 @@ func (s *Service) runLocked(ctx context.Context, onlyIfDue bool) error {
 
 	useRestic := s.readBool(ctx, SettingUseRestic)
 	if useRestic {
-		return s.runResticPipeline(ctx, target)
+		err = s.runResticPipeline(ctx, target)
+	} else {
+		err = s.runPlainVacuum(ctx, target)
 	}
-	return s.runPlainVacuum(ctx, target)
+	if err != nil {
+		return err
+	}
+	if perr := s.pruneIfDue(ctx, target, useRestic); perr != nil {
+		log.Printf("backup prune: %v", perr)
+		_ = s.Settings.Set(ctx, SettingLastError, "Alte Backups aufräumen: "+perr.Error())
+	}
+	return nil
+}
+
+// Keep ist die Aufbewahrungsregel für alte Backups.
+type Keep struct {
+	Daily   int `json:"keep_daily"`
+	Weekly  int `json:"keep_weekly"`
+	Monthly int `json:"keep_monthly"`
+}
+
+func (k Keep) none() bool { return k.Daily == 0 && k.Weekly == 0 && k.Monthly == 0 }
+
+func (s *Service) readKeep(ctx context.Context) Keep {
+	read := func(key string, def int) int {
+		v, err := s.Settings.Get(ctx, key)
+		if err != nil || strings.TrimSpace(v) == "" {
+			return def
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || n < 0 {
+			return def
+		}
+		return n
+	}
+	return Keep{
+		Daily:   read(SettingKeepDaily, DefaultKeepDaily),
+		Weekly:  read(SettingKeepWeekly, DefaultKeepWeekly),
+		Monthly: read(SettingKeepMonthly, DefaultKeepMonthly),
+	}
+}
+
+// SaveKeep speichert die Aufbewahrungsregel (je 0 bis MaxKeep).
+func (s *Service) SaveKeep(ctx context.Context, k Keep) error {
+	for _, v := range []int{k.Daily, k.Weekly, k.Monthly} {
+		if v < 0 || v > MaxKeep {
+			return fmt.Errorf("keep values must be between 0 and %d", MaxKeep)
+		}
+	}
+	for key, v := range map[string]int{SettingKeepDaily: k.Daily, SettingKeepWeekly: k.Weekly, SettingKeepMonthly: k.Monthly} {
+		if err := s.Settings.Set(ctx, key, strconv.Itoa(v)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// pruneIfDue räumt höchstens einmal am Tag alte Backups auf.
+func (s *Service) pruneIfDue(ctx context.Context, target string, useRestic bool) error {
+	keep := s.readKeep(ctx)
+	if keep.none() {
+		return nil
+	}
+	if last, _ := s.Settings.Get(ctx, SettingLastPruneUTC); strings.TrimSpace(last) != "" {
+		if t, err := parseRFC3339Flexible(strings.TrimSpace(last)); err == nil && time.Since(t) < 23*time.Hour {
+			return nil
+		}
+	}
+	var err error
+	if useRestic {
+		err = s.pruneRestic(ctx, target, keep)
+	} else {
+		_, err = PrunePlainBackups(target, keep, time.Now())
+	}
+	if err != nil {
+		return err
+	}
+	return s.Settings.Set(ctx, SettingLastPruneUTC, time.Now().UTC().Format(time.RFC3339Nano))
+}
+
+func (s *Service) pruneRestic(ctx context.Context, repoAbs string, keep Keep) error {
+	pw, err := s.Settings.Get(ctx, SettingResticPassword)
+	if err != nil {
+		return err
+	}
+	bin := s.resticBin()
+	if bin == "" {
+		return fmt.Errorf("restic binary not found")
+	}
+	cmd := exec.CommandContext(ctx, bin, ResticForgetArgs(keep)...)
+	cmd.Env = append(os.Environ(),
+		"RESTIC_REPOSITORY="+repoAbs,
+		"RESTIC_PASSWORD="+pw,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("restic forget: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// ResticForgetArgs baut den Aufruf für restic forget (nur Snapshots dieses Servers) samt prune.
+func ResticForgetArgs(keep Keep) []string {
+	args := []string{"forget", "--tag", "nfc-time-tracking", "--group-by", "tags", "--keep-within", "2d"}
+	if keep.Daily > 0 {
+		args = append(args, "--keep-daily", strconv.Itoa(keep.Daily))
+	}
+	if keep.Weekly > 0 {
+		args = append(args, "--keep-weekly", strconv.Itoa(keep.Weekly))
+	}
+	if keep.Monthly > 0 {
+		args = append(args, "--keep-monthly", strconv.Itoa(keep.Monthly))
+	}
+	return append(args, "--prune")
+}
+
+const plainBackupPrefix = "timetracking-backup-"
+
+// PrunePlainBackups löscht einfache Datenbank-Kopien (timetracking-backup-<ns>.db) in dir, die nach der
+// Regel nicht mehr gebraucht werden, und liefert die gelöschten Dateinamen. Andere Dateien bleiben unberührt.
+func PrunePlainBackups(dir string, keep Keep, now time.Time) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	type backupFile struct {
+		name string
+		at   time.Time
+	}
+	var files []backupFile
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasPrefix(name, plainBackupPrefix) || !strings.HasSuffix(name, ".db") {
+			continue
+		}
+		ns, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(name, plainBackupPrefix), ".db"), 10, 64)
+		if err != nil {
+			continue
+		}
+		files = append(files, backupFile{name, time.Unix(0, ns)})
+	}
+	times := make([]time.Time, len(files))
+	for i, f := range files {
+		times[i] = f.at
+	}
+	keepIdx := SelectKeep(times, keep, now)
+	var removed []string
+	for i, f := range files {
+		if keepIdx[i] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, f.name)); err != nil {
+			return removed, err
+		}
+		removed = append(removed, f.name)
+	}
+	return removed, nil
+}
+
+// SelectKeep wendet die Regel wie restic forget an: alles der letzten zwei Tage, dazu je das neueste
+// Backup der letzten Daily Tage, Weekly Wochen und Monthly Monate (Ortszeit). Liefert die zu behaltenden Indizes.
+func SelectKeep(times []time.Time, keep Keep, now time.Time) map[int]bool {
+	idx := make([]int, len(times))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.Slice(idx, func(a, b int) bool { return times[idx[a]].After(times[idx[b]]) })
+	out := map[int]bool{}
+	if len(idx) > 0 {
+		out[idx[0]] = true
+	}
+	for _, i := range idx {
+		if now.Sub(times[i]) < keepWithin {
+			out[i] = true
+		}
+	}
+	bucket := func(n int, key func(t time.Time) string) {
+		seen := map[string]bool{}
+		for _, i := range idx {
+			if len(seen) >= n {
+				return
+			}
+			k := key(times[i].In(time.Local))
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			out[i] = true
+		}
+	}
+	bucket(keep.Daily, func(t time.Time) string { return t.Format("2006-01-02") })
+	bucket(keep.Weekly, func(t time.Time) string { y, w := t.ISOWeek(); return fmt.Sprintf("%d-%02d", y, w) })
+	bucket(keep.Monthly, func(t time.Time) string { return t.Format("2006-01") })
+	return out
 }
 
 func (s *Service) shouldRunScheduled(ctx context.Context) bool {
@@ -292,6 +499,7 @@ type Status struct {
 	FolderPickerAvailable bool `json:"folder_picker_available"`
 	LastSuccessUTC        string `json:"last_success_utc"`
 	LastError             string `json:"last_error"`
+	Keep
 }
 
 func (s *Service) ReadStatus(ctx context.Context) (Status, error) {
@@ -316,6 +524,7 @@ func (s *Service) ReadStatus(ctx context.Context) (Status, error) {
 	st.LastSuccessUTC = strings.TrimSpace(ls)
 	le, _ := s.Settings.Get(ctx, SettingLastError)
 	st.LastError = strings.TrimSpace(le)
+	st.Keep = s.readKeep(ctx)
 	return st, nil
 }
 

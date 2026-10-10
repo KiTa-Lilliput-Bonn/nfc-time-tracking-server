@@ -117,3 +117,24 @@ test('Gruppenaccount hakt Kinder ab, meldet Fehlen und prüft bei Evakuierung al
   const denied = await request.get('/api/v1/me/times', { headers: authHeaders(token!) })
   expect(denied.status()).toBe(403)
 })
+
+test('Leitung stellt die Löschfristen der Anwesenheitsliste ein', async ({ page, request }) => {
+  const admin = await apiSession(request, E2E_ADMIN_USER, E2E_ADMIN_PASSWORD)
+  await useSession(page, admin, '/attendance/manage')
+  const box = page.getByTestId('manage-retention')
+  await expect(box.getByText('Datenschutz: Löschfristen')).toBeVisible()
+  await expect(page.getByTestId('ret-times')).toHaveValue('3')
+  await expect(page.getByTestId('ret-save')).toBeDisabled()
+  await page.getByTestId('ret-notices').fill('6')
+  await page.getByTestId('ret-save').click()
+  await expect(page.getByText('Löschfristen gespeichert')).toBeVisible()
+  await page.reload()
+  await expect(page.getByTestId('ret-notices')).toHaveValue('6')
+
+  // Zurücksetzen, damit andere Tests die Standardfristen sehen.
+  const res = await request.put('/api/v1/children/retention', {
+    headers: authHeaders(admin.token),
+    data: { times_months: 3, notice_weeks: 4, inactive_months: 3 },
+  })
+  expect(res.ok()).toBeTruthy()
+})
