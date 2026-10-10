@@ -109,6 +109,7 @@ func newAttFixture(t *testing.T) *attFixture {
 	r.Post("/attendance/children/{id}/notices", h.CreateNotice)
 	r.Put("/attendance/notices/{noticeId}", h.UpdateNotice)
 	r.Delete("/attendance/notices/{noticeId}", h.DeleteNotice)
+	r.Patch("/children/{id}", h.UpdateChild)
 	r.Get("/children/retention", h.GetRetention)
 	r.Put("/children/retention", h.PutRetention)
 	f.router = r

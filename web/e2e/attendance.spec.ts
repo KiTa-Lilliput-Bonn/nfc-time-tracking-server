@@ -54,6 +54,11 @@ test('Gruppenaccount hakt Kinder ab, meldet Fehlen und prüft bei Evakuierung al
   await page.getByTestId(`manage-add-btn-${groupId}`).click()
   const section = page.getByTestId(`manage-group-${groupId}`)
   await expect(section.getByText('Carla C.')).toBeVisible()
+  // Geburtsmonat reicht für das Alter.
+  await section.getByRole('button', { name: 'Anna A. bearbeiten' }).click()
+  await section.getByTestId('manage-birth').fill('2023-05')
+  await section.getByRole('button', { name: 'Speichern' }).click()
+  await expect(section.getByText(/^\s*\d+ J\./)).toBeVisible()
   const user = `flur-${Date.now()}`
   await page.getByTestId(`manage-account-user-${groupId}`).fill(user)
   await page.getByTestId(`manage-account-create-${groupId}`).click()

@@ -166,3 +166,36 @@ func TestChildRetention_API(t *testing.T) {
 		t.Fatalf("oldest_day after change %q", access.OldestDay)
 	}
 }
+
+func TestChild_BirthMonthAndInitial(t *testing.T) {
+	f := newAttFixture(t)
+	path := "/children/" + itoa(f.ben.ID)
+	if rr := f.asUser(t, f.lead, http.MethodPatch, path, map[string]any{"birth_month": "2023-13"}); rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid month: %d", rr.Code)
+	}
+	rr := f.asUser(t, f.lead, http.MethodPatch, path, map[string]any{"birth_month": "2023-05", "last_name": "dorn"})
+	var c model.Child
+	if err := json.Unmarshal(rr.Body.Bytes(), &c); err != nil || rr.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", rr.Code, rr.Body.String())
+	}
+	if c.BirthMonth == nil || *c.BirthMonth != "2023-05" || c.LastName != "D" {
+		t.Fatalf("child %+v", c)
+	}
+	out := decodeAtt(t, f.asUser(t, f.fach, http.MethodGet, "/attendance", nil))
+	found := false
+	for _, g := range out.Groups {
+		for _, ch := range g.Children {
+			if ch.ID == f.ben.ID {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("ben missing")
+	}
+	rr = f.asUser(t, f.lead, http.MethodPatch, path, map[string]any{"birth_month": ""})
+	_ = json.Unmarshal(rr.Body.Bytes(), &c)
+	if c.BirthMonth != nil {
+		t.Fatal("birth month not cleared")
+	}
+}

@@ -66,14 +66,15 @@ func (s *AttendanceStore) GetChild(ctx context.Context, id int) (*model.Child, e
 	return c, err
 }
 
-const childCols = `id, group_id, first_name, last_name, active, deactivated_at`
+const childCols = `id, group_id, first_name, last_name, active, deactivated_at, birth_month`
 
 func scanChild(row interface{ Scan(...any) error }) (*model.Child, error) {
 	var c model.Child
-	var deact sql.NullString
-	if err := row.Scan(&c.ID, &c.GroupID, &c.FirstName, &c.LastName, &c.Active, &deact); err != nil {
+	var deact, birth sql.NullString
+	if err := row.Scan(&c.ID, &c.GroupID, &c.FirstName, &c.LastName, &c.Active, &deact, &birth); err != nil {
 		return nil, err
 	}
+	c.BirthMonth = clockPtr(birth)
 	if deact.Valid && deact.String != "" {
 		v := deact.String
 		c.DeactivatedAt = &v
@@ -84,8 +85,8 @@ func scanChild(row interface{ Scan(...any) error }) (*model.Child, error) {
 func (s *AttendanceStore) CreateChild(ctx context.Context, c *model.Child) error {
 	now := nowText()
 	res, err := s.db.DB.ExecContext(ctx,
-		`INSERT INTO children (group_id, first_name, last_name, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		c.GroupID, c.FirstName, c.LastName, c.Active, now, now)
+		`INSERT INTO children (group_id, first_name, last_name, active, birth_month, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		c.GroupID, c.FirstName, c.LastName, c.Active, nullClock(c.BirthMonth), now, now)
 	if err != nil {
 		return err
 	}
@@ -102,10 +103,10 @@ func (s *AttendanceStore) CreateChild(ctx context.Context, c *model.Child) error
 func (s *AttendanceStore) UpdateChild(ctx context.Context, c *model.Child) error {
 	now := nowText()
 	res, err := s.db.DB.ExecContext(ctx,
-		`UPDATE children SET group_id = ?, first_name = ?, last_name = ?, active = ?, updated_at = ?,
+		`UPDATE children SET group_id = ?, first_name = ?, last_name = ?, active = ?, birth_month = ?, updated_at = ?,
 		 deactivated_at = CASE WHEN ? THEN NULL ELSE COALESCE(deactivated_at, ?) END
 		 WHERE id = ?`,
-		c.GroupID, c.FirstName, c.LastName, c.Active, now, c.Active, now, c.ID)
+		c.GroupID, c.FirstName, c.LastName, c.Active, nullClock(c.BirthMonth), now, c.Active, now, c.ID)
 	if err != nil {
 		return err
 	}

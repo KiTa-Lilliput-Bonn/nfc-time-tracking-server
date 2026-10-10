@@ -163,13 +163,14 @@ func (h *AttendanceHandler) Access(w http.ResponseWriter, r *http.Request) {
 }
 
 type attendanceRow struct {
-	ID        int                `json:"id"`
-	GroupID   int                `json:"group_id"`
-	FirstName string             `json:"first_name"`
-	LastName  string             `json:"last_name"`
-	ArrivedAt *string            `json:"arrived_at"`
-	LeftAt    *string            `json:"left_at"`
-	Notice    *model.ChildNotice `json:"notice"`
+	ID         int                `json:"id"`
+	GroupID    int                `json:"group_id"`
+	FirstName  string             `json:"first_name"`
+	LastName   string             `json:"last_name"`
+	BirthMonth *string            `json:"birth_month"`
+	ArrivedAt  *string            `json:"arrived_at"`
+	LeftAt     *string            `json:"left_at"`
+	Notice     *model.ChildNotice `json:"notice"`
 	// Upcoming: Anzahl gemeldeter Abwesenheiten ab morgen (Hinweis in der Liste).
 	Upcoming int `json:"upcoming"`
 }
@@ -264,7 +265,7 @@ func (h *AttendanceHandler) List(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		out[gi].Children = append(out[gi].Children, attendanceRow{
-			ID: c.ID, GroupID: c.GroupID, FirstName: c.FirstName, LastName: c.LastName,
+			ID: c.ID, GroupID: c.GroupID, FirstName: c.FirstName, LastName: c.LastName, BirthMonth: c.BirthMonth,
 			ArrivedAt: rec.ArrivedAt, LeftAt: rec.LeftAt, Notice: noticeBy[c.ID], Upcoming: upcoming[c.ID],
 		})
 	}
@@ -607,6 +608,8 @@ type childBody struct {
 	FirstName *string `json:"first_name"`
 	LastName  *string `json:"last_name"`
 	Active    *bool   `json:"active"`
+	// BirthMonth: YYYY-MM; "" entfernt den Wert.
+	BirthMonth *string `json:"birth_month"`
 }
 
 func (h *AttendanceHandler) applyChild(w http.ResponseWriter, r *http.Request, c *model.Child) bool {
@@ -627,10 +630,19 @@ func (h *AttendanceHandler) applyChild(w http.ResponseWriter, r *http.Request, c
 	if body.Active != nil {
 		c.Active = *body.Active
 	}
+	if body.BirthMonth != nil {
+		if v := strings.TrimSpace(*body.BirthMonth); v == "" {
+			c.BirthMonth = nil
+		} else {
+			c.BirthMonth = &v
+		}
+	}
 	if err := c.Validate(); err != nil {
 		msg := "Bitte Vorname und Gruppe angeben."
 		if strings.Contains(err.Error(), "too long") {
 			msg = "Der Name ist zu lang."
+		} else if strings.Contains(err.Error(), "birth_month") {
+			msg = "Ungültiger Geburtsmonat."
 		}
 		response.Error(w, http.StatusBadRequest, msg)
 		return false

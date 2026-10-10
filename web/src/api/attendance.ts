@@ -22,6 +22,8 @@ export interface AttendanceChild {
   group_id: number
   first_name: string
   last_name: string
+  /** Geburtsmonat YYYY-MM */
+  birth_month: string | null
   arrived_at: string | null
   left_at: string | null
   notice: ChildNotice | null
@@ -65,6 +67,8 @@ export interface Child {
   first_name: string
   last_name: string
   active: boolean
+  /** Geburtsmonat YYYY-MM (ohne Tag) */
+  birth_month: string | null
   /** Abmeldung (RFC 3339); nach der Löschfrist wird das Kind samt Daten gelöscht */
   deactivated_at: string | null
 }
@@ -136,12 +140,12 @@ export async function fetchChildren() {
   return data
 }
 
-export async function createChild(input: { group_id: number; first_name: string; last_name: string }) {
+export async function createChild(input: { group_id: number; first_name: string; last_name: string; birth_month?: string }) {
   const { data } = await api.post<Child>('/children', input)
   return data
 }
 
-export async function patchChild(id: number, input: Partial<Omit<Child, 'id'>>) {
+export async function patchChild(id: number, input: Partial<Omit<Child, 'id' | 'birth_month'>> & { birth_month?: string }) {
   const { data } = await api.patch<Child>(`/children/${id}`, input)
   return data
 }
@@ -231,4 +235,23 @@ export function shortDay(ymd: string): string {
 export function rangeLabel(from: string, to: string): string {
   if (from === to) return shortDay(from)
   return `${shortDay(from)} – ${shortDay(to)}`
+}
+
+/** Alter in vollen Monaten am Tag ymd aus dem Geburtsmonat (YYYY-MM); null ohne Angabe. */
+export function ageMonths(birthMonth: string | null | undefined, ymd: string): number | null {
+  if (!birthMonth) return null
+  const [by, bm] = birthMonth.split('-').map(Number)
+  const [y, m] = ymd.split('-').map(Number)
+  const months = y! * 12 + m! - (by! * 12 + bm!)
+  return months >= 0 ? months : null
+}
+
+/** „2 J. 5 M.“ bzw. „7 M.“ */
+export function ageLabel(birthMonth: string | null | undefined, ymd: string): string {
+  const months = ageMonths(birthMonth, ymd)
+  if (months == null) return ''
+  const y = Math.floor(months / 12)
+  const m = months % 12
+  if (!y) return `${m} M.`
+  return m ? `${y} J. ${m} M.` : `${y} J.`
 }

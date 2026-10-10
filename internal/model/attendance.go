@@ -19,6 +19,8 @@ type Child struct {
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Active    bool   `json:"active"`
+	// BirthMonth: Geburtsmonat YYYY-MM (ohne Tag); nil = nicht angegeben.
+	BirthMonth *string `json:"birth_month"`
 	// DeactivatedAt: Zeitpunkt der Abmeldung (RFC 3339, UTC); nil solange aktiv.
 	DeactivatedAt *string `json:"deactivated_at"`
 }
@@ -44,6 +46,12 @@ func (c *Child) Validate() error {
 	}
 	if c.GroupID <= 0 {
 		return fmt.Errorf("group_id required")
+	}
+	if c.BirthMonth != nil {
+		t, err := time.Parse("2006-01", *c.BirthMonth)
+		if err != nil || t.Year() < 2000 {
+			return fmt.Errorf("invalid birth_month")
+		}
 	}
 	return nil
 }

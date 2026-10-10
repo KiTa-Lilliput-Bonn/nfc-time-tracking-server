@@ -5,7 +5,9 @@ import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 
 import {
+  ageLabel,
   childName,
+  localYmd,
   createChild,
   createGroupAccount,
   deleteChild,
@@ -103,17 +105,25 @@ const editId = ref<number | null>(null)
 const eFirst = ref('')
 const eLast = ref('')
 const eGroup = ref(0)
+const eBirth = ref('')
+const todayYmd = localYmd()
 
 function startEdit(c: Child) {
   editId.value = c.id
   eFirst.value = c.first_name
   eLast.value = c.last_name
   eGroup.value = c.group_id
+  eBirth.value = c.birth_month ?? ''
 }
 
 async function saveEdit(c: Child) {
   try {
-    const u = await patchChild(c.id, { first_name: eFirst.value, last_name: eLast.value, group_id: eGroup.value })
+    const u = await patchChild(c.id, {
+      first_name: eFirst.value,
+      last_name: eLast.value,
+      group_id: eGroup.value,
+      birth_month: eBirth.value,
+    })
     Object.assign(c, u)
     editId.value = null
   } catch (e) {
@@ -266,6 +276,17 @@ async function copyPassword() {
                     placeholder="Nachname (Anfangsbuchstabe)"
                     aria-label="Anfangsbuchstabe Nachname"
                   />
+                  <label class="birth">
+                    <span>Geburtsmonat</span>
+                    <input
+                      v-model="eBirth"
+                      type="month"
+                      min="2000-01"
+                      :max="todayYmd.slice(0, 7)"
+                      aria-label="Geburtsmonat"
+                      data-testid="manage-birth"
+                    />
+                  </label>
                   <select v-model.number="eGroup" aria-label="Gruppe">
                     <option v-for="og in groups" :key="og.id" :value="og.id">{{ og.name }}</option>
                   </select>
@@ -280,7 +301,9 @@ async function copyPassword() {
               <template v-else>
                 <span class="kid-name"
                   >{{ childName(c)
-                  }}<em v-if="!c.active">
+                  }}<small v-if="c.birth_month" class="age"> {{ ageLabel(c.birth_month, todayYmd) }}</small
+                  ><small v-else-if="c.active" class="age missing"> Geburtsmonat fehlt</small
+                  ><em v-if="!c.active">
                     · abgemeldet<template v-if="deleteOn(c)">, wird am {{ deleteOn(c) }} gelöscht</template></em
                   ></span
                 >
@@ -475,6 +498,22 @@ async function copyPassword() {
   font-style: normal;
   font-size: 0.8rem;
 }
+.age {
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-left: 0.3rem;
+}
+.age.missing {
+  color: #b45309;
+}
+.birth {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: #475569;
+}
 .link {
   border: none;
   background: transparent;
@@ -498,7 +537,7 @@ async function copyPassword() {
 .edit {
   width: 100%;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 0.7fr 1.4fr 1fr;
   gap: 0.4rem;
 }
 .edit-btns {
@@ -510,6 +549,7 @@ async function copyPassword() {
   flex: 1;
 }
 input[type='text'],
+input[type='month'],
 select,
 textarea {
   font: inherit;

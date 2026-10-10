@@ -2,6 +2,8 @@
 -- Datenschutz: Anwesenheitsdaten der Kinder werden nach Fristen gelöscht (siehe internal/service/childretention).
 -- deactivated_at merkt sich die Abmeldung, damit abgemeldete Kinder nach der Frist samt Daten verschwinden.
 ALTER TABLE children ADD COLUMN deactivated_at TEXT;
+-- Geburtsmonat (YYYY-MM) reicht für das Alter; den genauen Tag speichern wir nicht.
+ALTER TABLE children ADD COLUMN birth_month TEXT;
 UPDATE children SET deactivated_at = updated_at WHERE active = 0;
 
 -- Datensparsamkeit: vom Nachnamen nur den Anfangsbuchstaben behalten („Finn D.“).
@@ -19,4 +21,5 @@ CREATE TABLE child_attendance_stats (
 
 -- +goose Down
 DROP TABLE child_attendance_stats;
+ALTER TABLE children DROP COLUMN birth_month;
 ALTER TABLE children DROP COLUMN deactivated_at;
