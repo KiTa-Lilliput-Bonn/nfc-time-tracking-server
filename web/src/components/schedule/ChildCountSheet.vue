@@ -96,6 +96,7 @@ function onSave() {
     class="shift-sheet"
     :show-close-icon="false"
     :block-scroll="true"
+    :style="{ maxWidth: '34rem', marginInline: 'auto', height: 'auto', maxHeight: '92dvh', borderRadius: '20px 20px 0 0' }"
     :pt="{ root: { 'data-testid': 'children-sheet' } }"
   >
     <template #container="{ closeCallback }">
@@ -283,3 +284,4 @@ function onSave() {
   flex: 1;
 }
 </style>
+

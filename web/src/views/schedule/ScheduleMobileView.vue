@@ -36,7 +36,7 @@ import type {
 } from '@/types/api'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { addDays, formatGermanDate, isoWeekAndYear, mondayOfISOWeek, shiftISOWeek, toISODateLocal } from '@/utils/dates'
-import { effectiveQualification } from '@/utils/kibiz'
+import { effectiveQualification, weekChildrenLabel } from '@/utils/kibiz'
 import { clearRouteQueryKeys, queryPositiveInt } from '@/utils/leitungDeepLink'
 import {
   horizontalBarPercentages,
@@ -308,15 +308,6 @@ watch(
 function kibizGroup(gid: number | null): KibizGroup | null {
   if (gid == null) return null
   return kibiz.value?.groups.find((g) => g.group_id === gid) ?? null
-}
-
-/** Kinder der Woche: eine Zahl oder „18–20“, wenn die geöffneten Tage abweichen. */
-function weekChildrenLabel(g: KibizGroup): string {
-  const open = g.days.filter((d) => d.open).map((d) => d.children_total)
-  if (!open.length) return String(g.pattern_total)
-  const lo = Math.min(...open)
-  const hi = Math.max(...open)
-  return lo === hi ? String(lo) : `${lo}–${hi}`
 }
 
 const unqualifiedPeople = computed(() => {
