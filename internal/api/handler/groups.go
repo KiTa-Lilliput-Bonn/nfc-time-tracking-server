@@ -58,7 +58,8 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 type patchGroupBody struct {
-	Name *string `json:"name"`
+	Name       *string `json:"name"`
+	HasCashBox *bool   `json:"has_cash_box"`
 }
 
 func (h *GroupHandler) Patch(w http.ResponseWriter, r *http.Request) {
@@ -72,11 +73,11 @@ func (h *GroupHandler) Patch(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if body.Name == nil {
+	if body.Name == nil && body.HasCashBox == nil {
 		response.Error(w, http.StatusBadRequest, "name required")
 		return
 	}
-	if *body.Name == "" {
+	if body.Name != nil && *body.Name == "" {
 		response.Error(w, http.StatusBadRequest, "name must not be empty")
 		return
 	}
@@ -85,14 +86,20 @@ func (h *GroupHandler) Patch(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusNotFound, "not found")
 		return
 	}
-	g.Name = *body.Name
+	if body.Name != nil {
+		g.Name = *body.Name
+	}
+	if body.HasCashBox != nil {
+		// Abschalten blendet die Kasse nur aus; Kassenwarte, Buchungen und Belege bleiben erhalten.
+		g.HasCashBox = *body.HasCashBox
+	}
 	if err := h.Groups.Update(r.Context(), g); err != nil {
 		response.Error(w, http.StatusBadRequest, "update failed")
 		return
 	}
 	logAudit(h.Audit, r.Context(), audit.Entry{
 		Action: audit.ActionUpdate, EntityType: audit.EntityGroup, EntityID: auditID(g.ID),
-		Summary: audit.JSONSummary(map[string]any{"name": g.Name}),
+		Summary: audit.JSONSummary(map[string]any{"name": g.Name, "has_cash_box": g.HasCashBox}),
 	})
 	response.JSON(w, http.StatusOK, g)
 }

@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import Button from 'primevue/button'
 import Card from 'primevue/card'
+import Checkbox from 'primevue/checkbox'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import Dialog from 'primevue/dialog'
@@ -129,6 +130,21 @@ async function submitEdit() {
   }
 }
 
+async function toggleCashBox(g: UserGroup) {
+  const on = !g.has_cash_box
+  if (!on && !confirm(`Gruppenkasse für „${g.name}“ ausblenden? Buchungen und Belege bleiben gespeichert und sind wieder da, wenn die Kasse erneut eingeschaltet wird.`)) return
+  saving.value = true
+  try {
+    await patchGroup(g.id, { has_cash_box: on })
+    g.has_cash_box = on
+    toast.add({ severity: 'success', summary: on ? 'Gruppenkasse eingeschaltet' : 'Gruppenkasse ausgeblendet', life: 10000 })
+  } catch (e) {
+    toast.add({ severity: 'error', summary: 'Speichern fehlgeschlagen', detail: getApiErrorMessage(e), life: 10000 })
+  } finally {
+    saving.value = false
+  }
+}
+
 async function remove(g: UserGroup) {
   if (!confirm(`Gruppe „${g.name}“ löschen? Zugeordnete Mitarbeitende verlieren die Gruppenzuordnung.`)) return
   saving.value = true
@@ -219,6 +235,7 @@ function groupRowIndex(g: UserGroup) {
       <template #subtitle>
         Reihenfolge mit den Pfeilen neben jeder Zeile anpassen (u. a. für den Dienstplan). Gruppe auswählen für
         Mitglieder (max. eine Gruppe pro Person); bereits anderweitig Zugewiesene können hierher verschoben werden.
+        Mit „Gruppenkasse“ legen Sie fest, welche Gruppen eine Kasse führen.
       </template>
       <template #content>
         <div class="toolbar">
@@ -261,6 +278,20 @@ function groupRowIndex(g: UserGroup) {
           <Column header="Mitglieder" :sortable="false" style="width: 7rem">
             <template #body="{ data }: { data: UserGroup }">
               {{ memberCount(data.id) }}
+            </template>
+          </Column>
+          <Column header="Gruppenkasse" :sortable="false" style="width: 8rem">
+            <template #body="{ data }: { data: UserGroup }">
+              <Checkbox
+                :model-value="data.has_cash_box"
+                binary
+                :disabled="saving"
+                :input-id="`cash-box-${data.id}`"
+                :aria-label="`Gruppenkasse für ${data.name}`"
+                data-testid="group-cash-box-toggle"
+                @click.stop
+                @update:model-value="toggleCashBox(data)"
+              />
             </template>
           </Column>
           <Column header="" :exportable="false" style="width: 8rem">

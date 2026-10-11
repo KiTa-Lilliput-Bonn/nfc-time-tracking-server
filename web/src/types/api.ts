@@ -192,6 +192,8 @@ export interface UserGroup {
   name: string
   /** Reihenfolge für Listen und Dienstplan (0 = oben). */
   sort_order: number
+  /** Gruppe führt eine Gruppenkasse (von der Leitung unter „Gruppen“ eingestellt). */
+  has_cash_box: boolean
   created_at: string
   updated_at: string
 }

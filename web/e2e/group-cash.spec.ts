@@ -41,6 +41,16 @@ test('Kassenwart bucht Monatsbetrag, Ansparkonto und Ausgabe mit Beleg; Leitung 
   expect(grp.ok()).toBeTruthy()
   const groupId = ((await grp.json()) as { id: number }).id
 
+  // Neue Gruppen haben keine Kasse, bis die Leitung sie unter „Gruppen“ einschaltet.
+  const off = await request.get(`/api/v1/cash-boxes/${groupId}`, { headers: authHeaders(admin.token) })
+  expect(off.status()).toBe(404)
+  await useSession(page, admin, '/groups')
+  const toggle = page.locator(`#cash-box-${groupId}`)
+  await expect(toggle).not.toBeChecked()
+  await toggle.click()
+  await expect(page.getByText('Gruppenkasse eingeschaltet')).toBeVisible()
+  await expect(toggle).toBeChecked()
+
   const username = `e2e.cash.${Date.now()}`
   const emp = await request.post('/api/v1/employees', {
     headers: authHeaders(admin.token),
@@ -128,6 +138,11 @@ test('Anfangsbestand und Kassenbuch-Export', async ({ page, request }) => {
   const groupName = uniqueLabel('Kasse Export')
   const grp = await request.post('/api/v1/groups', { headers: authHeaders(admin.token), data: { name: groupName } })
   const groupId = ((await grp.json()) as { id: number }).id
+  const enable = await request.patch(`/api/v1/groups/${groupId}`, {
+    headers: authHeaders(admin.token),
+    data: { has_cash_box: true },
+  })
+  expect(enable.ok()).toBeTruthy()
   const username = `e2e.cashx.${Date.now()}`
   const emp = await request.post('/api/v1/employees', {
     headers: authHeaders(admin.token),

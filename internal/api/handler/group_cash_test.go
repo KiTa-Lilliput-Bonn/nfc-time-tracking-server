@@ -51,8 +51,8 @@ func newCashFixture(t *testing.T) *cashFixture {
 		}
 		f.usersBy[u.ID] = u
 	}
-	f.group = &model.Group{Name: "Mäuse"}
-	f.other = &model.Group{Name: "Bären"}
+	f.group = &model.Group{Name: "Mäuse", HasCashBox: true}
+	f.other = &model.Group{Name: "Bären", HasCashBox: true}
 	for _, g := range []*model.Group{f.group, f.other} {
 		if err := groups.Create(ctx, g); err != nil {
 			t.Fatal(err)
@@ -406,5 +406,70 @@ func TestGroupCash_ExpenseFromSavings(t *testing.T) {
 	}
 	if detail.Entries[1].BalanceAfterCents != 0 {
 		t.Fatalf("direct expense must not change the cash balance: %+v", detail.Entries[1])
+	}
+}
+
+func TestGroupCash_DisabledBoxIsHiddenAndKeepsData(t *testing.T) {
+	f := newCashFixture(t)
+	ctx := context.Background()
+	groups := sqlite.NewGroupStore(f.db)
+	box := f.box(f.group.ID)
+	if rr := f.do(t, f.lead, http.MethodPut, box+"/keepers", map[string]any{"user_ids": []int{f.keeper.ID}}); rr.Code != http.StatusOK {
+		t.Fatalf("assign keepers: %d", rr.Code)
+	}
+	if rr := f.do(t, f.keeper, http.MethodPost, box+"/entries", map[string]any{
+		"kind": "income", "source": "other", "entry_date": "2026-04-01", "amount_cents": 500, "description": "Spende",
+	}); rr.Code != http.StatusCreated {
+		t.Fatalf("create entry: %d %s", rr.Code, rr.Body.String())
+	}
+
+	setBox := func(on bool) {
+		g, err := groups.GetByID(ctx, f.group.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g.HasCashBox = on
+		if err := groups.Update(ctx, g); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listed := func(actor *model.User) bool {
+		rr := f.do(t, actor, http.MethodGet, "/cash-boxes", nil)
+		var out struct {
+			CashBoxes []struct {
+				GroupID int `json:"group_id"`
+			} `json:"cash_boxes"`
+		}
+		_ = json.Unmarshal(rr.Body.Bytes(), &out)
+		for _, b := range out.CashBoxes {
+			if b.GroupID == f.group.ID {
+				return true
+			}
+		}
+		return false
+	}
+
+	setBox(false)
+	if listed(f.lead) || listed(f.keeper) {
+		t.Fatal("disabled box must not be listed")
+	}
+	for _, actor := range []*model.User{f.lead, f.keeper} {
+		if rr := f.do(t, actor, http.MethodGet, box, nil); rr.Code != http.StatusNotFound {
+			t.Fatalf("disabled box get: %d", rr.Code)
+		}
+	}
+	if rr := f.do(t, f.keeper, http.MethodPost, box+"/entries", map[string]any{
+		"kind": "expense", "entry_date": "2026-04-02", "amount_cents": 100, "description": "x",
+	}); rr.Code != http.StatusNotFound {
+		t.Fatalf("booking on disabled box: %d", rr.Code)
+	}
+
+	setBox(true)
+	if !listed(f.keeper) {
+		t.Fatal("re-enabled box must be listed again")
+	}
+	rr := f.do(t, f.keeper, http.MethodGet, box, nil)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Spende") {
+		t.Fatalf("data must survive: %d %s", rr.Code, rr.Body.String())
 	}
 }
