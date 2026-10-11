@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 
+import ChildFields from '@/components/attendance/ChildFields.vue'
+
 import {
   ageLabel,
   childName,
@@ -69,31 +71,32 @@ function childrenOf(gid: number) {
 }
 const inactiveCount = computed(() => children.value.filter((c) => !c.active).length)
 
-/** Eingabe je Gruppe: eine Zeile pro Kind, „Vorname N.“; vom Nachnamen bleibt nur der Anfangsbuchstabe. */
-const addText = ref<Record<number, string>>({})
+/** Neues Kind je Gruppe: getrennte Felder, damit mehrere Vornamen erhalten bleiben. */
+type Draft = { first: string; last: string; birth: string }
+const drafts = ref<Record<number, Draft>>({})
 const adding = ref<number | null>(null)
+const addForms = ref<Record<number, InstanceType<typeof ChildFields> | null>>({})
 
-function parseLine(line: string): { first_name: string; last_name: string } | null {
-  const t = line.trim().replace(/\s+/g, ' ')
-  if (!t) return null
-  if (t.includes(',')) {
-    const [last, first] = t.split(',').map((s) => s.trim())
-    return { first_name: first || last!, last_name: first ? last! : '' }
-  }
-  const i = t.indexOf(' ')
-  return i < 0 ? { first_name: t, last_name: '' } : { first_name: t.slice(0, i), last_name: t.slice(i + 1) }
+function draft(gid: number): Draft {
+  return (drafts.value[gid] ??= { first: '', last: '', birth: '' })
 }
 
-async function addChildren(gid: number) {
-  const lines = (addText.value[gid] ?? '').split('\n').map(parseLine).filter((x) => !!x)
-  if (!lines.length) return
+async function addChild(gid: number) {
+  const d = draft(gid)
+  if (!d.first.trim() || adding.value) return
   adding.value = gid
   try {
-    for (const l of lines) {
-      children.value.push(await createChild({ group_id: gid, ...l }))
-    }
-    addText.value[gid] = ''
-    toast.add({ severity: 'success', summary: lines.length === 1 ? 'Kind angelegt' : `${lines.length} Kinder angelegt`, life: 2500 })
+    const c = await createChild({
+      group_id: gid,
+      first_name: d.first,
+      last_name: d.last,
+      ...(d.birth ? { birth_month: d.birth } : {}),
+    })
+    children.value.push(c)
+    drafts.value[gid] = { first: '', last: '', birth: '' }
+    addForms.value[gid]?.reset()
+    addForms.value[gid]?.focus()
+    toast.add({ severity: 'success', summary: `${childName(c)} angelegt`, life: 2500 })
   } catch (e) {
     fail('Nicht angelegt', e)
   } finally {
@@ -268,28 +271,19 @@ async function copyPassword() {
             <li v-for="c in childrenOf(g.id)" :key="c.id" :class="{ off: !c.active }">
               <template v-if="editId === c.id">
                 <div class="edit">
-                  <input v-model="eFirst" type="text" placeholder="Vorname" aria-label="Vorname" />
-                  <input
-                    v-model="eLast"
-                    type="text"
-                    maxlength="2"
-                    placeholder="Nachname (Anfangsbuchstabe)"
-                    aria-label="Anfangsbuchstabe Nachname"
+                  <ChildFields
+                    v-model:first="eFirst"
+                    v-model:last="eLast"
+                    v-model:birth="eBirth"
+                    testid="manage-edit-fields"
+                    @submit="saveEdit(c)"
                   />
-                  <label class="birth">
-                    <span>Geburtsmonat</span>
-                    <input
-                      v-model="eBirth"
-                      type="month"
-                      min="2000-01"
-                      :max="todayYmd.slice(0, 7)"
-                      aria-label="Geburtsmonat"
-                      data-testid="manage-birth"
-                    />
+                  <label class="group-pick">
+                    <span>Gruppe</span>
+                    <select v-model.number="eGroup" aria-label="Gruppe">
+                      <option v-for="og in groups" :key="og.id" :value="og.id">{{ og.name }}</option>
+                    </select>
                   </label>
-                  <select v-model.number="eGroup" aria-label="Gruppe">
-                    <option v-for="og in groups" :key="og.id" :value="og.id">{{ og.name }}</option>
-                  </select>
                   <div class="edit-btns">
                     <Button label="Löschen" severity="danger" text size="small" @click="removeChild(c)" />
                     <span class="grow" />
@@ -325,21 +319,22 @@ async function copyPassword() {
               </template>
             </li>
           </ul>
-          <div class="add">
-            <textarea
-              v-model="addText[g.id]"
-              rows="2"
-              placeholder="Kinder hinzufügen: eine Zeile pro Kind, z. B. „Mia S.“ (vom Nachnamen nur der Anfangsbuchstabe)"
-              :data-testid="`manage-add-${g.id}`"
+          <div class="add" :data-testid="`manage-add-${g.id}`">
+            <ChildFields
+              :ref="(el) => (addForms[g.id] = el as InstanceType<typeof ChildFields> | null)"
+              v-model:first="draft(g.id).first"
+              v-model:last="draft(g.id).last"
+              v-model:birth="draft(g.id).birth"
+              @submit="addChild(g.id)"
             />
             <Button
-              label="Hinzufügen"
+              label="Kind hinzufügen"
               icon="pi pi-plus"
               size="small"
               :loading="adding === g.id"
-              :disabled="!(addText[g.id] ?? '').trim()"
+              :disabled="!draft(g.id).first.trim()"
               :data-testid="`manage-add-btn-${g.id}`"
-              @click="addChildren(g.id)"
+              @click="addChild(g.id)"
             />
           </div>
         </div>
@@ -507,13 +502,6 @@ async function copyPassword() {
 .age.missing {
   color: #b45309;
 }
-.birth {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-  color: #475569;
-}
 .link {
   border: none;
   background: transparent;
@@ -536,9 +524,23 @@ async function copyPassword() {
 }
 .edit {
   width: 100%;
-  display: grid;
-  grid-template-columns: 1fr 0.7fr 1.4fr 1fr;
-  gap: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: #f8fafc;
+  border-radius: 10px;
+  padding: 0.6rem;
+}
+.group-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: #475569;
+}
+.group-pick select {
+  width: auto;
+  min-width: 10rem;
 }
 .edit-btns {
   grid-column: 1 / -1;
@@ -549,9 +551,7 @@ async function copyPassword() {
   flex: 1;
 }
 input[type='text'],
-input[type='month'],
-select,
-textarea {
+select {
   font: inherit;
   font-size: 0.95rem;
   padding: 0.45rem 0.55rem;
@@ -563,12 +563,12 @@ textarea {
 }
 .add {
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 0.5rem;
-  align-items: flex-start;
-}
-.add textarea {
-  flex: 1;
-  resize: vertical;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 0.6rem;
 }
 .account h3 {
   margin: 0 0 0.25rem;
@@ -665,12 +665,6 @@ textarea {
   }
   .cols {
     grid-template-columns: 1fr;
-  }
-  .edit {
-    grid-template-columns: 1fr 1fr;
-  }
-  .edit select {
-    grid-column: 1 / -1;
   }
 }
 </style>

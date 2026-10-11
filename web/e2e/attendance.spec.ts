@@ -50,15 +50,31 @@ test('Gruppenaccount hakt Kinder ab, meldet Fehlen und prüft bei Evakuierung al
 
   // Leitung legt Kinder und den Gruppenaccount an.
   await useSession(page, admin, '/attendance/manage')
-  await page.getByTestId(`manage-add-${groupId}`).fill('Anna Adler\nBen Bär\nCarla Christ')
-  await page.getByTestId(`manage-add-btn-${groupId}`).click()
+  const add = page.getByTestId(`manage-add-${groupId}`)
+  const addChild = async (first: string, last: string, birth?: [string, string]) => {
+    await add.getByTestId('child-first').fill(first)
+    await add.getByTestId('child-last').fill(last)
+    if (birth) {
+      await add.getByTestId('child-birth-month').selectOption({ label: birth[0] })
+      await add.getByTestId('child-birth-year').selectOption(birth[1])
+    }
+    await add.getByTestId('child-last').press('Enter')
+    await expect(add.getByTestId('child-first')).toHaveValue('')
+  }
+  await addChild('Anna', 'Adler', ['Mai', '2023'])
+  await addChild('Ben', 'Bär')
+  // Mehrere Vornamen bleiben erhalten, vom Nachnamen nur der Anfangsbuchstabe.
+  await addChild('Carla Marie', 'Christ')
   const section = page.getByTestId(`manage-group-${groupId}`)
-  await expect(section.getByText('Carla C.')).toBeVisible()
+  await expect(section.getByText('Carla Marie C.')).toBeVisible()
   // Geburtsmonat reicht für das Alter.
-  await section.getByRole('button', { name: 'Anna A. bearbeiten' }).click()
-  await section.getByTestId('manage-birth').fill('2023-05')
-  await section.getByRole('button', { name: 'Speichern' }).click()
   await expect(section.getByText(/^\s*\d+ J\./)).toBeVisible()
+  await section.getByRole('button', { name: 'Ben B. bearbeiten' }).click()
+  await section.getByTestId('manage-edit-fields').getByTestId('child-birth-month').selectOption({ label: 'Januar' })
+  await expect(section.getByText('Bitte Monat und Jahr wählen.')).toBeVisible()
+  await section.getByTestId('manage-edit-fields').getByTestId('child-birth-year').selectOption('2024')
+  await section.getByRole('button', { name: 'Speichern' }).click()
+  await expect(section.getByText(/^\s*\d+ J\./)).toHaveCount(2)
   const user = `flur-${Date.now()}`
   await page.getByTestId(`manage-account-user-${groupId}`).fill(user)
   await page.getByTestId(`manage-account-create-${groupId}`).click()
@@ -93,15 +109,15 @@ test('Gruppenaccount hakt Kinder ab, meldet Fehlen und prüft bei Evakuierung al
   await expect(card('Ben B.')).toHaveAttribute('data-status', 'gone')
 
   // Carla ist heute krank gemeldet.
-  await card('Carla C.').getByRole('button', { name: /bearbeiten/ }).click()
+  await card('Carla Marie C.').getByRole('button', { name: /bearbeiten/ }).click()
   const sheet = page.getByTestId('child-sheet')
   await sheet.getByTestId('notice-add').click()
   await sheet.getByTestId('notice-reason-sick').click()
   await sheet.getByTestId('notice-save').click()
   await expect(sheet.getByTestId('sheet-notice')).toContainText('Krank')
   await page.keyboard.press('Escape')
-  await expect(card('Carla C.')).toHaveAttribute('data-status', 'absent')
-  await expect(card('Carla C.').getByTestId('att-state')).toHaveText('Krank')
+  await expect(card('Carla Marie C.')).toHaveAttribute('data-status', 'absent')
+  await expect(card('Carla Marie C.').getByTestId('att-state')).toHaveText('Krank')
 
   // Evakuierung: nur Anna (Ben ist gegangen) und die eingestempelte Mitarbeiterin, ohne Stempelzeit.
   await page.getByTestId('att-evacuation').click()
