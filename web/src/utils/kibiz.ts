@@ -1,4 +1,4 @@
-import type { CareHours, ChildCount, Employee, GroupForm, KibizTotals, Qualification } from '@/types/api'
+import type { CareHours, ChildCount, Employee, GroupForm, KibizGroup, KibizTotals, Qualification } from '@/types/api'
 
 export const GROUP_FORMS: GroupForm[] = ['I', 'II', 'III']
 export const CARE_HOURS: CareHours[] = [25, 35, 45]
@@ -52,6 +52,15 @@ export function sameChildCounts(a: ChildCount[], b: ChildCount[]): boolean {
 }
 
 /** Fehlende Minuten (0 = genug): Fachkraft gegen Mindest-Fachkraftstunden, alle zusammen gegen Gesamtstunden. */
+/** Kinder der Woche: eine Zahl oder „18–20“, wenn die geöffneten Tage abweichen. */
+export function weekChildrenLabel(g: KibizGroup): string {
+  const open = g.days.filter((d) => d.open).map((d) => d.children_total)
+  if (!open.length) return String(g.pattern_total)
+  const lo = Math.min(...open)
+  const hi = Math.max(...open)
+  return lo === hi ? String(lo) : `${lo}–${hi}`
+}
+
 export function kibizShortfall(t: KibizTotals): { fachkraft: number; total: number } {
   return {
     fachkraft: Math.max(0, t.need_fachkraft_min - t.planned_fachkraft_min),

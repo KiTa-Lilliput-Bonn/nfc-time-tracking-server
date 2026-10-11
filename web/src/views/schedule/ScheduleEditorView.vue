@@ -903,17 +903,17 @@ const notesFabButtonStyle = {
 }
 
 /** Dienstplan-Zeilen nach Benutzergruppe; „Ohne Gruppe“ für nicht oder unbekannt zugewiesene IDs. */
-const scheduleSections = computed((): { title: string; employees: Employee[] }[] => {
+const scheduleSections = computed((): { title: string; employees: Employee[]; groupId?: number | null }[] => {
   const list = scheduleEmployees.value
   const sortedGroups = [...groups.value]
   const known = new Set(sortedGroups.map((g) => g.id))
-  const sections: { title: string; employees: Employee[] }[] = []
+  const sections: { title: string; employees: Employee[]; groupId?: number | null }[] = []
 
   for (const g of sortedGroups) {
     const emps = list
       .filter((e) => e.group_id === g.id)
       .sort((a, b) => a.display_name.localeCompare(b.display_name, 'de'))
-    if (emps.length) sections.push({ title: g.name, employees: emps })
+    if (emps.length) sections.push({ title: g.name, employees: emps, groupId: g.id })
   }
 
   const orphan = list

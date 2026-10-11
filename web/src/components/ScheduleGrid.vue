@@ -7,10 +7,27 @@ import {
   createSchedule,
   deleteSchedule,
   fetchFixedNonWorkWeekdays,
+  fetchKibizWeek,
   fetchSchedulesForWeek,
+  putChildDays,
   updateSchedule,
 } from '@/api/management'
-import type { Absence, Employee, FixedNonWorkWeekdays, Holiday, Schedule, TeamMeeting } from '@/types/api'
+import ChildCountSheet from '@/components/schedule/ChildCountSheet.vue'
+import KibizDayCell from '@/components/schedule/KibizDayCell.vue'
+import KibizSummary from '@/components/schedule/KibizSummary.vue'
+import type {
+  Absence,
+  ChildCount,
+  Employee,
+  FixedNonWorkWeekdays,
+  Holiday,
+  KibizGroup,
+  KibizWeek,
+  Schedule,
+  TeamMeeting,
+} from '@/types/api'
+import { getApiErrorMessage } from '@/utils/apiError'
+import { weekChildrenLabel } from '@/utils/kibiz'
 import { addDays, formatGermanDate, mondayOfISOWeek, shiftISOWeek, toISODateLocal } from '@/utils/dates'
 import {
   horizontalBarPercentages,
@@ -36,7 +53,7 @@ const props = defineProps<{
   /** Flaches Raster (falls keine sections übergeben werden). */
   employees?: Employee[]
   /** Gruppierte Abschnitte; hat Vorrang — Reihenfolge = Reihenfolge im Raster. */
-  sections?: { title: string; employees: Employee[] }[]
+  sections?: { title: string; employees: Employee[]; groupId?: number | null }[]
   weekYear: number
   week: number
 }>()
@@ -48,7 +65,7 @@ const emit = defineEmits<{
   editTeamMeeting: [meetingId: number]
 }>()
 
-const displaySections = computed(() => {
+const displaySections = computed((): { title: string; employees: Employee[]; groupId?: number | null }[] => {
   if (props.sections && props.sections.length > 0) return props.sections
   return [{ title: '', employees: props.employees ?? [] }]
 })
@@ -792,6 +809,86 @@ async function load(opts?: { silent?: boolean }) {
     applyingServerSchedule.value = false
     if (!silent) overlayLoading.value = false
   }
+  void loadKibiz()
+}
+
+// ---------- KiBiz: Kinder und Fachkraft-/Personalstunden je Gruppe ----------
+
+const kibiz = ref<KibizWeek | null>(null)
+let kibizSeq = 0
+
+async function loadKibiz() {
+  const seq = ++kibizSeq
+  try {
+    const k = await fetchKibizWeek(props.weekYear, props.week)
+    if (seq === kibizSeq) kibiz.value = k
+  } catch {
+    // Zusatzinfo; der Plan bleibt ohne sie nutzbar.
+    if (seq === kibizSeq) kibiz.value = null
+  }
+}
+
+function kibizGroup(gid: number | null | undefined): KibizGroup | null {
+  if (gid == null) return null
+  return kibiz.value?.groups.find((g) => g.group_id === gid) ?? null
+}
+
+const unqualifiedPeople = computed(() => {
+  const ids = new Set(kibiz.value?.unqualified_user_ids ?? [])
+  return allEmployees.value.filter((e) => ids.has(e.id))
+})
+
+const childSheetVisible = ref(false)
+const childSheetGroupId = ref<number | null>(null)
+/** null = ganze Woche */
+const childSheetDate = ref<string | null>(null)
+const childSheetSaving = ref(false)
+const childSheetGroup = computed(() => kibizGroup(childSheetGroupId.value))
+const childSheetDay = computed(() => childSheetGroup.value?.days.find((d) => d.date === childSheetDate.value) ?? null)
+const childSheetCounts = computed((): ChildCount[] => {
+  const g = childSheetGroup.value
+  if (!g) return []
+  if (childSheetDate.value) return childSheetDay.value?.children ?? g.pattern
+  return g.days.find((d) => d.open)?.children ?? g.pattern
+})
+const childSheetAdjusted = computed(() => {
+  const g = childSheetGroup.value
+  if (!g) return false
+  return childSheetDate.value ? Boolean(childSheetDay.value?.adjusted) : g.days.some((d) => d.adjusted)
+})
+const childSheetDayLabel = computed(() => {
+  const d = childSheetDate.value
+  if (!d) return ''
+  const i = dates.value.indexOf(d)
+  return `${weekdays[i] ?? ''} ${formatGermanDate(d).slice(0, 6)}`.trim()
+})
+
+function openChildSheet(gid: number | null | undefined, date: string | null) {
+  if (gid == null || !kibizGroup(gid)) return
+  childSheetGroupId.value = gid
+  childSheetDate.value = date
+  childSheetVisible.value = true
+}
+
+async function saveChildren(counts: ChildCount[] | null, scope: 'day' | 'week') {
+  const gid = childSheetGroupId.value
+  if (gid == null) return
+  childSheetSaving.value = true
+  try {
+    const days = scope === 'day' && childSheetDate.value ? [childSheetDate.value] : [...dates.value]
+    await putChildDays(gid, days, counts)
+    childSheetVisible.value = false
+    await loadKibiz()
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Kinder',
+      detail: getApiErrorMessage(e) ?? 'Kinderzahl konnte nicht gespeichert werden.',
+      life: 5000,
+    })
+  } finally {
+    childSheetSaving.value = false
+  }
 }
 
 watch(
@@ -1041,6 +1138,13 @@ defineExpose({
         </thead>
       </table>
     </div>
+    <p v-if="!overlayLoading && unqualifiedPeople.length" class="kibiz-hint" data-testid="kibiz-unqualified">
+      Ohne Angabe zur Kraft (zählen nicht für KiBiz):
+      <template v-for="(u, i) in unqualifiedPeople" :key="u.id"
+        ><template v-if="i">, </template><span :data-testid="'unqualified-' + u.id">{{ u.display_name }}</span></template
+      >.
+      <RouterLink :to="{ name: 'schedule-basis', query: { tab: 'people' } }">Nachtragen</RouterLink>
+    </p>
     <div v-if="overlayLoading" class="muted">Laden…</div>
     <table v-else-if="expandedDayIndex === null" ref="tableRef" class="grid" data-testid="schedule-grid">
       <thead>
@@ -1065,7 +1169,22 @@ defineExpose({
       </thead>
       <tbody v-for="(sec, si) in displaySections" :key="'sec-' + si">
         <tr v-if="sec.title" class="section-head">
-          <td class="section-head-cell" :colspan="dates.length + 1">{{ sec.title }}</td>
+          <td class="section-head-cell" :colspan="dates.length + 1">
+            <div class="section-head-inner">
+              <span>{{ sec.title }}</span>
+              <KibizSummary
+                v-if="kibizGroup(sec.groupId)"
+                class="section-kibiz"
+                :totals="kibizGroup(sec.groupId)!.week"
+                :children-total="kibizGroup(sec.groupId)!.pattern_total"
+                :children-label="weekChildrenLabel(kibizGroup(sec.groupId)!)"
+                :adjusted="kibizGroup(sec.groupId)!.days.some((d) => d.adjusted)"
+                :has-pattern="kibizGroup(sec.groupId)!.has_pattern"
+                :testid="'kibiz-week-' + sec.groupId"
+                @children="openChildSheet(sec.groupId, null)"
+              />
+            </div>
+          </td>
         </tr>
         <tr v-for="emp in sec.employees" :key="emp.id">
           <td class="name">{{ emp.display_name }}</td>
@@ -1135,6 +1254,18 @@ defineExpose({
             </div>
           </td>
         </tr>
+        <tr v-if="kibizGroup(sec.groupId)" class="kibiz-row" :data-testid="'kibiz-row-' + sec.groupId">
+          <td class="name kibiz-row-label">Kinder &amp; KiBiz</td>
+          <td v-for="(d, di) in dates" :key="'kb-' + d" class="kibiz-cell">
+            <KibizDayCell
+              v-if="kibizGroup(sec.groupId)!.days[di]"
+              :day="kibizGroup(sec.groupId)!.days[di]!"
+              :has-pattern="kibizGroup(sec.groupId)!.has_pattern"
+              :testid="'kibiz-day-' + sec.groupId + '-' + di"
+              @children="openChildSheet(sec.groupId, d)"
+            />
+          </td>
+        </tr>
       </tbody>
     </table>
     <table v-else ref="tableRef" class="grid grid--day" :style="dayTableCssVars" data-testid="schedule-grid">
@@ -1186,7 +1317,21 @@ defineExpose({
       </thead>
       <tbody v-for="(sec, si) in displaySections" :key="'day-sec-' + si">
         <tr v-if="sec.title" class="section-head">
-          <td class="section-head-cell" colspan="2">{{ sec.title }}</td>
+          <td class="section-head-cell" colspan="2">
+            <div class="section-head-inner">
+              <span>{{ sec.title }}</span>
+              <KibizSummary
+                v-if="expandedDayIndex !== null && kibizGroup(sec.groupId)?.days[expandedDayIndex]?.open"
+                class="section-kibiz"
+                :totals="kibizGroup(sec.groupId)!.days[expandedDayIndex]!"
+                :children-total="kibizGroup(sec.groupId)!.days[expandedDayIndex]!.children_total"
+                :adjusted="kibizGroup(sec.groupId)!.days[expandedDayIndex]!.adjusted"
+                :has-pattern="kibizGroup(sec.groupId)!.has_pattern"
+                :testid="'kibiz-dayview-' + sec.groupId"
+                @children="openChildSheet(sec.groupId, selectedDate)"
+              />
+            </div>
+          </td>
         </tr>
         <tr
           v-if="!isPublicHolidayDate(selectedDate) && (Boolean(sec.title) || si === 0)"
@@ -1293,6 +1438,18 @@ defineExpose({
         </tr>
       </tbody>
     </table>
+    <ChildCountSheet
+      v-if="childSheetGroup"
+      v-model:visible="childSheetVisible"
+      :group-name="childSheetGroup.name"
+      :day-label="childSheetDayLabel"
+      :counts="childSheetCounts"
+      :pattern="childSheetGroup.pattern"
+      :adjusted="childSheetAdjusted"
+      :saving="childSheetSaving"
+      @save="(c, scope) => saveChildren(c, scope)"
+      @reset="(scope) => saveChildren(null, scope)"
+    />
   </div>
 </template>
 
@@ -1340,6 +1497,35 @@ defineExpose({
 }
 .grid th {
   background: #f8fafc;
+}
+.section-head-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 1.25rem;
+}
+.section-head-inner :deep(.section-kibiz) {
+  margin: 0;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.kibiz-row td {
+  background: #f8fafc;
+  border-top: 1px solid #cbd5e1;
+  vertical-align: top;
+}
+.kibiz-row-label {
+  font-size: 0.78rem;
+  color: #475569;
+  font-weight: 600;
+}
+.kibiz-cell {
+  padding: 0.35rem 0.4rem;
+}
+.kibiz-hint {
+  font-size: 0.82rem;
+  color: #b45309;
+  margin: 0 0 0.5rem;
 }
 .section-head .section-head-cell {
   position: sticky;
