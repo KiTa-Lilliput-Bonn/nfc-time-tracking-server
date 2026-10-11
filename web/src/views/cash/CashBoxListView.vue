@@ -36,7 +36,7 @@ onMounted(async () => {
     <p v-if="err" class="err">{{ err }}</p>
     <p v-else-if="loading" class="muted">Laden…</p>
     <p v-else-if="!boxes.length" class="muted">
-      <template v-if="isLeitung">Es gibt noch keine Gruppen. Gruppen werden unter „Gruppen“ angelegt.</template>
+      <template v-if="isLeitung">Noch keine Gruppe hat eine Gruppenkasse. Unter „Gruppen“ legen Sie fest, welche Gruppen eine Kasse führen.</template>
       <template v-else>Sie sind für keine Gruppenkasse als Kassenwart eingetragen.</template>
     </p>
     <div v-else class="grid">
@@ -69,12 +69,18 @@ onMounted(async () => {
         </Card>
       </RouterLink>
     </div>
+    <p v-if="isLeitung && !loading && !err && boxes.length" class="muted hint">
+      Welche Gruppen eine Kasse führen, legen Sie unter „Gruppen“ fest.
+    </p>
   </div>
 </template>
 
 <style scoped>
 .page {
   max-width: 960px;
+}
+.hint {
+  margin-top: 1rem;
 }
 .grid {
   display: grid;

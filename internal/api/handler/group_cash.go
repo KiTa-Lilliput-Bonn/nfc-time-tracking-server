@@ -75,6 +75,10 @@ func (h *GroupCashHandler) access(w http.ResponseWriter, r *http.Request) *cashA
 		response.Error(w, http.StatusNotFound, "Gruppe nicht gefunden")
 		return nil
 	}
+	if !g.HasCashBox {
+		response.Error(w, http.StatusNotFound, "Für diese Gruppe ist keine Gruppenkasse eingerichtet")
+		return nil
+	}
 	keeper, err := h.Cash.IsKeeper(r.Context(), groupID, middleware.UserID(r))
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "query failed")
@@ -194,7 +198,7 @@ func (h *GroupCashHandler) List(w http.ResponseWriter, r *http.Request) {
 	lead := isLeitungRole(middleware.Role(r))
 	out := []cashBoxListItem{}
 	for _, g := range groups {
-		if !lead && !keeperOf[g.ID] {
+		if !g.HasCashBox || (!lead && !keeperOf[g.ID]) {
 			continue
 		}
 		ks, err := h.keepers(r, g.ID, names)

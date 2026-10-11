@@ -11,7 +11,7 @@ export async function createGroup(body: { name: string }) {
   return data
 }
 
-export async function patchGroup(id: number, body: { name: string }) {
+export async function patchGroup(id: number, body: { name?: string; has_cash_box?: boolean }) {
   const { data } = await api.patch<UserGroup>(`/groups/${id}`, body)
   return data
 }

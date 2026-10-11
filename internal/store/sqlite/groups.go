@@ -19,7 +19,7 @@ func NewGroupStore(db *DB) *GroupStore {
 
 func (s *GroupStore) List(ctx context.Context) ([]model.Group, error) {
 	rows, err := s.db.DB.QueryContext(ctx,
-		`SELECT id, name, sort_order, created_at, updated_at FROM user_groups ORDER BY sort_order ASC, name COLLATE NOCASE ASC`)
+		`SELECT id, name, sort_order, has_cash_box, created_at, updated_at FROM user_groups ORDER BY sort_order ASC, name COLLATE NOCASE ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -28,7 +28,7 @@ func (s *GroupStore) List(ctx context.Context) ([]model.Group, error) {
 	var list []model.Group
 	for rows.Next() {
 		var g model.Group
-		if err := rows.Scan(&g.ID, &g.Name, &g.SortOrder, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.SortOrder, &g.HasCashBox, &g.CreatedAt, &g.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, g)
@@ -39,8 +39,8 @@ func (s *GroupStore) List(ctx context.Context) ([]model.Group, error) {
 func (s *GroupStore) GetByID(ctx context.Context, id int) (*model.Group, error) {
 	g := &model.Group{}
 	err := s.db.DB.QueryRowContext(ctx,
-		`SELECT id, name, sort_order, created_at, updated_at FROM user_groups WHERE id = ?`, id).
-		Scan(&g.ID, &g.Name, &g.SortOrder, &g.CreatedAt, &g.UpdatedAt)
+		`SELECT id, name, sort_order, has_cash_box, created_at, updated_at FROM user_groups WHERE id = ?`, id).
+		Scan(&g.ID, &g.Name, &g.SortOrder, &g.HasCashBox, &g.CreatedAt, &g.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("group not found: %d", id)
 	}
@@ -49,8 +49,8 @@ func (s *GroupStore) GetByID(ctx context.Context, id int) (*model.Group, error) 
 
 func (s *GroupStore) Create(ctx context.Context, g *model.Group) error {
 	res, err := s.db.DB.ExecContext(ctx,
-		`INSERT INTO user_groups (name, sort_order) VALUES (?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM user_groups))`,
-		g.Name)
+		`INSERT INTO user_groups (name, sort_order, has_cash_box) VALUES (?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM user_groups), ?)`,
+		g.Name, g.HasCashBox)
 	if err != nil {
 		return fmt.Errorf("insert group: %w", err)
 	}
@@ -66,8 +66,8 @@ func (s *GroupStore) Create(ctx context.Context, g *model.Group) error {
 
 func (s *GroupStore) Update(ctx context.Context, g *model.Group) error {
 	res, err := s.db.DB.ExecContext(ctx,
-		`UPDATE user_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		g.Name, g.ID)
+		`UPDATE user_groups SET name = ?, has_cash_box = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		g.Name, g.HasCashBox, g.ID)
 	if err != nil {
 		return fmt.Errorf("update group: %w", err)
 	}
